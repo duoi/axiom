@@ -37,6 +37,7 @@ struct Chip: Equatable, Sendable, Identifiable {
     var id: UUID
     var name: String
     var payload: Payload
+    var isScreen: Bool = false
 }
 
 enum Phase: Equatable, Sendable {
@@ -77,6 +78,7 @@ struct Session: Equatable, Sendable {
     var phase: Phase = .composing
     var displayAnswer: String = ""
     var errorMessage: String?
+    var startedAt: Date?
     private var sentDraft = ""
     private var sentChips: [Chip] = []
 
@@ -99,13 +101,20 @@ struct Session: Equatable, Sendable {
         return !text.isEmpty || !chips.isEmpty
     }
 
-    mutating func send() -> SendOutcome {
+    mutating func send(attachedJPEG: Data? = nil, attachmentName: String = "Screen") -> SendOutcome {
         guard !showsStop else { return .ignored }
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !chips.isEmpty else { return .ignored }
+        var turnChips = chips
+        if let attachedJPEG, !attachedJPEG.isEmpty {
+            turnChips.append(Chip(id: UUID(), name: attachmentName, payload: .jpeg(attachedJPEG), isScreen: true))
+        }
+        guard !trimmed.isEmpty || !turnChips.isEmpty else { return .ignored }
         sentDraft = draft
         sentChips = chips
-        turns.append(Turn(role: .user, text: trimmed, chips: chips))
+        if startedAt == nil {
+            startedAt = Date()
+        }
+        turns.append(Turn(role: .user, text: trimmed, chips: turnChips))
         draft = ""
         chips = []
         displayAnswer = ""
@@ -161,6 +170,7 @@ struct Session: Equatable, Sendable {
         turns = []
         displayAnswer = ""
         errorMessage = nil
+        startedAt = nil
         phase = .composing
         return true
     }

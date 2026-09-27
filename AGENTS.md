@@ -36,7 +36,7 @@ The client speaks OpenAI Chat Completions. The model id and host in the dev file
 
 ## Window
 
-The HUD is a nonactivating panel. Do not call `NSApp.activate` to show it or to type in it. Settings is the exception: opening Settings activates the app and dismisses the HUD.
+The HUD is a nonactivating panel. Do not call `NSApp.activate` to show it or to type in it. Settings is the exception: opening Settings activates the app. The card stays up.
 
 `.nonactivatingPanel` belongs in the panel initializer.
 

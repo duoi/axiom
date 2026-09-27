@@ -11,7 +11,21 @@ final class HUDModel {
     let store: EndpointStore
     var onOpenSettings: () -> Void = {}
     var onAddContext: () -> Void = {}
+    var onCaptureScreen: () -> Void = {}
     var onLayout: () -> Void = {}
+    var historyExpanded = false
+    var screenNotice: String?
+    var captureArmed = false
+    var cardIsKey = true
+    var reduceTransparency = false
+
+    var pillIsMatte: Bool {
+        HUDMaterial.pillIsMatte(
+            preference: store.usesMatte,
+            reduceTransparency: reduceTransparency,
+            cardIsKey: cardIsKey
+        )
+    }
 
     private var task: Task<Void, Never>?
     private var clientSession: URLSession?
@@ -73,23 +87,30 @@ final class HUDModel {
 
     func submit() {
         guard !session.showsStop else { return }
-        if store.blockingMessage != nil {
-            onLayout()
+        if captureArmed {
+            onCaptureScreen()
             return
         }
-        guard case .success(let url) = store.resolvedURL else {
-            onLayout()
-            return
-        }
-        let outcome = session.send()
+        beginSend(jpeg: nil, name: "")
+    }
+
+    func beginSend(jpeg: Data?, name: String) {
+        let outcome = session.send(attachedJPEG: jpeg, attachmentName: name)
         guard case .request(let messages) = outcome else {
             onLayout()
             return
         }
-        stickToBottom = true
-        startStream(url: url, messages: messages)
-        onLayout()
-        focusField()
+        switch store.target(for: messages) {
+        case .blocked(let message):
+            session.fail(message)
+            onLayout()
+        case .ready(let url, let model, let key):
+            captureArmed = false
+            stickToBottom = true
+            startStream(url: url, model: model, apiKey: key, messages: messages)
+            onLayout()
+            focusField()
+        }
     }
 
     func stop() {
@@ -108,6 +129,9 @@ final class HUDModel {
     func dismiss(clickOutside: Bool) -> Bool {
         let hide = session.dismiss(clickOutside: clickOutside)
         if hide {
+            historyExpanded = false
+            screenNotice = nil
+            captureArmed = false
             task?.cancel()
             task = nil
         }
@@ -123,12 +147,41 @@ final class HUDModel {
         onAddContext()
     }
 
+    func toggleCapture() {
+        captureArmed.toggle()
+        screenNotice = nil
+        onLayout()
+    }
+
+    func setCaptureTarget(_ target: CaptureTarget) {
+        store.captureTarget = target
+    }
+
+    func openScreenSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    func toggleHistory() {
+        historyExpanded.toggle()
+        onLayout()
+    }
+
+    func reportScreenFailure(permission: Bool) {
+        screenNotice = permission
+            ? "Allow Screen Recording in System Settings"
+            : "The screen capture failed."
+        onLayout()
+    }
+
     func focusField() {
         guard let textField, let window = textField.window else { return }
         window.makeFirstResponder(textField)
     }
 
-    private func startStream(url: URL, messages: [OutboundMessage]) {
+    private func startStream(url: URL, model: String, apiKey: String, messages: [OutboundMessage]) {
         task?.cancel()
         let host = url.host ?? ""
         let (session, guardDelegate) = ChatClient.makeSession(host: host)
@@ -137,8 +190,8 @@ final class HUDModel {
         let client = ChatClient(session: session)
         let request = ChatRequest(
             url: url,
-            model: store.model.trimmingCharacters(in: .whitespacesAndNewlines),
-            apiKey: store.apiKey,
+            model: model,
+            apiKey: apiKey,
             messages: messages
         )
         task = Task { [weak self] in

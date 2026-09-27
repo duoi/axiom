@@ -3,9 +3,10 @@ import Security
 
 enum KeychainStore {
     static let service = "com.stevenjohns.AIHUD"
-    static let account = "api-key"
+    static let chatAccount = "api-key"
+    static let visionAccount = "vision-api-key"
 
-    static func read() -> String? {
+    static func read(account: String = chatAccount) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -20,7 +21,7 @@ enum KeychainStore {
         return String(data: data, encoding: .utf8)
     }
 
-    static func write(_ value: String) throws {
+    static func write(_ value: String, account: String = chatAccount) throws {
         let data = Data(value.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -48,7 +49,7 @@ enum KeychainStore {
         }
     }
 
-    static func delete() {
+    static func delete(account: String = chatAccount) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

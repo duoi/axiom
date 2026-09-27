@@ -4,11 +4,11 @@ final class HUDPanel: NSPanel {
     var onCancel: (() -> Void)?
     var menuTracking = false
     private var didPlace = false
-    private let cardWidth: CGFloat = 560
+    private let cardWidth: CGFloat = HUDMetrics.cardWidth
 
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 110),
+            contentRect: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -29,6 +29,32 @@ final class HUDPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if menuTracking { return super.performKeyEquivalent(with: event) }
+        guard let action = EditCommands.action(for: event) else {
+            return super.performKeyEquivalent(with: event)
+        }
+        if NSApp.sendAction(action, to: nil, from: self) {
+            return true
+        }
+        if let field = promptField() {
+            makeFirstResponder(field)
+            if NSApp.sendAction(action, to: nil, from: self) {
+                return true
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private func promptField() -> NSTextField? {
+        var queue = contentView?.subviews ?? []
+        while let view = queue.popLast() {
+            if let field = view as? NSTextField { return field }
+            queue.append(contentsOf: view.subviews)
+        }
+        return nil
+    }
+
     override func cancelOperation(_ sender: Any?) {
         if attachedSheet != nil {
             super.cancelOperation(sender)
@@ -42,7 +68,7 @@ final class HUDPanel: NSPanel {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let size = NSSize(width: cardWidth, height: max(100, height))
+        let size = NSSize(width: cardWidth, height: max(HUDMetrics.minCardHeight, height))
         let origin = NSPoint(
             x: visible.midX - size.width / 2,
             y: visible.midY - size.height / 2
@@ -54,8 +80,8 @@ final class HUDPanel: NSPanel {
     }
 
     func resizePinnedTop(to height: CGFloat, animated: Bool) {
-        let nextHeight = max(100, height)
-        guard abs(nextHeight - frame.height) > 0.5 else { return }
+        let nextHeight = max(HUDMetrics.minCardHeight, height)
+        guard abs(nextHeight - frame.height) > 2 else { return }
         var next = frame
         let delta = nextHeight - next.height
         next.size.width = cardWidth

@@ -165,6 +165,143 @@ import Testing
     #expect(jpeg.starts(with: [0xFF, 0xD8]))
 }
 
+@Test func expandedHistoryListsEachTurnOnce() {
+    var session = Session()
+    session.draft = "Hello"
+    _ = session.send()
+    session.receiveToken("Hi")
+    session.finish()
+    session.draft = "How are you"
+    _ = session.send()
+    session.receiveToken("Fine")
+
+    let streaming = Transcript.rows(in: session, expanded: true)
+    #expect(streaming.map(\.text) == ["Hello", "Hi", "How are you", "Fine"])
+    #expect(streaming.filter(\.live).map(\.text) == ["Fine"])
+
+    session.finish()
+    let done = Transcript.rows(in: session, expanded: true)
+    #expect(done.map(\.text) == ["Hello", "Hi", "How are you", "Fine"])
+    #expect(done.allSatisfy { !$0.live })
+    #expect(session.startedAt != nil)
+    #expect(done.allSatisfy { $0.chipNames.isEmpty || $0.kind == .user })
+}
+
+@Test func markupSplitsBoldLists() {
+    let runs = LightMarkup.parse("Hello **there**\n1. First\n- Item")
+    #expect(runs == [.plain("Hello "), .bold("there"), .numbered(1, "First"), .bullet("Item")])
+}
+
+@Test func pillInsetIsTheSameOnEverySide() {
+    let inset = HUDMetrics.pillInset
+    #expect(inset > 0)
+    #expect(HUDMetrics.pillInsets == HUDInsets.equal(inset))
+    #expect(HUDMetrics.pillInsets.top == HUDMetrics.pillInsets.leading)
+    #expect(HUDMetrics.pillInsets.bottom == HUDMetrics.pillInsets.trailing)
+}
+
+@Test func glassIsClearAndMatteIsRegular() {
+    #expect(HUDMaterial.effectStyle(matte: false) == .clear)
+    #expect(HUDMaterial.effectStyle(matte: true) == .regular)
+    #expect(!HUDMaterial.usesSolidCard(reduceTransparency: false))
+    #expect(HUDMaterial.usesSolidCard(reduceTransparency: true))
+}
+
+@Test func selectedPillIsMatteWhenTheCardIsNotKey() {
+    #expect(!HUDMaterial.pillIsMatte(preference: false, reduceTransparency: false, cardIsKey: true))
+    #expect(HUDMaterial.pillIsMatte(preference: false, reduceTransparency: false, cardIsKey: false))
+    #expect(HUDMaterial.pillIsMatte(preference: true, reduceTransparency: false, cardIsKey: true))
+    #expect(HUDMaterial.pillIsMatte(preference: false, reduceTransparency: true, cardIsKey: true))
+    #expect(HUDMaterial.effectStyle(matte: HUDMaterial.pillIsMatte(preference: false, reduceTransparency: false, cardIsKey: false)) == .regular)
+}
+
+@Test func glassVeilClearsAtFullAmountAndTintsAsThePercentDrops() {
+    #expect(HUDMaterial.veilOpacity(glassAmount: 1) == 0)
+    #expect(HUDMaterial.veilOpacity(glassAmount: 0.99) == 0)
+    #expect(HUDMaterial.veilOpacity(glassAmount: 0.5) == 0.5)
+    #expect(HUDMaterial.veilOpacity(glassAmount: 0) == 1)
+    #expect(HUDMaterial.clampAmount(1.4) == 1)
+    #expect(HUDMaterial.clampAmount(-0.2) == 0)
+}
+
+@Test func glassAmountPersistsAsAPercent() {
+    let defaults = UserDefaults(suiteName: "aihud.tests.glass-amount")!
+    defaults.removePersistentDomain(forName: "aihud.tests.glass-amount")
+    #expect(HUDMaterial.loadAmount(from: defaults) == 1)
+    HUDMaterial.saveAmount(0.4, to: defaults)
+    #expect(HUDMaterial.loadAmount(from: defaults) == 0.4)
+    HUDMaterial.saveAmount(2, to: defaults)
+    #expect(HUDMaterial.loadAmount(from: defaults) == 1)
+    defaults.removePersistentDomain(forName: "aihud.tests.glass-amount")
+}
+
+@Test func visionEndpointIsUsedOnlyWhenAnImageIsPresent() {
+    let chat = ServiceCredentials(url: "https://api.openai.com/v1", model: "gpt-4o", apiKey: "chat")
+    let vision = ServiceCredentials(
+        url: "https://generativelanguage.googleapis.com/v1beta",
+        model: "gemini",
+        apiKey: "gem"
+    )
+    let blank = ServiceCredentials(url: "", model: "", apiKey: "")
+    let incomplete = ServiceCredentials(url: "https://generativelanguage.googleapis.com/v1beta", model: "", apiKey: "")
+    #expect(ModelChoice.pick(chat: chat, vision: blank, hasImage: true) == chat)
+    #expect(ModelChoice.pick(chat: chat, vision: vision, hasImage: false) == chat)
+    #expect(ModelChoice.pick(chat: chat, vision: vision, hasImage: true) == vision)
+    #expect(ModelChoice.visionIsIncomplete(incomplete))
+    #expect(!ModelChoice.visionIsIncomplete(blank))
+    #expect(!ModelChoice.visionIsIncomplete(vision))
+}
+
+@Test func screenJPEGUsesTheSmallerPassWhenTheFirstIsOverBudget() {
+    var calls: [(Int, CGFloat)] = []
+    let data = ScreenImage.choose { edge, quality in
+        calls.append((edge, quality))
+        if edge == 1536 {
+            return Data(count: 500_000)
+        }
+        return Data(count: 1_000)
+    }
+    #expect(calls.count == 2)
+    #expect(calls[0].0 == 1536)
+    #expect(calls[0].1 == 0.60)
+    #expect(calls[1].0 == 1280)
+    #expect(calls[1].1 == 0.50)
+    #expect(data.count == 1_000)
+}
+
+@Test func screenJPEGStaysWithinTheLongEdgeAndBudget() {
+    let width = 2200
+    let height = 900
+    let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+    let context = CGContext(
+        data: nil,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: 0,
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    )!
+    for x in stride(from: 0, to: width, by: 3) {
+        for y in stride(from: 0, to: height, by: 3) {
+            context.setFillColor(CGColor(
+                red: CGFloat(x % 255) / 255,
+                green: CGFloat(y % 255) / 255,
+                blue: CGFloat((x + y) % 255) / 255,
+                alpha: 1
+            ))
+            context.fill(CGRect(x: x, y: y, width: 3, height: 3))
+        }
+    }
+    let image = context.makeImage()!
+    let jpeg = ScreenImage.jpeg(from: image)
+    #expect(jpeg.starts(with: [0xFF, 0xD8]))
+    #expect(jpeg.count <= ScreenImage.budget)
+    let source = CGImageSourceCreateWithData(jpeg as CFData, nil)!
+    let decoded = CGImageSourceCreateImageAtIndex(source, 0, nil)!
+    #expect(max(decoded.width, decoded.height) <= 1536)
+}
+
 private extension Result where Failure == EndpointError {
     var isSuccess: Bool {
         if case .success = self { return true }
