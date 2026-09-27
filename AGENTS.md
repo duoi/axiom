@@ -44,4 +44,4 @@ Center on the screen that contains `NSEvent.mouseLocation`, inside `visibleFrame
 
 ## Out of this version
 
-No tool calls, no SpeechAnalyzer, no wake-word toggle, no markdown renderer. The Agent preset only changes the system prompt.
+No tool calls, no markdown renderer. The Agent preset only changes the system prompt.

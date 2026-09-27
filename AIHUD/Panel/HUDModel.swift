@@ -18,6 +18,13 @@ final class HUDModel {
     var captureArmed = false
     var cardIsKey = true
     var reduceTransparency = false
+    var dictating = false
+    var voiceStatus: String?
+    var voicePermissionPrompt = false
+    var onToggleDictation: () -> Void = {}
+    var onSetWake: (Bool) -> Void = { _ in }
+    var onSendBegan: () -> Void = {}
+    var debugDriven = false
 
     var pillIsMatte: Bool {
         HUDMaterial.pillIsMatte(
@@ -35,9 +42,45 @@ final class HUDModel {
         self.store = store
     }
 
+    func debugSnapshot() -> DebugSnapshot {
+        DebugSnapshot(
+            session: session,
+            captureArmed: captureArmed,
+            dictating: dictating,
+            voiceStatus: voiceStatus,
+            screenNotice: screenNotice
+        )
+    }
+
+    func apply(_ snapshot: DebugSnapshot) {
+        debugDriven = true
+        cancelForQuit()
+        session = snapshot.session
+        captureArmed = snapshot.captureArmed
+        dictating = snapshot.dictating
+        voiceStatus = snapshot.voiceStatus
+        screenNotice = snapshot.screenNotice
+        pushDraftToField(session.draft)
+        onLayout()
+    }
+
     func setDraft(_ text: String) {
         session.draft = text
+        pushDraftToField(text)
         onLayout()
+    }
+
+    func pushDraftToField(_ text: String) {
+        guard let textField else { return }
+        if textField.stringValue != text {
+            textField.stringValue = text
+        }
+        guard let editor = textField.currentEditor() else { return }
+        if editor.string != text {
+            editor.string = text
+            let end = (text as NSString).length
+            editor.selectedRange = NSRange(location: end, length: 0)
+        }
     }
 
     func setPreset(_ preset: Preset) {
@@ -100,14 +143,28 @@ final class HUDModel {
             onLayout()
             return
         }
-        switch store.target(for: messages) {
+        switch store.route(for: messages) {
         case .blocked(let message):
             session.fail(message)
             onLayout()
-        case .ready(let url, let model, let key):
+        case .cloud(let target):
+            switch target {
+            case .blocked(let message):
+                session.fail(message)
+                onLayout()
+            case .ready(let url, let model, let key):
+                captureArmed = false
+                stickToBottom = true
+                onSendBegan()
+                startStream(url: url, model: model, apiKey: key, messages: messages)
+                onLayout()
+                focusField()
+            }
+        case .onDevice:
             captureArmed = false
             stickToBottom = true
-            startStream(url: url, model: model, apiKey: key, messages: messages)
+            onSendBegan()
+            startOnDeviceStream(messages: messages)
             onLayout()
             focusField()
         }
@@ -132,6 +189,7 @@ final class HUDModel {
             historyExpanded = false
             screenNotice = nil
             captureArmed = false
+            dictating = false
             task?.cancel()
             task = nil
         }
@@ -150,6 +208,11 @@ final class HUDModel {
     func toggleCapture() {
         captureArmed.toggle()
         screenNotice = nil
+        onLayout()
+    }
+
+    func toggleDictation() {
+        onToggleDictation()
         onLayout()
     }
 
@@ -179,6 +242,38 @@ final class HUDModel {
     func focusField() {
         guard let textField, let window = textField.window else { return }
         window.makeFirstResponder(textField)
+    }
+
+    private func startOnDeviceStream(messages: [OutboundMessage]) {
+        task?.cancel()
+        clientSession = nil
+        redirectGuard = nil
+        task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                for try await event in OnDeviceChat.stream(messages: messages) {
+                    if Task.isCancelled { return }
+                    switch event {
+                    case .token(let token):
+                        self.session.receiveToken(token)
+                        self.onLayout()
+                    case .done:
+                        self.session.finish()
+                        self.onLayout()
+                        return
+                    case .failure(let message):
+                        self.session.fail(message)
+                        self.onLayout()
+                        return
+                    }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                self.session.fail("The on-device model failed.")
+                self.onLayout()
+            }
+        }
     }
 
     private func startStream(url: URL, model: String, apiKey: String, messages: [OutboundMessage]) {

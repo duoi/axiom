@@ -21,6 +21,7 @@ targets:
         excludes:
           - Info.plist
           - AIHUD.entitlements
+          - Assets/AxiomLogo.png
     dependencies:
       - package: KeyboardShortcuts
     postBuildScripts:
@@ -43,6 +44,7 @@ targets:
         ENABLE_TESTABILITY: YES
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   AIHUDTests:
     type: bundle.unit-test
     platform: macOS

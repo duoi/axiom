@@ -44,8 +44,27 @@ struct PromptField: NSViewRepresentable {
     func updateNSView(_ nsView: ClickThroughTextField, context: Context) {
         context.coordinator.text = $text
         context.coordinator.onSubmit = onSubmit
-        if nsView.stringValue != text {
-            nsView.stringValue = text
+        if nsView.placeholderAttributedString?.string != placeholder {
+            nsView.placeholderAttributedString = NSAttributedString(
+                string: placeholder,
+                attributes: [
+                    .foregroundColor: NSColor.placeholderTextColor,
+                    .font: NSFont.systemFont(ofSize: 16)
+                ]
+            )
+        }
+        apply(text, to: nsView)
+    }
+
+    private func apply(_ text: String, to field: NSTextField) {
+        if field.stringValue != text {
+            field.stringValue = text
+        }
+        guard let editor = field.currentEditor() else { return }
+        if editor.string != text {
+            editor.string = text
+            let end = (text as NSString).length
+            editor.selectedRange = NSRange(location: end, length: 0)
         }
     }
 

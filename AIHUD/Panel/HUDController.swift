@@ -16,7 +16,15 @@ final class HUDController: NSObject, NSWindowDelegate {
     private var menuEnd: NSObjectProtocol?
     private var accessibilityObserver: NSObjectProtocol?
     private var settingsWindow: NSWindow?
+    private var debugWindow: NSWindow?
     private var reduceTransparency = false
+    private var capture: VoiceCapture?
+    private var lastWake: Date?
+    private var dictationBase = ""
+    private var openedFromWake = false
+    private var openedAt: Date?
+    private var silentSince: Date?
+    private var voicePoll: Task<Void, Never>?
 
     init(store: EndpointStore) {
         self.store = store
@@ -26,11 +34,15 @@ final class HUDController: NSObject, NSWindowDelegate {
         model.onAddContext = { [weak self] in self?.addContext() }
         model.onCaptureScreen = { [weak self] in self?.captureForSend() }
         model.onLayout = { [weak self] in self?.syncFrame() }
+        model.onToggleDictation = { [weak self] in self?.toggleDictation() }
+        model.onSetWake = { [weak self] on in self?.setWake(on) }
+        model.onSendBegan = { [weak self] in self?.handleSendBegan() }
         store.onAppearanceChange = { [weak self] in self?.applyAppearance() }
         panel.onCancel = { [weak self] in self?.userDismiss(clickOutside: false) }
         panel.delegate = self
         installChrome()
         installMonitors()
+        startVoicePolling()
     }
 
     func toggle() {
@@ -62,11 +74,21 @@ final class HUDController: NSObject, NSWindowDelegate {
     }
 
     func shutdown() {
+        voicePoll?.cancel()
+        voicePoll = nil
+        capture?.stop()
+        capture = nil
         model.cancelForQuit()
+    }
+
+    func startVoiceIfNeeded() {
+        guard store.wakeOnAxiom, !model.debugDriven else { return }
+        Task { await startWakeCapture(prompt: false) }
     }
 
     private func userDismiss(clickOutside: Bool) {
         guard model.dismiss(clickOutside: clickOutside) else { return }
+        endDictation(keepWakeCapture: true)
         guard panel.isVisible else { return }
         panel.fadeOut { }
     }
@@ -108,7 +130,7 @@ final class HUDController: NSObject, NSWindowDelegate {
             return
         }
         if !wantSolid {
-            applyGlass(glass ?? NSGlassEffectView())
+            applyGlass(glass ?? CardGlassView())
         }
     }
 
@@ -121,6 +143,10 @@ final class HUDController: NSObject, NSWindowDelegate {
         if #available(macOS 27.0, *) {
             glassView.effectIsInteractive = false
         }
+        // Regular glass is opaque, so the window shadow becomes a black box while the panel is key.
+        panel.hasShadow = style != .regular
+        panel.invalidateShadow()
+        (glassView as? CardGlassView)?.containKeyFringe()
     }
 
     private func mount(_ hosting: NSView) {
@@ -132,7 +158,7 @@ final class HUDController: NSObject, NSWindowDelegate {
             glass?.contentView = nil
             panel.contentView = card
         } else {
-            let glassView = glass ?? NSGlassEffectView(frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight))
+            let glassView = glass ?? CardGlassView(frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight))
             glass = glassView
             applyGlass(glassView)
             glassView.contentView = hosting
@@ -143,6 +169,7 @@ final class HUDController: NSObject, NSWindowDelegate {
 
     private func clipHosting(_ hosting: NSView) {
         hosting.wantsLayer = true
+        hosting.layer?.isOpaque = false
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         hosting.layer?.cornerRadius = HUDMetrics.cornerRadius
         hosting.layer?.masksToBounds = true
@@ -191,11 +218,12 @@ final class HUDController: NSObject, NSWindowDelegate {
 
     private func clickOutside(_ event: NSEvent) {
         guard panel.isVisible else { return }
+        if model.voicePermissionPrompt { return }
         if store.keepHovering { return }
         if panel.menuTracking || menuWindowIsOpen || panel.attachedSheet != nil { return }
         if settingsWindow?.isVisible == true { return }
         if let window = event.window {
-            if window === panel || window === settingsWindow { return }
+            if window === panel || window === settingsWindow || window === debugWindow { return }
             let name = String(describing: type(of: window))
             if name.contains("Menu") { return }
         }
@@ -203,6 +231,7 @@ final class HUDController: NSObject, NSWindowDelegate {
         if panel.frame.contains(point) { return }
         if let statusFrame = statusItemFrame, statusFrame.contains(point) { return }
         if let settings = settingsWindow, settings.isVisible, settings.frame.contains(point) { return }
+        if let debug = debugWindow, debug.isVisible, debug.frame.contains(point) { return }
         userDismiss(clickOutside: true)
     }
 
@@ -302,8 +331,40 @@ final class HUDController: NSObject, NSWindowDelegate {
     }
 
     func openSettings() {
-        let window = settingsWindow ?? makeSettingsWindow()
-        settingsWindow = window
+        present(window: settingsWindow ?? makeSettingsWindow(), remembering: { settingsWindow = $0 })
+    }
+
+    func openDebug() {
+        DebugSettings.saveEnabled(true, to: .standard)
+        model.debugDriven = true
+        stopCapture()
+        show()
+        let window = debugWindow ?? makeDebugWindow()
+        debugWindow = window
+        placeDebugWindow(window)
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func applyDebugCommand(_ command: String) {
+        let next = DebugRouting.apply(command, to: model.debugSnapshot())
+        model.apply(next)
+        if !panel.isVisible {
+            show()
+        }
+        if next.wantsCardKey == true {
+            panel.makeKey()
+            DispatchQueue.main.async { [weak self] in
+                self?.model.focusField()
+            }
+        } else if next.wantsCardKey == false {
+            debugWindow?.makeKey()
+        }
+    }
+
+    private func present(window: NSWindow, remembering: (NSWindow) -> Void) {
+        remembering(window)
         if let screen = NSScreen.screens.first(where: { screen in
             if let frame = statusItemFrame, screen.frame.intersects(frame) { return true }
             return false
@@ -320,8 +381,23 @@ final class HUDController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
+    private func placeDebugWindow(_ window: NSWindow) {
+        let visible = (panel.screen ?? NSScreen.main)?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+        var origin = NSPoint(
+            x: panel.frame.maxX + 24,
+            y: panel.frame.maxY - window.frame.height
+        )
+        if origin.x + window.frame.width > visible.maxX - 16 {
+            origin.x = panel.frame.minX - window.frame.width - 24
+        }
+        origin.x = min(max(origin.x, visible.minX + 16), visible.maxX - window.frame.width - 16)
+        origin.y = min(max(origin.y, visible.minY + 16), visible.maxY - window.frame.height - 16)
+        window.setFrameOrigin(origin)
+    }
+
     private func makeSettingsWindow() -> NSWindow {
-        let host = NSHostingView(rootView: SettingsView(store: store))
+        let host = NSHostingView(rootView: SettingsView(store: store, model: model))
         host.safeAreaRegions = []
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: HUDMetrics.settingsSize.width, height: HUDMetrics.settingsSize.height),
@@ -337,9 +413,263 @@ final class HUDController: NSObject, NSWindowDelegate {
         return window
     }
 
+    private func makeDebugWindow() -> NSWindow {
+        let host = NSHostingView(rootView: DebugView(model: model, onCommand: { [weak self] command in
+            self?.applyDebugCommand(command)
+        }))
+        host.safeAreaRegions = []
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: HUDMetrics.debugSize.width, height: HUDMetrics.debugSize.height),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Debug"
+        window.contentView = host
+        window.contentMinSize = HUDMetrics.debugSize
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        return window
+    }
+
+    private func setWake(_ on: Bool) {
+        if on {
+            Task { await startWakeCapture(prompt: true) }
+            return
+        }
+        store.wakeOnAxiom = false
+        if !model.dictating {
+            stopCapture()
+        }
+    }
+
+    private func toggleDictation() {
+        if store.wakeOnAxiom {
+            if let denied = VoicePermission.deniedSentence() {
+                model.voiceStatus = denied
+                return
+            }
+            if capture == nil {
+                Task { await startWakeCapture(prompt: false) }
+            }
+            if model.dictating {
+                setDictating(false)
+            } else {
+                dictationBase = model.session.draft
+                setDictating(true)
+            }
+            return
+        }
+        if model.dictating {
+            setDictating(false)
+            stopCapture()
+            return
+        }
+        if let denied = VoicePermission.deniedSentence() {
+            model.voiceStatus = denied
+            return
+        }
+        Task { await startDictationCapture() }
+    }
+
+    private func startWakeCapture(prompt: Bool) async {
+        if model.debugDriven { return }
+        if prompt {
+            let allowed = await requestVoicePermission()
+            if model.debugDriven { return }
+            if !allowed {
+                store.wakeOnAxiom = false
+                model.voiceStatus = VoicePermission.deniedSentence() ?? VoiceStatusCopy.micDenied
+                return
+            }
+            let asset = await VoiceCapture.ensureInstalled()
+            if model.debugDriven { return }
+            guard asset == .installed else {
+                store.wakeOnAxiom = false
+                model.voiceStatus = asset.statusSentence
+                return
+            }
+            store.wakeOnAxiom = true
+            model.voiceStatus = nil
+            beginCapture()
+            return
+        }
+        if let denied = VoicePermission.deniedSentence() {
+            if !model.debugDriven {
+                model.voiceStatus = denied
+            }
+            return
+        }
+        let asset = await VoiceCapture.ensureInstalled()
+        if model.debugDriven { return }
+        guard asset == .installed else {
+            model.voiceStatus = asset.statusSentence
+            return
+        }
+        model.voiceStatus = nil
+        beginCapture()
+    }
+
+    private func startDictationCapture() async {
+        if model.debugDriven { return }
+        let asset = await VoiceCapture.ensureInstalled()
+        if model.debugDriven { return }
+        guard asset == .installed else {
+            model.voiceStatus = asset.statusSentence
+            return
+        }
+        model.voiceStatus = nil
+        dictationBase = model.session.draft
+        setDictating(true)
+        beginCapture()
+    }
+
+    private func requestVoicePermission() async -> Bool {
+        model.voicePermissionPrompt = true
+        defer { model.voicePermissionPrompt = false }
+        let mic = await VoicePermission.requestMicrophone()
+        let speech = await VoicePermission.requestSpeech()
+        return mic && speech
+    }
+
+    private func beginCapture() {
+        if model.debugDriven { return }
+        if let capture, capture.isRunning { return }
+        capture?.stop()
+        let session = VoiceCapture()
+        session.onTranscript = { [weak self] text, isFinal in
+            self?.handleTranscript(text, isFinal: isFinal)
+        }
+        session.onSpeechDetected = { [weak self] detected in
+            self?.handleSpeechDetected(detected)
+        }
+        session.onFailure = { [weak self] message in
+            self?.handleCaptureFailure(message)
+        }
+        capture = session
+        session.start()
+    }
+
+    private func stopCapture() {
+        capture?.stop()
+        capture = nil
+    }
+
+    private func handleCaptureFailure(_ message: String) {
+        if model.debugDriven { return }
+        model.voiceStatus = message
+        setDictating(false)
+        stopCapture()
+    }
+
+    private func handleTranscript(_ text: String, isFinal: Bool) {
+        if model.debugDriven { return }
+        let recognized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !recognized.isEmpty else { return }
+        silentSince = Date()
+        if model.dictating {
+            applyDictation(recognized, isFinal: isFinal)
+            return
+        }
+        guard store.wakeOnAxiom else { return }
+        guard VoiceParser.wake(in: recognized) != nil else { return }
+        let now = Date()
+        if VoiceParser.cooldownBlocks(lastWake: lastWake, now: now) { return }
+        lastWake = now
+        silentSince = Date()
+        openedFromWake = true
+        openedAt = now
+        dictationBase = panel.isVisible ? model.session.draft : ""
+        show()
+        setDictating(true)
+        applyDictation(recognized, isFinal: isFinal)
+        model.focusField()
+    }
+
+    private func applyDictation(_ recognized: String, isFinal: Bool) {
+        let tail: String
+        if openedFromWake, let wake = VoiceParser.wake(in: recognized) {
+            tail = wake.remainder
+        } else {
+            tail = recognized
+        }
+        let applied = VoiceParser.applyTranscript(base: dictationBase, transcript: tail, isFinal: isFinal)
+        dictationBase = applied.base
+        model.setDraft(applied.display)
+    }
+
+    private func handleSpeechDetected(_ detected: Bool) {
+        if detected {
+            silentSince = nil
+        } else if silentSince == nil {
+            silentSince = Date()
+        }
+    }
+
+    private func handleSendBegan() {
+        endDictation(keepWakeCapture: true)
+    }
+
+    private func setDictating(_ on: Bool) {
+        model.dictating = on
+        if !on {
+            dictationBase = ""
+            silentSince = nil
+        }
+        model.onLayout()
+    }
+
+    private func endDictation(keepWakeCapture: Bool) {
+        setDictating(false)
+        openedFromWake = false
+        openedAt = nil
+        dictationBase = ""
+        silentSince = nil
+        if keepWakeCapture, store.wakeOnAxiom {
+            return
+        }
+        stopCapture()
+    }
+
+    private func startVoicePolling() {
+        voicePoll = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(250))
+                self?.pollVoice()
+            }
+        }
+    }
+
+    private func pollVoice() {
+        if model.debugDriven { return }
+        let now = Date()
+        let silentFor = silentSince.map { now.timeIntervalSince($0) } ?? 0
+        let send = VoiceParser.shouldAutoSend(
+            optionOn: store.pauseToSend,
+            draft: model.session.draft,
+            silentFor: silentFor,
+            phase: model.session.phase,
+            dictating: model.dictating
+        )
+        if send {
+            model.submit()
+        }
+        if silentFor >= VoiceParser.emptyWakeHideAfter, let openedAt, VoiceParser.shouldHideEmptyWake(
+            openedFromWake: openedFromWake,
+            draft: model.session.draft,
+            openedAt: openedAt,
+            now: now
+        ) {
+            userDismiss(clickOutside: false)
+        }
+    }
+
     func windowDidBecomeKey(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === panel else { return }
         model.cardIsKey = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        (glass as? CardGlassView)?.containKeyFringe()
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -348,13 +678,57 @@ final class HUDController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow, window == settingsWindow else { return }
-        NSApp.setActivationPolicy(.accessory)
+        guard let window = notification.object as? NSWindow else { return }
+        let closingSettings = window == settingsWindow
+        let closingDebug = window == debugWindow
+        guard closingSettings || closingDebug else { return }
+        let settingsOpen = !closingSettings && settingsWindow?.isVisible == true
+        let debugOpen = !closingDebug && debugWindow?.isVisible == true
+        if closingDebug {
+            model.debugDriven = false
+            startVoiceIfNeeded()
+        }
+        if !settingsOpen && !debugOpen {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 }
 
 final class ClickThroughHosting<Content: View>: NSHostingView<Content> {
+    override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+/// Keeps the window frame from painting a square behind the rounded plate.
+final class CardGlassView: NSGlassEffectView {
+    override var isOpaque: Bool { false }
+
+    override func layout() {
+        super.layout()
+        containKeyFringe()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.backgroundColor = .clear
+        window?.isOpaque = false
+        containKeyFringe()
+    }
+
+    func containKeyFringe() {
+        wantsLayer = true
+        focusRingType = .none
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
+        guard let frameView = superview else { return }
+        frameView.wantsLayer = true
+        frameView.focusRingType = .none
+        frameView.layer?.isOpaque = false
+        frameView.layer?.backgroundColor = NSColor.clear.cgColor
+        frameView.layer?.cornerRadius = cornerRadius
+        frameView.layer?.cornerCurve = .continuous
+        frameView.layer?.masksToBounds = true
+    }
 }
 
 final class SolidCardView: NSView {

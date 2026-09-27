@@ -33,6 +33,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 
 struct SettingsView: View {
     @Bindable var store: EndpointStore
+    @Bindable var model: HUDModel
     @State private var page: SettingsPage = .general
 
     var body: some View {
@@ -74,6 +75,25 @@ struct SettingsView: View {
                 Text("When this is on, clicking another window leaves the card in place. Escape or the hotkey still dismisses it.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                Toggle("Wake on Axiom", isOn: Binding(
+                    get: { store.wakeOnAxiom },
+                    set: { model.onSetWake($0) }
+                ))
+                Text("Listen for Axiom and show the card. Permission is requested here, not from the card.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Toggle("Pause to send", isOn: $store.pauseToSend)
+                Text("About 2 seconds of silence after a non-empty draft sends. Return still sends.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                if let status = model.voiceStatus, !status.isEmpty {
+                    Text(status)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Text(VoiceStatusCopy.adHocPermission)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             SettingsCard {
                 KeyboardShortcuts.Recorder("Hotkey", name: .toggleHUD)
@@ -109,6 +129,10 @@ struct SettingsView: View {
     private var chatPane: some View {
         settingsPane {
             SettingsCard {
+                Toggle("On-device model", isOn: $store.usesOnDevice)
+                Text("Uses Apple Intelligence on this Mac. The endpoint fields stay in place.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                 TextField("Base URL", text: $store.completionsURL)
                     .textFieldStyle(.roundedBorder)
                 TextField("Model", text: $store.model)
@@ -143,9 +167,8 @@ struct SettingsView: View {
     private var aboutPane: some View {
         settingsPane {
             VStack(spacing: HUDMetrics.controlSpacing) {
-                Image(systemName: "sparkle")
-                    .font(.system(size: 40, weight: .medium))
-                    .foregroundStyle(.secondary)
+                AxiomLogo()
+                    .frame(width: 88, height: 64)
                 Text("AI HUD")
                     .font(.title2.weight(.semibold))
                 Text("Version \(appVersion)")

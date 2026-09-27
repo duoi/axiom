@@ -80,6 +80,15 @@ final class EndpointStore {
         get { glassAmount * 100 }
         set { glassAmount = newValue / 100 }
     }
+    var usesOnDevice: Bool {
+        didSet { ChatSettings.saveOnDevice(usesOnDevice, to: .standard) }
+    }
+    var wakeOnAxiom: Bool {
+        didSet { VoiceSettings.saveWakeOnAxiom(wakeOnAxiom, to: .standard) }
+    }
+    var pauseToSend: Bool {
+        didSet { VoiceSettings.savePauseToSend(pauseToSend, to: .standard) }
+    }
     var onAppearanceChange: () -> Void = {}
 
     init() {
@@ -110,6 +119,9 @@ final class EndpointStore {
         captureTarget = CaptureTarget(rawValue: defaults.string(forKey: Self.captureKey) ?? "") ?? .screen
         usesMatte = defaults.bool(forKey: Self.matteKey)
         glassAmount = HUDMaterial.loadAmount(from: defaults)
+        usesOnDevice = ChatSettings.loadOnDevice(from: defaults)
+        wakeOnAxiom = VoiceSettings.loadWakeOnAxiom(from: defaults)
+        pauseToSend = VoiceSettings.loadPauseToSend(from: defaults)
     }
 
     var allowedCleartextHosts: Set<String> {
@@ -123,6 +135,19 @@ final class EndpointStore {
             }
         }
         return hosts
+    }
+
+    func route(for messages: [OutboundMessage]) -> ChatRoute {
+        let hasImage = messages.contains { !$0.imageJPEGs.isEmpty }
+        let vision = ServiceCredentials(url: visionURL, model: visionModel, apiKey: visionAPIKey)
+        return ChatRouting.decide(
+            onDevice: usesOnDevice,
+            availability: OnDeviceChat.availability,
+            cloud: target(for: messages),
+            hasImage: hasImage,
+            visionConfigured: vision.isComplete,
+            supportsOnDeviceImage: OnDeviceChat.supportsImages
+        )
     }
 
     func target(for messages: [OutboundMessage]) -> SendTarget {
@@ -147,10 +172,17 @@ final class EndpointStore {
     }
 
     var blockingMessage: String? {
-        if case .blocked(let message) = target(for: []) {
+        switch route(for: []) {
+        case .blocked(let message):
             return message
+        case .onDevice:
+            return nil
+        case .cloud(let target):
+            if case .blocked(let message) = target {
+                return message
+            }
+            return nil
         }
-        return nil
     }
 
     func save() {

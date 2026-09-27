@@ -235,6 +235,97 @@ import Testing
     defaults.removePersistentDomain(forName: "aihud.tests.glass-amount")
 }
 
+@Test func onDeviceOffUsesTheCloudTarget() {
+    let ready = SendTarget.ready(
+        url: URL(string: "https://api.openai.com/v1/chat/completions")!,
+        model: "gpt-4o",
+        apiKey: "sk-test"
+    )
+    let route = ChatRouting.decide(onDevice: false, availability: .available, cloud: ready)
+    #expect(route == .cloud(ready))
+    let blocked = SendTarget.blocked("Add an API key in Settings")
+    let unavailable = ChatRouting.decide(onDevice: false, availability: .notEnabled, cloud: blocked)
+    #expect(unavailable == .cloud(blocked))
+}
+
+@Test func onDeviceOnUsesTheOnDevicePathWhenAvailable() {
+    let ready = SendTarget.ready(
+        url: URL(string: "https://api.openai.com/v1/chat/completions")!,
+        model: "gpt-4o",
+        apiKey: "sk-test"
+    )
+    let route = ChatRouting.decide(onDevice: true, availability: .available, cloud: ready)
+    #expect(route == .onDevice)
+}
+
+@Test func onDeviceOnBlocksInsteadOfFallingBack() {
+    let ready = SendTarget.ready(
+        url: URL(string: "https://api.openai.com/v1/chat/completions")!,
+        model: "gpt-4o",
+        apiKey: "sk-test"
+    )
+    let off = ChatRouting.decide(onDevice: true, availability: .notEnabled, cloud: ready)
+    #expect(off == .blocked("Apple Intelligence is off."))
+    let ineligible = ChatRouting.decide(onDevice: true, availability: .notEligible, cloud: ready)
+    #expect(ineligible == .blocked("This Mac is not eligible for Apple Intelligence."))
+    let downloading = ChatRouting.decide(onDevice: true, availability: .notReady, cloud: ready)
+    #expect(downloading == .blocked("The on-device model is still downloading."))
+    let other = ChatRouting.decide(onDevice: true, availability: .other, cloud: ready)
+    #expect(other == .blocked("The on-device model is not available."))
+}
+
+@Test func onDeviceOnSendsImagesToVisionOrAttachment() {
+    let ready = SendTarget.ready(
+        url: URL(string: "https://api.openai.com/v1/chat/completions")!,
+        model: "gpt-4o",
+        apiKey: "sk-test"
+    )
+    let vision = ChatRouting.decide(
+        onDevice: true,
+        availability: .available,
+        cloud: ready,
+        hasImage: true,
+        visionConfigured: true,
+        supportsOnDeviceImage: false
+    )
+    #expect(vision == .cloud(ready))
+    let attach = ChatRouting.decide(
+        onDevice: true,
+        availability: .available,
+        cloud: ready,
+        hasImage: true,
+        visionConfigured: false,
+        supportsOnDeviceImage: true
+    )
+    #expect(attach == .onDevice)
+    let blocked = ChatRouting.decide(
+        onDevice: true,
+        availability: .available,
+        cloud: ready,
+        hasImage: true,
+        visionConfigured: false,
+        supportsOnDeviceImage: false
+    )
+    #expect(blocked == .blocked("The on-device model cannot take that image."))
+}
+
+@Test func togglingOnDeviceDoesNotClearStoredEndpointFields() {
+    let suite = "aihud.tests.on-device-persist"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    defaults.set("https://api.openai.com/v1", forKey: ChatSettings.urlKey)
+    defaults.set("gpt-4o", forKey: ChatSettings.modelKey)
+    ChatSettings.saveOnDevice(true, to: defaults)
+    #expect(defaults.bool(forKey: ChatSettings.onDeviceKey))
+    #expect(defaults.string(forKey: ChatSettings.urlKey) == "https://api.openai.com/v1")
+    #expect(defaults.string(forKey: ChatSettings.modelKey) == "gpt-4o")
+    ChatSettings.saveOnDevice(false, to: defaults)
+    #expect(!defaults.bool(forKey: ChatSettings.onDeviceKey))
+    #expect(defaults.string(forKey: ChatSettings.urlKey) == "https://api.openai.com/v1")
+    #expect(defaults.string(forKey: ChatSettings.modelKey) == "gpt-4o")
+    defaults.removePersistentDomain(forName: suite)
+}
+
 @Test func visionEndpointIsUsedOnlyWhenAnImageIsPresent() {
     let chat = ServiceCredentials(url: "https://api.openai.com/v1", model: "gpt-4o", apiKey: "chat")
     let vision = ServiceCredentials(

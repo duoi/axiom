@@ -8,11 +8,13 @@ final class StatusItemController: NSObject {
     private lazy var hud = HUDController(store: store)
 
     func start() {
-        item.button?.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: "AI HUD")
+        item.button?.image = Self.statusImage()
         item.button?.image?.isTemplate = true
+        item.button?.setAccessibilityLabel("AI HUD")
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Show", action: #selector(show), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Settings", action: #selector(settings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Debug", action: #selector(debug), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         for entry in menu.items {
@@ -27,6 +29,9 @@ final class StatusItemController: NSObject {
                     self?.hud.toggle()
                 }
             }
+        }
+        if !DebugRouting.enabled(by: CommandLine.arguments) {
+            hud.startVoiceIfNeeded()
         }
     }
 
@@ -58,6 +63,14 @@ final class StatusItemController: NSObject {
         settings()
     }
 
+    func openDebugFromLaunch(command: String? = nil) {
+        hud.statusItemFrame = item.button?.window?.frame
+        hud.openDebug()
+        if let command {
+            hud.applyDebugCommand(command)
+        }
+    }
+
     func shutdown() {
         hud.shutdown()
     }
@@ -72,8 +85,23 @@ final class StatusItemController: NSObject {
         hud.openSettings()
     }
 
+    @objc private func debug() {
+        hud.statusItemFrame = item.button?.window?.frame
+        hud.openDebug()
+    }
+
     @objc private func quit() {
         hud.shutdown()
         NSApp.terminate(nil)
+    }
+
+    private static func statusImage() -> NSImage? {
+        guard let original = NSImage(named: "AxiomLogo") else { return nil }
+        let image = original.copy() as? NSImage ?? original
+        image.isTemplate = true
+        let height: CGFloat = 16
+        let aspect = image.size.height > 0 ? image.size.width / image.size.height : (860 / 663)
+        image.size = NSSize(width: height * aspect, height: height)
+        return image
     }
 }

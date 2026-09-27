@@ -22,4 +22,5 @@ enum HUDMetrics {
     static let sidebarWidth: CGFloat = 184
     static let minCardHeight: CGFloat = 108
     static let settingsSize = CGSize(width: 720, height: 480)
+    static let debugSize = CGSize(width: 400, height: 640)
 }

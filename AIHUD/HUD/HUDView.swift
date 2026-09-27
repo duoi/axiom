@@ -21,6 +21,9 @@ struct HUDView: View {
             if let notice = model.screenNotice {
                 settingsLine(notice, action: model.openScreenSettings)
             }
+            if let voice = model.voiceStatus, !voice.isEmpty {
+                settingsLine(voice, action: model.openSettings)
+            }
             if model.session.showsAnswer || model.historyExpanded {
                 history
             }
@@ -33,15 +36,24 @@ struct HUDView: View {
 
     private var promptRow: some View {
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "sparkle")
-                .font(.system(size: 16))
-                .foregroundStyle(.secondary)
+            Group {
+                if model.dictating {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color.orange)
+                        .symbolEffect(.variableColor.iterative, isActive: true)
+                } else {
+                    AxiomLogo(template: true)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 18, height: 18)
             PromptField(
                 text: Binding(
                     get: { model.session.draft },
                     set: { model.setDraft($0) }
                 ),
-                placeholder: "Ask anything...",
+                placeholder: model.dictating && model.session.draft.isEmpty ? "Listening..." : "Ask anything...",
                 onSubmit: { model.submit() },
                 onReady: { model.textField = $0 }
             )
@@ -240,6 +252,7 @@ struct HUDView: View {
         HStack(alignment: .center, spacing: HUDMetrics.controlSpacing) {
             presetToggle
             captureControl
+            micButton
             Button(action: model.addContext) {
                 HStack(spacing: 6) {
                     Image(systemName: "paperclip")
@@ -254,6 +267,18 @@ struct HUDView: View {
         }
         .frame(height: HUDMetrics.rowHeight)
         .padding(.horizontal, HUDMetrics.inset)
+    }
+
+    private var micButton: some View {
+        Button(action: model.toggleDictation) {
+            Image(systemName: model.dictating ? "waveform" : "mic")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(model.dictating ? Color.orange : Color.secondary)
+                .symbolEffect(.variableColor.iterative, isActive: model.dictating)
+                .frame(width: 24, height: 24)
+        }
+        .buttonStyle(.plain)
+        .help(model.dictating ? "Stop dictation" : "Dictate")
     }
 
     private var pillMatte: Bool { model.pillIsMatte }
@@ -375,5 +400,18 @@ private final class CaptureMenuProxy: NSObject {
               let target = CaptureTarget(rawValue: raw)
         else { return }
         handler(target)
+    }
+}
+
+struct AxiomLogo: View {
+    var template: Bool = false
+
+    var body: some View {
+        Image("AxiomLogo")
+            .resizable()
+            .interpolation(.high)
+            .renderingMode(template ? .template : .original)
+            .scaledToFit()
+            .accessibilityLabel("Axiom")
     }
 }

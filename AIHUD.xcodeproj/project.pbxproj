@@ -8,9 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		0233C004D82C6DB298647B20 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 13274967763553496DBB84C0 /* KeyboardShortcuts */; };
+		0572023306D36EB5BEEBBFE0 /* DebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E43E8C65D426E4A4BE83FA2 /* DebugView.swift */; };
 		074F9E40B71DB17E70E4C422 /* ChatLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53C06F1B47C7F599408ED595 /* ChatLogicTests.swift */; };
 		07D50A0A5238255C86422383 /* ScreenImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0EB2CFBB99A836CCA1FE923 /* ScreenImage.swift */; };
 		0F0738D3FF4568775578192D /* EndpointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E4E13BE1F304982B25A34DC /* EndpointStore.swift */; };
+		10F5AC7FD87AA21FCF040F3F /* OnDeviceChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF900389E92976E00270724C /* OnDeviceChat.swift */; };
+		1CF3DD9066C1D52552C4F60C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 87D8324ACF0C1AA034779BAA /* Assets.xcassets */; };
 		1D42733E3AF18DE6DF5F3E86 /* HUDPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00E4121668BCD730400433AF /* HUDPanel.swift */; };
 		20CD77B353C5C9C3CF5304A2 /* Transcript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EF9F71F492F6EF8A31845B2 /* Transcript.swift */; };
 		2178139E5A596D25C2E615CC /* Hotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59A15202311A198B1AD100D0 /* Hotkey.swift */; };
@@ -22,7 +25,10 @@
 		379D619EB7339BA96EF2AF61 /* EditCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE9870CC187C6268ABA29BF /* EditCommands.swift */; };
 		3B14C7BD413774AF85C64450 /* HUDMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95A03AB799A8969330D3D106 /* HUDMetrics.swift */; };
 		3DD30A010B1010E38DF2D00F /* AIHUDApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1042E1C66EC6ADB60CFDB4ED /* AIHUDApp.swift */; };
+		4272902FA806F139CBA1E843 /* ChatRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = C562A740EAD60F7AB8792347 /* ChatRouting.swift */; };
+		4CDE2EA7078FE121743BDDF7 /* VoiceParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EEABEC05890D92D97D2B0AD /* VoiceParserTests.swift */; };
 		5549BFC1ADA8894DE36A90C2 /* LightMarkup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14A26C554EE1E2DA01E82F15 /* LightMarkup.swift */; };
+		59BF0F8B1528F17A44320A6C /* DebugRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41A198263BA1E1CA5C6CF0E /* DebugRoutingTests.swift */; };
 		5CCAE571A382C48D4FBA7DB0 /* ChatClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F623404177015ED2FA3E943B /* ChatClient.swift */; };
 		5E8FFD7797CE9B12E7FB0179 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6102DA81D3462C92CF68ABEF /* StatusItemController.swift */; };
 		65256569CE10A5C1C175FE0E /* Endpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD3897F7EF0E6BA05A8BBD3A /* Endpoint.swift */; };
@@ -36,6 +42,9 @@
 		C0C35BBBA38AA918DB4E878D /* PromptField.swift in Sources */ = {isa = PBXBuildFile; fileRef = E60075F9F121E3523B9A01E2 /* PromptField.swift */; };
 		D4146F355630615384754F4E /* HUDView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602FFF6E493B08EB65E859D2 /* HUDView.swift */; };
 		D62C24DA68B60CF080CBDCE8 /* HUDModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DF2323890B02EE8988FC1EF /* HUDModel.swift */; };
+		DBCAC2381AAEC4314B54A848 /* DebugRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508066B0024D8B4A67910894 /* DebugRouting.swift */; };
+		E20E65F811CCB09B9DA52CE6 /* VoiceCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD01A776DD8A74456B9DD3A8 /* VoiceCapture.swift */; };
+		F65A7F628B4B1F6C49E7A89A /* VoiceParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58EF7773FE534D946E57C181 /* VoiceParser.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,26 +66,35 @@
 		1948BBCBA91DA91487BDA4DA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		1DF2323890B02EE8988FC1EF /* HUDModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDModel.swift; sourceTree = "<group>"; };
 		1E4E13BE1F304982B25A34DC /* EndpointStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndpointStore.swift; sourceTree = "<group>"; };
+		2E43E8C65D426E4A4BE83FA2 /* DebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugView.swift; sourceTree = "<group>"; };
 		3B3DFF5BA083E82BDA9B2448 /* GlassStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassStyle.swift; sourceTree = "<group>"; };
 		4CEE970766A01C0881AF6338 /* Attachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Attachments.swift; sourceTree = "<group>"; };
+		508066B0024D8B4A67910894 /* DebugRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugRouting.swift; sourceTree = "<group>"; };
 		50E91E1CFE6043BA66B087DC /* HUDMaterial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDMaterial.swift; sourceTree = "<group>"; };
 		53C06F1B47C7F599408ED595 /* ChatLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatLogicTests.swift; sourceTree = "<group>"; };
+		58EF7773FE534D946E57C181 /* VoiceParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceParser.swift; sourceTree = "<group>"; };
 		59A15202311A198B1AD100D0 /* Hotkey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hotkey.swift; sourceTree = "<group>"; };
 		5BC4D42F85D45C1E10502223 /* AIHUD.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIHUD.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5EEABEC05890D92D97D2B0AD /* VoiceParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceParserTests.swift; sourceTree = "<group>"; };
 		602FFF6E493B08EB65E859D2 /* HUDView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDView.swift; sourceTree = "<group>"; };
 		6102DA81D3462C92CF68ABEF /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
 		7EF9F71F492F6EF8A31845B2 /* Transcript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcript.swift; sourceTree = "<group>"; };
 		845439167AFAF2572433A90F /* ModelChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelChoice.swift; sourceTree = "<group>"; };
+		87D8324ACF0C1AA034779BAA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		95A03AB799A8969330D3D106 /* HUDMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDMetrics.swift; sourceTree = "<group>"; };
+		AD01A776DD8A74456B9DD3A8 /* VoiceCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCapture.swift; sourceTree = "<group>"; };
 		BBA12DDB32AECCE2975B81C8 /* SSEParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEParser.swift; sourceTree = "<group>"; };
 		BD3897F7EF0E6BA05A8BBD3A /* Endpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Endpoint.swift; sourceTree = "<group>"; };
+		BF900389E92976E00270724C /* OnDeviceChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceChat.swift; sourceTree = "<group>"; };
 		C324412C789B7F774E8BA48F /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		C562A740EAD60F7AB8792347 /* ChatRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRouting.swift; sourceTree = "<group>"; };
 		C71CBF8A48E5BFE91084DC52 /* HUDController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDController.swift; sourceTree = "<group>"; };
 		D61227B24442414DB368E663 /* GlassPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassPill.swift; sourceTree = "<group>"; };
 		DD15BB74B2AF4B0FB8BD0DAA /* ScreenGrab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenGrab.swift; sourceTree = "<group>"; };
 		E60075F9F121E3523B9A01E2 /* PromptField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptField.swift; sourceTree = "<group>"; };
 		ECC4A95ACAE4FC5E055AB4AB /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		F0EB2CFBB99A836CCA1FE923 /* ScreenImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenImage.swift; sourceTree = "<group>"; };
+		F41A198263BA1E1CA5C6CF0E /* DebugRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugRoutingTests.swift; sourceTree = "<group>"; };
 		F623404177015ED2FA3E943B /* ChatClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatClient.swift; sourceTree = "<group>"; };
 		FEE9870CC187C6268ABA29BF /* EditCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditCommands.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -130,16 +148,21 @@
 				4CEE970766A01C0881AF6338 /* Attachments.swift */,
 				113B3E5F970B925773050B48 /* CaptureTarget.swift */,
 				F623404177015ED2FA3E943B /* ChatClient.swift */,
+				C562A740EAD60F7AB8792347 /* ChatRouting.swift */,
+				508066B0024D8B4A67910894 /* DebugRouting.swift */,
 				BD3897F7EF0E6BA05A8BBD3A /* Endpoint.swift */,
 				3B3DFF5BA083E82BDA9B2448 /* GlassStyle.swift */,
 				50E91E1CFE6043BA66B087DC /* HUDMaterial.swift */,
 				14A26C554EE1E2DA01E82F15 /* LightMarkup.swift */,
 				845439167AFAF2572433A90F /* ModelChoice.swift */,
+				BF900389E92976E00270724C /* OnDeviceChat.swift */,
 				DD15BB74B2AF4B0FB8BD0DAA /* ScreenGrab.swift */,
 				F0EB2CFBB99A836CCA1FE923 /* ScreenImage.swift */,
 				ECC4A95ACAE4FC5E055AB4AB /* Session.swift */,
 				BBA12DDB32AECCE2975B81C8 /* SSEParser.swift */,
 				7EF9F71F492F6EF8A31845B2 /* Transcript.swift */,
+				AD01A776DD8A74456B9DD3A8 /* VoiceCapture.swift */,
+				58EF7773FE534D946E57C181 /* VoiceParser.swift */,
 			);
 			path = Chat;
 			sourceTree = "<group>";
@@ -156,6 +179,7 @@
 		DF070C00370C53202AF2A8F3 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				2E43E8C65D426E4A4BE83FA2 /* DebugView.swift */,
 				1E4E13BE1F304982B25A34DC /* EndpointStore.swift */,
 				C324412C789B7F774E8BA48F /* KeychainStore.swift */,
 				1948BBCBA91DA91487BDA4DA /* SettingsView.swift */,
@@ -167,6 +191,8 @@
 			isa = PBXGroup;
 			children = (
 				53C06F1B47C7F599408ED595 /* ChatLogicTests.swift */,
+				F41A198263BA1E1CA5C6CF0E /* DebugRoutingTests.swift */,
+				5EEABEC05890D92D97D2B0AD /* VoiceParserTests.swift */,
 			);
 			path = AIHUDTests;
 			sourceTree = "<group>";
@@ -175,6 +201,7 @@
 			isa = PBXGroup;
 			children = (
 				1042E1C66EC6ADB60CFDB4ED /* AIHUDApp.swift */,
+				87D8324ACF0C1AA034779BAA /* Assets.xcassets */,
 				59A15202311A198B1AD100D0 /* Hotkey.swift */,
 				6102DA81D3462C92CF68ABEF /* StatusItemController.swift */,
 				7EA61F153A09F3FD7BC5DA7A /* Chat */,
@@ -211,6 +238,7 @@
 			buildConfigurationList = CE28D4CCE7C8D625CBE3C3C8 /* Build configuration list for PBXNativeTarget "AIHUD" */;
 			buildPhases = (
 				81F8B406E138C66A8B18E6F4 /* Sources */,
+				9B01377F4565F7A33F6C92A5 /* Resources */,
 				33F8BE42D884827733CF40B8 /* Frameworks */,
 				61A23799479AE9456208CFBC /* Copy dev endpoint */,
 			);
@@ -266,6 +294,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		9B01377F4565F7A33F6C92A5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1CF3DD9066C1D52552C4F60C /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXShellScriptBuildPhase section */
 		61A23799479AE9456208CFBC /* Copy dev endpoint */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -297,6 +336,9 @@
 				AFCBF04A323C838A6DDCFF7D /* Attachments.swift in Sources */,
 				B14947843513E347854D06A4 /* CaptureTarget.swift in Sources */,
 				5CCAE571A382C48D4FBA7DB0 /* ChatClient.swift in Sources */,
+				4272902FA806F139CBA1E843 /* ChatRouting.swift in Sources */,
+				DBCAC2381AAEC4314B54A848 /* DebugRouting.swift in Sources */,
+				0572023306D36EB5BEEBBFE0 /* DebugView.swift in Sources */,
 				379D619EB7339BA96EF2AF61 /* EditCommands.swift in Sources */,
 				65256569CE10A5C1C175FE0E /* Endpoint.swift in Sources */,
 				0F0738D3FF4568775578192D /* EndpointStore.swift in Sources */,
@@ -312,6 +354,7 @@
 				29FABF4397A65FE87CDB2460 /* KeychainStore.swift in Sources */,
 				5549BFC1ADA8894DE36A90C2 /* LightMarkup.swift in Sources */,
 				BDCC7B5F923BFBD5A8590E54 /* ModelChoice.swift in Sources */,
+				10F5AC7FD87AA21FCF040F3F /* OnDeviceChat.swift in Sources */,
 				C0C35BBBA38AA918DB4E878D /* PromptField.swift in Sources */,
 				37933AE240B5E446E52D0E11 /* SSEParser.swift in Sources */,
 				A4EFB9A793E1246F257F8BB9 /* ScreenGrab.swift in Sources */,
@@ -320,6 +363,8 @@
 				8D75F033CD19FCED0BF1A467 /* SettingsView.swift in Sources */,
 				5E8FFD7797CE9B12E7FB0179 /* StatusItemController.swift in Sources */,
 				20CD77B353C5C9C3CF5304A2 /* Transcript.swift in Sources */,
+				E20E65F811CCB09B9DA52CE6 /* VoiceCapture.swift in Sources */,
+				F65A7F628B4B1F6C49E7A89A /* VoiceParser.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -328,6 +373,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				074F9E40B71DB17E70E4C422 /* ChatLogicTests.swift in Sources */,
+				59BF0F8B1528F17A44320A6C /* DebugRoutingTests.swift in Sources */,
+				4CDE2EA7078FE121743BDDF7 /* VoiceParserTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

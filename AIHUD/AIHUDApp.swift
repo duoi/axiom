@@ -31,6 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 controller.openSettingsFromLaunch()
             }
         }
+        if DebugRouting.enabled(by: CommandLine.arguments) {
+            let command = DebugRouting.initialCommand(from: CommandLine.arguments)
+            DispatchQueue.main.async {
+                controller.openDebugFromLaunch(command: command)
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
