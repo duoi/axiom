@@ -1,0 +1,69 @@
+name: AIHUD
+options:
+  bundleIdPrefix: com.stevenjohns
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  SWIFT_VERSION: "6.0"
+  MACOSX_DEPLOYMENT_TARGET: "26.0"
+  SWIFT_STRICT_CONCURRENCY: complete
+packages:
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: "2.2.4"
+targets:
+  AIHUD:
+    type: application
+    platform: macOS
+    sources:
+      - path: AIHUD
+        excludes:
+          - Info.plist
+          - AIHUD.entitlements
+    dependencies:
+      - package: KeyboardShortcuts
+    postBuildScripts:
+      - name: Copy dev endpoint
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ -f "$SRCROOT/Config/dev-endpoint.json" ]; then
+            cp "$SRCROOT/Config/dev-endpoint.json" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/dev-endpoint.json"
+          fi
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.stevenjohns.AIHUD
+        PRODUCT_NAME: AIHUD
+        INFOPLIST_FILE: AIHUD/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: AIHUD/AIHUD.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_TESTABILITY: YES
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+  AIHUDTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: AIHUDTests
+    dependencies:
+      - target: AIHUD
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.stevenjohns.AIHUDTests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/AIHUD.app/Contents/MacOS/AIHUD"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+schemes:
+  AIHUD:
+    build:
+      targets:
+        AIHUD: all
+        AIHUDTests: [test]
+    test:
+      targets:
+        - AIHUDTests

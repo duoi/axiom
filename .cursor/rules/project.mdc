@@ -1,0 +1,8 @@
+---
+description: Follow AI HUD project practices in AGENTS.md
+alwaysApply: true
+---
+
+# AI HUD
+
+Follow [AGENTS.md](AGENTS.md). Red, then green, for parser, URL, session, attachment, and cleartext-policy changes. Compare visual changes with `notes/references/launcher-hud.jpg` using a live capture. Do not commit `Config/dev-endpoint.json` or `notes/captures/`.

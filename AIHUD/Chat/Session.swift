@@ -1,0 +1,194 @@
+import Foundation
+
+enum Preset: String, Equatable, Sendable, CaseIterable {
+    case ask
+    case agent
+
+    var title: String {
+        switch self {
+        case .ask: "Ask"
+        case .agent: "Agent"
+        }
+    }
+
+    var systemPrompt: String {
+        switch self {
+        case .ask:
+            "Answer directly and briefly. You only know what the user typed or attached."
+        case .agent:
+            "Give a concrete plan or steps. You cannot run tools, browse, or change the computer. Say so if asked to act."
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .ask: "bubble.left"
+        case .agent: "smallcircle.filled.circle"
+        }
+    }
+}
+
+struct Chip: Equatable, Sendable, Identifiable {
+    enum Payload: Equatable, Sendable {
+        case text(String)
+        case jpeg(Data)
+    }
+
+    var id: UUID
+    var name: String
+    var payload: Payload
+}
+
+enum Phase: Equatable, Sendable {
+    case composing
+    case waiting
+    case streaming
+    case finished
+    case failed(String)
+}
+
+struct Turn: Equatable, Sendable {
+    enum Role: String, Equatable, Sendable {
+        case user
+        case assistant
+    }
+
+    var role: Role
+    var text: String
+    var chips: [Chip]
+}
+
+struct OutboundMessage: Equatable, Sendable {
+    var role: String
+    var text: String
+    var imageJPEGs: [Data]
+}
+
+enum SendOutcome: Equatable, Sendable {
+    case ignored
+    case request([OutboundMessage])
+}
+
+struct Session: Equatable, Sendable {
+    var preset: Preset = .agent
+    var draft: String = ""
+    var chips: [Chip] = []
+    var turns: [Turn] = []
+    var phase: Phase = .composing
+    var displayAnswer: String = ""
+    var errorMessage: String?
+    private var sentDraft = ""
+    private var sentChips: [Chip] = []
+
+    var showsStop: Bool {
+        phase == .waiting || phase == .streaming
+    }
+
+    var showsAnswer: Bool {
+        switch phase {
+        case .waiting, .streaming, .finished:
+            true
+        case .composing, .failed:
+            false
+        }
+    }
+
+    var canSend: Bool {
+        if showsStop { return false }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !text.isEmpty || !chips.isEmpty
+    }
+
+    mutating func send() -> SendOutcome {
+        guard !showsStop else { return .ignored }
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || !chips.isEmpty else { return .ignored }
+        sentDraft = draft
+        sentChips = chips
+        turns.append(Turn(role: .user, text: trimmed, chips: chips))
+        draft = ""
+        chips = []
+        displayAnswer = ""
+        errorMessage = nil
+        phase = .waiting
+        return .request(outboundMessages())
+    }
+
+    mutating func receiveToken(_ token: String) {
+        guard phase == .waiting || phase == .streaming else { return }
+        guard !token.isEmpty else { return }
+        displayAnswer += token
+        phase = .streaming
+    }
+
+    mutating func finish() {
+        guard phase == .waiting || phase == .streaming else { return }
+        turns.append(Turn(role: .assistant, text: displayAnswer, chips: []))
+        phase = .finished
+    }
+
+    mutating func stop() {
+        guard phase == .waiting || phase == .streaming else { return }
+        if displayAnswer.isEmpty {
+            phase = .composing
+        } else {
+            turns.append(Turn(role: .assistant, text: displayAnswer, chips: []))
+            phase = .finished
+        }
+    }
+
+    mutating func fail(_ message: String) {
+        guard phase == .waiting || phase == .streaming else { return }
+        if turns.last?.role == .user {
+            turns.removeLast()
+        }
+        draft = sentDraft
+        chips = sentChips
+        displayAnswer = ""
+        errorMessage = message
+        phase = .failed(message)
+    }
+
+    /// True when the card should hide.
+    mutating func dismiss(clickOutside: Bool) -> Bool {
+        if clickOutside && phase == .finished {
+            return false
+        }
+        if phase == .waiting || phase == .streaming {
+            draft = sentDraft
+            chips = sentChips
+        }
+        turns = []
+        displayAnswer = ""
+        errorMessage = nil
+        phase = .composing
+        return true
+    }
+
+    func outboundMessages() -> [OutboundMessage] {
+        var messages = [
+            OutboundMessage(role: "system", text: preset.systemPrompt, imageJPEGs: [])
+        ]
+        for turn in turns {
+            var text = turn.text
+            var images: [Data] = []
+            for chip in turn.chips {
+                switch chip.payload {
+                case .text(let body):
+                    if text.isEmpty {
+                        text = "[\(chip.name)]\n\(body)"
+                    } else {
+                        text += "\n\n[\(chip.name)]\n\(body)"
+                    }
+                case .jpeg(let data):
+                    images.append(data)
+                    if text.isEmpty {
+                        text = chip.name
+                    }
+                }
+            }
+            messages.append(OutboundMessage(role: turn.role.rawValue, text: text, imageJPEGs: images))
+        }
+        return messages
+    }
+}

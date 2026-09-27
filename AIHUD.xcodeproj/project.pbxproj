@@ -1,0 +1,560 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0233C004D82C6DB298647B20 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 13274967763553496DBB84C0 /* KeyboardShortcuts */; };
+		074F9E40B71DB17E70E4C422 /* ChatLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53C06F1B47C7F599408ED595 /* ChatLogicTests.swift */; };
+		0F0738D3FF4568775578192D /* EndpointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E4E13BE1F304982B25A34DC /* EndpointStore.swift */; };
+		1D42733E3AF18DE6DF5F3E86 /* HUDPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00E4121668BCD730400433AF /* HUDPanel.swift */; };
+		2178139E5A596D25C2E615CC /* Hotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59A15202311A198B1AD100D0 /* Hotkey.swift */; };
+		299EE693419F10113A57156E /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECC4A95ACAE4FC5E055AB4AB /* Session.swift */; };
+		29FABF4397A65FE87CDB2460 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C324412C789B7F774E8BA48F /* KeychainStore.swift */; };
+		37933AE240B5E446E52D0E11 /* SSEParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA12DDB32AECCE2975B81C8 /* SSEParser.swift */; };
+		3DD30A010B1010E38DF2D00F /* AIHUDApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1042E1C66EC6ADB60CFDB4ED /* AIHUDApp.swift */; };
+		5CCAE571A382C48D4FBA7DB0 /* ChatClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F623404177015ED2FA3E943B /* ChatClient.swift */; };
+		5E8FFD7797CE9B12E7FB0179 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6102DA81D3462C92CF68ABEF /* StatusItemController.swift */; };
+		65256569CE10A5C1C175FE0E /* Endpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD3897F7EF0E6BA05A8BBD3A /* Endpoint.swift */; };
+		852087BFA93743A23F695E29 /* HUDController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C71CBF8A48E5BFE91084DC52 /* HUDController.swift */; };
+		8D75F033CD19FCED0BF1A467 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1948BBCBA91DA91487BDA4DA /* SettingsView.swift */; };
+		AFCBF04A323C838A6DDCFF7D /* Attachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEE970766A01C0881AF6338 /* Attachments.swift */; };
+		C0C35BBBA38AA918DB4E878D /* PromptField.swift in Sources */ = {isa = PBXBuildFile; fileRef = E60075F9F121E3523B9A01E2 /* PromptField.swift */; };
+		D4146F355630615384754F4E /* HUDView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602FFF6E493B08EB65E859D2 /* HUDView.swift */; };
+		D62C24DA68B60CF080CBDCE8 /* HUDModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DF2323890B02EE8988FC1EF /* HUDModel.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		9B6E6F205EA761ADACA464A5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A768395DF12AC5954503B72 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DB0C2AC38983EC5D83414BDF;
+			remoteInfo = AIHUD;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		00E4121668BCD730400433AF /* HUDPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDPanel.swift; sourceTree = "<group>"; };
+		0B09D9ED8C720FDC71CA8BFF /* AIHUDTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIHUDTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1042E1C66EC6ADB60CFDB4ED /* AIHUDApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIHUDApp.swift; sourceTree = "<group>"; };
+		1948BBCBA91DA91487BDA4DA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		1DF2323890B02EE8988FC1EF /* HUDModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDModel.swift; sourceTree = "<group>"; };
+		1E4E13BE1F304982B25A34DC /* EndpointStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndpointStore.swift; sourceTree = "<group>"; };
+		4CEE970766A01C0881AF6338 /* Attachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Attachments.swift; sourceTree = "<group>"; };
+		53C06F1B47C7F599408ED595 /* ChatLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatLogicTests.swift; sourceTree = "<group>"; };
+		59A15202311A198B1AD100D0 /* Hotkey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hotkey.swift; sourceTree = "<group>"; };
+		5BC4D42F85D45C1E10502223 /* AIHUD.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIHUD.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		602FFF6E493B08EB65E859D2 /* HUDView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDView.swift; sourceTree = "<group>"; };
+		6102DA81D3462C92CF68ABEF /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
+		BBA12DDB32AECCE2975B81C8 /* SSEParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEParser.swift; sourceTree = "<group>"; };
+		BD3897F7EF0E6BA05A8BBD3A /* Endpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Endpoint.swift; sourceTree = "<group>"; };
+		C324412C789B7F774E8BA48F /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		C71CBF8A48E5BFE91084DC52 /* HUDController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDController.swift; sourceTree = "<group>"; };
+		E60075F9F121E3523B9A01E2 /* PromptField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptField.swift; sourceTree = "<group>"; };
+		ECC4A95ACAE4FC5E055AB4AB /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		F623404177015ED2FA3E943B /* ChatClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatClient.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		33F8BE42D884827733CF40B8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0233C004D82C6DB298647B20 /* KeyboardShortcuts in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1BA2EE737C9DF0FEC379D5D8 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5BC4D42F85D45C1E10502223 /* AIHUD.app */,
+				0B09D9ED8C720FDC71CA8BFF /* AIHUDTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		3EFD2924EE914B0329772D28 /* HUD */ = {
+			isa = PBXGroup;
+			children = (
+				602FFF6E493B08EB65E859D2 /* HUDView.swift */,
+				E60075F9F121E3523B9A01E2 /* PromptField.swift */,
+			);
+			path = HUD;
+			sourceTree = "<group>";
+		};
+		5E3BD0472BCDF3FF632FE949 /* Panel */ = {
+			isa = PBXGroup;
+			children = (
+				C71CBF8A48E5BFE91084DC52 /* HUDController.swift */,
+				1DF2323890B02EE8988FC1EF /* HUDModel.swift */,
+				00E4121668BCD730400433AF /* HUDPanel.swift */,
+			);
+			path = Panel;
+			sourceTree = "<group>";
+		};
+		7EA61F153A09F3FD7BC5DA7A /* Chat */ = {
+			isa = PBXGroup;
+			children = (
+				4CEE970766A01C0881AF6338 /* Attachments.swift */,
+				F623404177015ED2FA3E943B /* ChatClient.swift */,
+				BD3897F7EF0E6BA05A8BBD3A /* Endpoint.swift */,
+				ECC4A95ACAE4FC5E055AB4AB /* Session.swift */,
+				BBA12DDB32AECCE2975B81C8 /* SSEParser.swift */,
+			);
+			path = Chat;
+			sourceTree = "<group>";
+		};
+		C613ABF425E353231B23FC59 = {
+			isa = PBXGroup;
+			children = (
+				F786ED7596F3BE76F2749B96 /* AIHUD */,
+				ED83F787AEC66FF2463F8313 /* AIHUDTests */,
+				1BA2EE737C9DF0FEC379D5D8 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DF070C00370C53202AF2A8F3 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				1E4E13BE1F304982B25A34DC /* EndpointStore.swift */,
+				C324412C789B7F774E8BA48F /* KeychainStore.swift */,
+				1948BBCBA91DA91487BDA4DA /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		ED83F787AEC66FF2463F8313 /* AIHUDTests */ = {
+			isa = PBXGroup;
+			children = (
+				53C06F1B47C7F599408ED595 /* ChatLogicTests.swift */,
+			);
+			path = AIHUDTests;
+			sourceTree = "<group>";
+		};
+		F786ED7596F3BE76F2749B96 /* AIHUD */ = {
+			isa = PBXGroup;
+			children = (
+				1042E1C66EC6ADB60CFDB4ED /* AIHUDApp.swift */,
+				59A15202311A198B1AD100D0 /* Hotkey.swift */,
+				6102DA81D3462C92CF68ABEF /* StatusItemController.swift */,
+				7EA61F153A09F3FD7BC5DA7A /* Chat */,
+				3EFD2924EE914B0329772D28 /* HUD */,
+				5E3BD0472BCDF3FF632FE949 /* Panel */,
+				DF070C00370C53202AF2A8F3 /* Settings */,
+			);
+			path = AIHUD;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		7910EFA20BC910E09D81CD6D /* AIHUDTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3E89E69C808577227E1B555F /* Build configuration list for PBXNativeTarget "AIHUDTests" */;
+			buildPhases = (
+				C12334CD62DB12275160806F /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				9F14D2FF30752C20778A90A6 /* PBXTargetDependency */,
+			);
+			name = AIHUDTests;
+			packageProductDependencies = (
+			);
+			productName = AIHUDTests;
+			productReference = 0B09D9ED8C720FDC71CA8BFF /* AIHUDTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		DB0C2AC38983EC5D83414BDF /* AIHUD */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CE28D4CCE7C8D625CBE3C3C8 /* Build configuration list for PBXNativeTarget "AIHUD" */;
+			buildPhases = (
+				81F8B406E138C66A8B18E6F4 /* Sources */,
+				33F8BE42D884827733CF40B8 /* Frameworks */,
+				61A23799479AE9456208CFBC /* Copy dev endpoint */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AIHUD;
+			packageProductDependencies = (
+				13274967763553496DBB84C0 /* KeyboardShortcuts */,
+			);
+			productName = AIHUD;
+			productReference = 5BC4D42F85D45C1E10502223 /* AIHUD.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9A768395DF12AC5954503B72 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					7910EFA20BC910E09D81CD6D = {
+						ProvisioningStyle = Manual;
+					};
+					DB0C2AC38983EC5D83414BDF = {
+						ProvisioningStyle = Manual;
+					};
+				};
+			};
+			buildConfigurationList = 0AEA49E737862971F6C4AD81 /* Build configuration list for PBXProject "AIHUD" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = C613ABF425E353231B23FC59;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D40E600F75A0ED5DBEE3B292 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
+			);
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DB0C2AC38983EC5D83414BDF /* AIHUD */,
+				7910EFA20BC910E09D81CD6D /* AIHUDTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		61A23799479AE9456208CFBC /* Copy dev endpoint */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy dev endpoint";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ -f \"$SRCROOT/Config/dev-endpoint.json\" ]; then\n  cp \"$SRCROOT/Config/dev-endpoint.json\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/dev-endpoint.json\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		81F8B406E138C66A8B18E6F4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3DD30A010B1010E38DF2D00F /* AIHUDApp.swift in Sources */,
+				AFCBF04A323C838A6DDCFF7D /* Attachments.swift in Sources */,
+				5CCAE571A382C48D4FBA7DB0 /* ChatClient.swift in Sources */,
+				65256569CE10A5C1C175FE0E /* Endpoint.swift in Sources */,
+				0F0738D3FF4568775578192D /* EndpointStore.swift in Sources */,
+				852087BFA93743A23F695E29 /* HUDController.swift in Sources */,
+				D62C24DA68B60CF080CBDCE8 /* HUDModel.swift in Sources */,
+				1D42733E3AF18DE6DF5F3E86 /* HUDPanel.swift in Sources */,
+				D4146F355630615384754F4E /* HUDView.swift in Sources */,
+				2178139E5A596D25C2E615CC /* Hotkey.swift in Sources */,
+				29FABF4397A65FE87CDB2460 /* KeychainStore.swift in Sources */,
+				C0C35BBBA38AA918DB4E878D /* PromptField.swift in Sources */,
+				37933AE240B5E446E52D0E11 /* SSEParser.swift in Sources */,
+				299EE693419F10113A57156E /* Session.swift in Sources */,
+				8D75F033CD19FCED0BF1A467 /* SettingsView.swift in Sources */,
+				5E8FFD7797CE9B12E7FB0179 /* StatusItemController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C12334CD62DB12275160806F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				074F9E40B71DB17E70E4C422 /* ChatLogicTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		9F14D2FF30752C20778A90A6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DB0C2AC38983EC5D83414BDF /* AIHUD */;
+			targetProxy = 9B6E6F205EA761ADACA464A5 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0FB9B690AAF6DCC5E7EB4FC6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AIHUD/AIHUD.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_TESTABILITY = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AIHUD/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stevenjohns.AIHUD;
+				PRODUCT_NAME = AIHUD;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		8DBEF22D1F52E527C6C743A4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AIHUD/AIHUD.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_TESTABILITY = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AIHUD/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stevenjohns.AIHUD;
+				PRODUCT_NAME = AIHUD;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		A34AD5848A9B1D4E0A43670E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.stevenjohns.AIHUDTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AIHUD.app/Contents/MacOS/AIHUD";
+			};
+			name = Debug;
+		};
+		AE6C3B1D78BBEBACC1159BCB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		D61B6BFAEFC161C85C83AE16 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		FF4983D17E2B789A9C3F4F0A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.stevenjohns.AIHUDTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AIHUD.app/Contents/MacOS/AIHUD";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0AEA49E737862971F6C4AD81 /* Build configuration list for PBXProject "AIHUD" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D61B6BFAEFC161C85C83AE16 /* Debug */,
+				AE6C3B1D78BBEBACC1159BCB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		3E89E69C808577227E1B555F /* Build configuration list for PBXNativeTarget "AIHUDTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A34AD5848A9B1D4E0A43670E /* Debug */,
+				FF4983D17E2B789A9C3F4F0A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CE28D4CCE7C8D625CBE3C3C8 /* Build configuration list for PBXNativeTarget "AIHUD" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8DBEF22D1F52E527C6C743A4 /* Debug */,
+				0FB9B690AAF6DCC5E7EB4FC6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D40E600F75A0ED5DBEE3B292 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sindresorhus/KeyboardShortcuts";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.2.4;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		13274967763553496DBB84C0 /* KeyboardShortcuts */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D40E600F75A0ED5DBEE3B292 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
+			productName = KeyboardShortcuts;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 9A768395DF12AC5954503B72 /* Project object */;
+}
