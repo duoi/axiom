@@ -11,6 +11,9 @@ final class HUDController: NSObject, NSWindowDelegate {
     private var glass: NSGlassEffectView?
     private var glassContainer: NSGlassEffectContainerView?
     private var solid: SolidCardView?
+    private var chrome: HUDChromeWrapper?
+    private var lip: ErrorLipBand?
+    private var settledCardHeight: CGFloat = HUDMetrics.minCardHeight
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var menuBegin: NSObjectProtocol?
@@ -64,8 +67,16 @@ final class HUDController: NSObject, NSWindowDelegate {
             return
         }
         rebuildChromeIfNeeded()
-        let height = measuredHeight()
-        panel.centerOnMouseScreen(height: height)
+        let card = HUDLayout.settledHeight(
+            proposed: measuredHeight(),
+            previous: settledCardHeight,
+            lineCount: model.promptLineCount,
+            multiline: model.displayedMultiline
+        )
+        settledCardHeight = card
+        panel.centerOnMouseScreen(
+            height: HUDLayout.windowHeight(card: card, hasLip: model.lipMessage != nil)
+        )
         syncFrame(animated: false)
         panel.reveal()
         model.cardIsKey = true
@@ -152,13 +163,24 @@ final class HUDController: NSObject, NSWindowDelegate {
 
     private func mount(_ hosting: NSView) {
         hosting.removeFromSuperview()
+        let chrome = self.chrome ?? HUDChromeWrapper(
+            frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight)
+        )
+        self.chrome = chrome
+        let lip = self.lip ?? ErrorLipBand(frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDLayout.lipHeight))
+        self.lip = lip
         if HUDMaterial.usesSolidCard(reduceTransparency: reduceTransparency) {
             let card = solid ?? SolidCardView(frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight))
             solid = card
             card.embed(hosting)
             glass?.contentView = nil
             glassContainer?.contentView = nil
-            panel.contentView = card
+            glass?.removeFromSuperview()
+            chrome.plate = card
+            chrome.lip = lip
+            chrome.embedPlateAndLip()
+            chrome.autoresizingMask = []
+            panel.contentView = chrome
         } else {
             let glassView = glass ?? CardGlassView(frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight))
             glass = glassView
@@ -169,18 +191,15 @@ final class HUDController: NSObject, NSWindowDelegate {
             )
             glassContainer = container
             container.spacing = HUDMaterial.glassContainerSpacing
-            let wrapper = container.contentView ?? NSView(frame: container.bounds)
-            wrapper.wantsLayer = true
-            wrapper.layer?.isOpaque = false
-            wrapper.layer?.backgroundColor = NSColor.clear.cgColor
-            wrapper.autoresizingMask = [.width, .height]
-            if glassView.superview !== wrapper {
-                glassView.removeFromSuperview()
-                wrapper.addSubview(glassView)
-            }
-            glassView.frame = wrapper.bounds
-            glassView.autoresizingMask = [.width, .height]
-            container.contentView = wrapper
+            solid?.removeFromSuperview()
+            chrome.plate = glassView
+            chrome.lip = lip
+            chrome.embedPlateAndLip()
+            chrome.wantsLayer = true
+            chrome.layer?.isOpaque = false
+            chrome.layer?.backgroundColor = NSColor.clear.cgColor
+            chrome.autoresizingMask = [.width, .height]
+            container.contentView = chrome
             panel.contentView = container
         }
         clipHosting(hosting)
@@ -197,45 +216,62 @@ final class HUDController: NSObject, NSWindowDelegate {
     }
 
     private func measuredHeight() -> CGFloat {
-        let floor = HUDLayout.cardHeight(hasErrorLine: showsErrorLine)
+        let floor = HUDLayout.cardHeight()
         guard let hosting else { return floor }
         hosting.layoutSubtreeIfNeeded()
         return max(floor, hosting.fittingSize.height)
     }
 
-    private var showsErrorLine: Bool {
-        if store.blockingMessage != nil, model.session.phase == .composing {
-            return true
-        }
-        if case .failed = model.session.phase {
-            return true
-        }
-        if model.screenNotice != nil {
-            return true
-        }
-        if let voice = model.voiceStatus, !voice.isEmpty {
-            return true
-        }
-        return false
-    }
-
     private func syncFrame(animated: Bool = false) {
-        let proposed = measuredHeight()
-        let height = HUDLayout.settledHeight(
-            proposed: proposed,
-            previous: panel.frame.height,
+        let card = HUDLayout.settledHeight(
+            proposed: measuredHeight(),
+            previous: settledCardHeight,
             lineCount: model.promptLineCount,
             multiline: model.displayedMultiline
         )
+        settledCardHeight = card
+        let message = model.lipMessage
+        let hasLip = message != nil
+        let height = HUDLayout.windowHeight(card: card, hasLip: hasLip)
         _ = animated
         panel.resizePinnedTop(to: height, animated: false)
-        let size = NSSize(width: HUDMetrics.cardWidth, height: panel.frame.height)
-        let bounds = NSRect(origin: .zero, size: size)
-        hosting?.frame = bounds
-        glass?.frame = bounds
-        glassContainer?.frame = bounds
-        glassContainer?.contentView?.frame = bounds
-        panel.contentView?.frame = bounds
+        let windowBounds = NSRect(
+            origin: .zero,
+            size: NSSize(width: HUDMetrics.cardWidth, height: panel.frame.height)
+        )
+        chrome?.hasLip = hasLip
+        chrome?.cardHeight = card
+        chrome?.frame = windowBounds
+        glassContainer?.frame = windowBounds
+        panel.contentView?.frame = windowBounds
+        if let message {
+            lip?.apply(
+                message,
+                onTap: { [weak self] in self?.handleLipTap(message.action) },
+                onDismiss: { [weak self] in self?.model.dismissLip() }
+            )
+        }
+        chrome?.needsLayout = true
+        chrome?.layoutSubtreeIfNeeded()
+        let cardBounds = NSRect(
+            origin: .zero,
+            size: NSSize(width: HUDMetrics.cardWidth, height: card)
+        )
+        hosting?.frame = cardBounds
+        if let plate = chrome?.plate {
+            hosting?.frame = plate.bounds
+        }
+    }
+
+    private func handleLipTap(_ action: HUDErrorLip.Action) {
+        switch action {
+        case .voice:
+            model.openVoiceSettings()
+        case .screen:
+            model.openScreenSettings()
+        case .none:
+            break
+        }
     }
 
     private func installMonitors() {
@@ -746,6 +782,114 @@ final class HUDController: NSObject, NSWindowDelegate {
     }
 }
 
+final class HUDChromeWrapper: NSView {
+    var plate: NSView?
+    var lip: NSView?
+    var hasLip = false
+    var cardHeight: CGFloat = HUDMetrics.minCardHeight
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    required init?(coder: NSCoder) { return nil }
+
+    func embedPlateAndLip() {
+        if let lip, lip.superview !== self {
+            lip.removeFromSuperview()
+            addSubview(lip, positioned: .below, relativeTo: nil)
+        }
+        if let plate {
+            if plate.superview !== self {
+                plate.removeFromSuperview()
+                addSubview(plate, positioned: .above, relativeTo: lip)
+            } else if let lip {
+                addSubview(plate, positioned: .above, relativeTo: lip)
+            }
+        }
+        plate?.autoresizingMask = []
+        lip?.autoresizingMask = []
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        let width = bounds.width
+        let card = max(HUDMetrics.minCardHeight, min(cardHeight, bounds.height))
+        let plateY = hasLip ? HUDLayout.lipVisible : 0
+        lip?.isHidden = !hasLip
+        lip?.frame = HUDLayout.lipFrame(cardWidth: width)
+        if hasLip {
+            layer?.cornerRadius = 0
+            layer?.masksToBounds = false
+        } else {
+            layer?.mask = nil
+            layer?.cornerRadius = HUDMetrics.cornerRadius
+            layer?.cornerCurve = .continuous
+            layer?.masksToBounds = true
+        }
+        plate?.frame = NSRect(x: 0, y: plateY, width: width, height: card)
+        (plate as? CardGlassView)?.includeNarrowLip = hasLip
+        (plate as? CardGlassView)?.containKeyFringe()
+    }
+}
+
+final class ErrorLipBand: NSView {
+    private let host: ClickThroughHosting<ErrorLipContent>
+    private let fill = CAGradientLayer()
+
+    override init(frame frameRect: NSRect) {
+        host = ClickThroughHosting(
+            rootView: ErrorLipContent(text: "", action: .none, onTap: {}, onDismiss: {})
+        )
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = HUDLayout.lipCorner
+        layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        layer?.masksToBounds = true
+        fill.colors = [
+            HUDLipChrome.fillTop.cgColor,
+            HUDLipChrome.fillBottom.cgColor
+        ]
+        fill.startPoint = CGPoint(x: 0.5, y: 1)
+        fill.endPoint = CGPoint(x: 0.5, y: 0)
+        layer?.addSublayer(fill)
+        host.safeAreaRegions = []
+        addSubview(host)
+    }
+
+    required init?(coder: NSCoder) { return nil }
+
+    func apply(
+        _ message: HUDErrorLip.Message,
+        onTap: @escaping () -> Void,
+        onDismiss: @escaping () -> Void
+    ) {
+        host.rootView = ErrorLipContent(
+            text: message.text,
+            action: message.action,
+            onTap: onTap,
+            onDismiss: onDismiss
+        )
+    }
+
+    override func layout() {
+        super.layout()
+        layer?.cornerRadius = HUDLayout.lipCorner
+        layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        layer?.masksToBounds = true
+        fill.frame = bounds
+        host.frame = bounds
+    }
+
+    override var isOpaque: Bool { false }
+}
+
 final class ClickThroughHosting<Content: View>: NSHostingView<Content> {
     override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -753,6 +897,7 @@ final class ClickThroughHosting<Content: View>: NSHostingView<Content> {
 
 /// Keeps the window frame from painting a square behind the rounded plate.
 final class CardGlassView: NSGlassEffectView {
+    var includeNarrowLip = false
     override var isOpaque: Bool { false }
 
     override func layout() {
@@ -787,6 +932,11 @@ final class CardGlassView: NSGlassEffectView {
         view.focusRingType = .none
         view.layer?.isOpaque = false
         view.layer?.backgroundColor = NSColor.clear.cgColor
+        if includeNarrowLip, view !== self {
+            HUDLayout.applyLipWindowMask(to: view, hasLip: true)
+            return
+        }
+        view.layer?.mask = nil
         view.layer?.cornerRadius = cornerRadius
         view.layer?.cornerCurve = .continuous
         view.layer?.masksToBounds = true

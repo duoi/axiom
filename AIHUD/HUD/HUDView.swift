@@ -19,24 +19,13 @@ struct HUDView: View {
                 chipRow
             }
             hairline
-            if let message = store.blockingMessage, model.session.phase == .composing {
-                settingsLine(message)
-            } else if case .failed(let message) = model.session.phase {
-                settingsLine(message)
-            }
-            if let notice = model.screenNotice {
-                settingsLine(notice, action: model.openScreenSettings)
-            }
-            if let voice = model.voiceStatus, !voice.isEmpty {
-                settingsLine(voice, action: model.openVoiceSettings)
-            }
             if model.session.showsAnswer || model.historyExpanded {
                 history
             }
             toolbar
         }
         .frame(width: HUDMetrics.cardWidth)
-        .frame(minHeight: HUDLayout.cardHeight(hasErrorLine: showsErrorLine), alignment: .top)
+        .frame(minHeight: HUDLayout.cardHeight(), alignment: .top)
         .fixedSize(horizontal: false, vertical: true)
         .clipShape(RoundedRectangle(cornerRadius: HUDMetrics.cornerRadius, style: .continuous))
         .background(Color.clear)
@@ -148,34 +137,6 @@ struct HUDView: View {
             .fill(Color.primary.opacity(0.12))
             .frame(height: 0.5)
             .padding(.horizontal, HUDMetrics.inset)
-    }
-
-    private var showsErrorLine: Bool {
-        if store.blockingMessage != nil, model.session.phase == .composing {
-            return true
-        }
-        if case .failed = model.session.phase {
-            return true
-        }
-        if model.screenNotice != nil {
-            return true
-        }
-        if let voice = model.voiceStatus, !voice.isEmpty {
-            return true
-        }
-        return false
-    }
-
-    private func settingsLine(_ message: String, action: (() -> Void)? = nil) -> some View {
-        Button(action: action ?? model.openSettings) {
-            Text(message)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, HUDMetrics.inset)
-        .frame(height: HUDLayout.errorLineHeight, alignment: .leading)
     }
 
     private var history: some View {
@@ -536,6 +497,49 @@ private final class ModelMenuProxy: NSObject {
     @objc func pick(_ sender: NSMenuItem) {
         guard let choice = sender.representedObject as? ModelMenuChoice else { return }
         handler(choice.providerID, choice.modelID)
+    }
+}
+
+struct ErrorLipContent: View {
+    var text: String
+    var action: HUDErrorLip.Action
+    var onTap: () -> Void
+    var onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(Color(nsColor: HUDLipChrome.ink))
+            Group {
+                if action == .none {
+                    message
+                } else {
+                    Button(action: onTap) { message }
+                        .buttonStyle(.plain)
+                }
+            }
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color(nsColor: HUDLipChrome.dismiss))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity)
+        .frame(height: HUDLayout.lipVisible)
+    }
+
+    private var message: some View {
+        Text(text)
+            .font(.system(size: 13))
+            .foregroundStyle(Color(nsColor: HUDLipChrome.ink))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -14,12 +14,31 @@ final class HUDModel {
     var onCaptureScreen: () -> Void = {}
     var onLayout: () -> Void = {}
     var historyExpanded = false
-    var screenNotice: String?
+    var screenNotice: String? {
+        didSet {
+            if screenNotice != oldValue {
+                if screenNotice != nil {
+                    lipDismissed = false
+                }
+                onLayout()
+            }
+        }
+    }
     var captureArmed = false
     var cardIsKey = true
     var reduceTransparency = false
     var dictating = false
-    var voiceStatus: String?
+    var voiceStatus: String? {
+        didSet {
+            if voiceStatus != oldValue {
+                if voiceStatus != nil {
+                    lipDismissed = false
+                }
+                onLayout()
+            }
+        }
+    }
+    var lipDismissed = false
     var voicePermissionPrompt = false
     var onToggleDictation: () -> Void = {}
     var onSetWake: (Bool) -> Void = { _ in }
@@ -29,6 +48,16 @@ final class HUDModel {
     var logoOverride: ProviderLogoKind?
     var captureTargetOverride: CaptureTarget?
     var multilineOverride: Bool?
+
+    var lipMessage: HUDErrorLip.Message? {
+        HUDErrorLip.message(
+            phase: session.phase,
+            blockingMessage: store.blockingMessage,
+            screenNotice: screenNotice,
+            voiceStatus: voiceStatus,
+            dismissed: lipDismissed
+        )
+    }
 
     var displayedCaptureTarget: CaptureTarget {
         captureTargetOverride ?? store.captureTarget
@@ -71,6 +100,7 @@ final class HUDModel {
     func apply(_ snapshot: DebugSnapshot) {
         debugDriven = true
         cancelForQuit()
+        lipDismissed = false
         session = snapshot.session
         captureArmed = snapshot.captureArmed
         dictating = snapshot.dictating
@@ -139,6 +169,7 @@ final class HUDModel {
     }
 
     func reportAttachmentError(_ error: AttachmentError) {
+        lipDismissed = false
         let message: String
         switch error {
         case .tooMany: message = "You can attach up to \(AttachmentPolicy.maxFiles) files."
@@ -191,11 +222,13 @@ final class HUDModel {
         }
         switch store.route(for: messages) {
         case .blocked(let message):
+            lipDismissed = false
             session.fail(message)
             onLayout()
         case .cloud(let target):
             switch target {
             case .blocked(let message):
+                lipDismissed = false
                 session.fail(message)
                 onLayout()
             case .ready(let url, let model, let key, let kind):
@@ -235,6 +268,7 @@ final class HUDModel {
             historyExpanded = false
             screenNotice = nil
             voiceStatus = nil
+            lipDismissed = false
             captureArmed = false
             dictating = false
             task?.cancel()
@@ -242,6 +276,23 @@ final class HUDModel {
         }
         onLayout()
         return hide
+    }
+
+    func dismissLip() {
+        var state = HUDErrorLip.State(
+            phase: session.phase,
+            errorMessage: session.errorMessage,
+            screenNotice: screenNotice,
+            voiceStatus: voiceStatus,
+            dismissed: lipDismissed
+        )
+        HUDErrorLip.dismiss(&state, blockingMessage: store.blockingMessage)
+        lipDismissed = state.dismissed
+        session.phase = state.phase
+        session.errorMessage = state.errorMessage
+        screenNotice = state.screenNotice
+        voiceStatus = state.voiceStatus
+        onLayout()
     }
 
     func openSettings() {
@@ -309,8 +360,8 @@ final class HUDModel {
 
     func reportScreenFailure(permission: Bool) {
         screenNotice = permission
-            ? "Allow Screen Recording in System Settings"
-            : "The screen capture failed."
+            ? HUDErrorLip.screenPermission
+            : HUDErrorLip.screenFailed
         onLayout()
     }
 
@@ -338,6 +389,7 @@ final class HUDModel {
                         self.onLayout()
                         return
                     case .failure(let message):
+                        self.lipDismissed = false
                         self.session.fail(message)
                         self.onLayout()
                         return
@@ -346,6 +398,7 @@ final class HUDModel {
             } catch is CancellationError {
                 return
             } catch {
+                self.lipDismissed = false
                 self.session.fail("The on-device model failed.")
                 self.onLayout()
             }
@@ -400,6 +453,7 @@ final class HUDModel {
                         self.onLayout()
                         return
                     case .failure(let message):
+                        self.lipDismissed = false
                         self.session.fail(message)
                         self.onLayout()
                         return
@@ -410,9 +464,11 @@ final class HUDModel {
             } catch let error as URLError where error.code == .cancelled {
                 return
             } catch let error as URLError where error.code == .timedOut {
+                self.lipDismissed = false
                 self.session.fail("The request timed out.")
                 self.onLayout()
             } catch {
+                self.lipDismissed = false
                 self.session.fail("The request failed.")
                 self.onLayout()
             }

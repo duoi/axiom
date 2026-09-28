@@ -2341,13 +2341,237 @@ import Testing
     )
 }
 
-@Test func cardHeightGrowsByTheErrorLine() {
-    #expect(HUDLayout.cardHeight(hasErrorLine: false) == HUDMetrics.minCardHeight)
-    #expect(HUDLayout.errorLineHeight > 0)
+@Test func cardHeightIgnoresTheErrorLip() {
+    let idle = HUDMetrics.minCardHeight
+    let reply: CGFloat = 248
+    #expect(HUDLayout.cardHeight() == idle)
+    #expect(HUDLayout.lipHeight == HUDLayout.lipVisible)
+    #expect(HUDLayout.lipVisible == 28)
+    #expect(HUDLayout.windowHeight(card: idle, hasLip: false) == idle)
+    #expect(HUDLayout.windowHeight(card: idle, hasLip: true) == idle + HUDLayout.lipVisible)
+    #expect(max(HUDLayout.cardHeight(), reply) == reply)
+    #expect(HUDLayout.windowHeight(card: reply, hasLip: true) == reply + HUDLayout.lipVisible)
+    #expect(HUDLayout.windowHeight(card: idle, hasLip: true) != HUDLayout.cardHeight())
+}
+
+@Test func errorLipIsNarrowerThanTheCard() {
+    let card = HUDMetrics.cardWidth
+    #expect(HUDLayout.lipInset == 24)
+    let band = HUDLayout.lipFrame(cardWidth: card)
+    #expect(band.minX == HUDLayout.lipInset)
+    #expect(band.maxX == card - HUDLayout.lipInset)
+    #expect(band.width == card - 2 * HUDLayout.lipInset)
+    #expect(band.height == HUDLayout.lipVisible)
+    #expect(band.maxY == HUDLayout.lipVisible)
+}
+
+@Test func errorLipMessageFollowsPriorityAndDismiss() {
     #expect(
-        HUDLayout.cardHeight(hasErrorLine: true)
-            == HUDMetrics.minCardHeight + HUDLayout.errorLineHeight
+        HUDErrorLip.message(
+            phase: .composing,
+            blockingMessage: nil,
+            screenNotice: nil,
+            voiceStatus: nil,
+            dismissed: false
+        ) == nil
     )
+
+    let failed = HUDErrorLip.message(
+        phase: .failed(DebugRouting.timedOut),
+        blockingMessage: DebugRouting.missingKey,
+        screenNotice: "Allow Screen Recording in System Settings",
+        voiceStatus: VoiceStatusCopy.micDenied,
+        dismissed: false
+    )
+    #expect(failed?.text == DebugRouting.timedOut)
+    #expect(failed?.source == .failed)
+    #expect(failed?.action == HUDErrorLip.Action.none)
+
+    let blocking = HUDErrorLip.message(
+        phase: .composing,
+        blockingMessage: DebugRouting.missingKey,
+        screenNotice: "Allow Screen Recording in System Settings",
+        voiceStatus: VoiceStatusCopy.micDenied,
+        dismissed: false
+    )
+    #expect(blocking?.text == DebugRouting.missingKey)
+    #expect(blocking?.source == .blocking)
+    #expect(blocking?.action == HUDErrorLip.Action.none)
+
+    let screen = HUDErrorLip.message(
+        phase: .composing,
+        blockingMessage: nil,
+        screenNotice: "Allow Screen Recording in System Settings",
+        voiceStatus: VoiceStatusCopy.micDenied,
+        dismissed: false
+    )
+    #expect(screen?.text == "Allow Screen Recording in System Settings")
+    #expect(screen?.source == .screen)
+    #expect(screen?.action == .screen)
+
+    let captureFailed = HUDErrorLip.message(
+        phase: .finished,
+        blockingMessage: nil,
+        screenNotice: DebugRouting.genericFailure,
+        voiceStatus: nil,
+        dismissed: false
+    )
+    #expect(captureFailed?.text == DebugRouting.genericFailure)
+    #expect(captureFailed?.action == HUDErrorLip.Action.none)
+
+    let voice = HUDErrorLip.message(
+        phase: .composing,
+        blockingMessage: nil,
+        screenNotice: nil,
+        voiceStatus: VoiceStatusCopy.micDenied,
+        dismissed: false
+    )
+    #expect(voice?.text == VoiceStatusCopy.micDenied)
+    #expect(voice?.source == .voice)
+    #expect(voice?.action == .voice)
+
+    let speech = HUDErrorLip.message(
+        phase: .composing,
+        blockingMessage: nil,
+        screenNotice: nil,
+        voiceStatus: VoiceStatusCopy.speechDenied,
+        dismissed: false
+    )
+    #expect(speech?.action == .voice)
+
+    let speechModel = HUDErrorLip.message(
+        phase: .composing,
+        blockingMessage: nil,
+        screenNotice: nil,
+        voiceStatus: VoiceStatusCopy.missingModel,
+        dismissed: false
+    )
+    #expect(speechModel?.action == HUDErrorLip.Action.none)
+
+    var dismissedBlocking = HUDErrorLip.State(
+        phase: .composing,
+        errorMessage: nil,
+        screenNotice: nil,
+        voiceStatus: nil,
+        dismissed: false
+    )
+    HUDErrorLip.dismiss(
+        &dismissedBlocking,
+        blockingMessage: DebugRouting.missingKey
+    )
+    #expect(dismissedBlocking.dismissed)
+    #expect(
+        HUDErrorLip.message(
+            phase: dismissedBlocking.phase,
+            blockingMessage: DebugRouting.missingKey,
+            screenNotice: dismissedBlocking.screenNotice,
+            voiceStatus: dismissedBlocking.voiceStatus,
+            dismissed: dismissedBlocking.dismissed
+        ) == nil
+    )
+
+    HUDErrorLip.reveal(&dismissedBlocking)
+    let afterFail = HUDErrorLip.message(
+        phase: .failed(DebugRouting.requestFailed),
+        blockingMessage: DebugRouting.missingKey,
+        screenNotice: nil,
+        voiceStatus: nil,
+        dismissed: dismissedBlocking.dismissed
+    )
+    #expect(afterFail?.text == DebugRouting.requestFailed)
+
+    var failedState = HUDErrorLip.State(
+        phase: .failed(DebugRouting.timedOut),
+        errorMessage: DebugRouting.timedOut,
+        screenNotice: nil,
+        voiceStatus: nil,
+        dismissed: false
+    )
+    HUDErrorLip.dismiss(&failedState, blockingMessage: DebugRouting.missingKey)
+    #expect(failedState.phase == .composing)
+    #expect(failedState.errorMessage == nil)
+    #expect(failedState.dismissed)
+    #expect(
+        HUDErrorLip.message(
+            phase: failedState.phase,
+            blockingMessage: DebugRouting.missingKey,
+            screenNotice: nil,
+            voiceStatus: nil,
+            dismissed: failedState.dismissed
+        ) == nil
+    )
+
+    var voiceState = HUDErrorLip.State(
+        phase: .composing,
+        errorMessage: nil,
+        screenNotice: nil,
+        voiceStatus: VoiceStatusCopy.micDenied,
+        dismissed: false
+    )
+    HUDErrorLip.dismiss(&voiceState, blockingMessage: nil)
+    #expect(voiceState.voiceStatus == nil)
+    #expect(
+        HUDErrorLip.message(
+            phase: .composing,
+            blockingMessage: nil,
+            screenNotice: nil,
+            voiceStatus: voiceState.voiceStatus,
+            dismissed: voiceState.dismissed
+        ) == nil
+    )
+}
+
+@Test func dismissingTheLipDoesNotClearSecrets() {
+    let suite = "aihud.tests.lip-dismiss-secrets"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    let provider = UUID(uuidString: "00000000-0000-4000-A1D0-00000000B1D1")!
+    let row = ChatEndpoint(
+        id: provider,
+        name: "Kept",
+        completionsURL: "https://api.openai.com/v1",
+        model: "gpt-4o",
+        systemPrompt: "",
+        kind: .openaiCompatible,
+        presetID: "openai"
+    )
+    ChatEndpointCatalog.save(
+        endpoints: [ChatEndpointCatalog.onDeviceEndpoint, row],
+        defaultID: provider,
+        visionID: provider,
+        chatModelID: "gpt-4o",
+        visionModelID: "gpt-4o-mini",
+        to: defaults
+    )
+    defaults.set("https://api.openai.com/v1", forKey: ChatSettings.urlKey)
+    defaults.set("gpt-4o", forKey: ChatSettings.modelKey)
+    DebugSettings.saveEnabled(true, to: defaults)
+    let account = KeychainStore.chatAccount(for: provider)
+    var secrets = [account: "sk-test-lip-dismiss"]
+    let endpointsBefore = defaults.data(forKey: ChatEndpointCatalog.endpointsKey)
+    defer {
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    var state = HUDErrorLip.State(
+        phase: .failed(DebugRouting.requestFailed),
+        errorMessage: DebugRouting.requestFailed,
+        screenNotice: nil,
+        voiceStatus: nil,
+        dismissed: false
+    )
+    HUDErrorLip.dismiss(&state, blockingMessage: nil)
+
+    #expect(state.phase == .composing)
+    #expect(state.dismissed)
+    #expect(defaults.data(forKey: ChatEndpointCatalog.endpointsKey) == endpointsBefore)
+    #expect(defaults.string(forKey: ChatEndpointCatalog.defaultIDKey) == provider.uuidString)
+    #expect(defaults.string(forKey: ChatEndpointCatalog.chatModelIDKey) == "gpt-4o")
+    #expect(defaults.string(forKey: ChatSettings.urlKey) == "https://api.openai.com/v1")
+    #expect(defaults.string(forKey: ChatSettings.modelKey) == "gpt-4o")
+    #expect(account == "api-key.\(provider.uuidString)")
+    #expect(secrets[account] == "sk-test-lip-dismiss")
+    #expect(defaults.bool(forKey: DebugSettings.enabledKey))
 }
 
 @Test func singleLineKeystrokeFlickerDoesNotChangeHeight() {
@@ -2361,11 +2585,25 @@ import Testing
             == previous
     )
     let idle = HUDMetrics.minCardHeight
-    let withError = HUDLayout.cardHeight(hasErrorLine: true)
     #expect(
-        HUDLayout.settledHeight(proposed: withError, previous: idle, lineCount: 1, multiline: false)
-            == withError
+        HUDLayout.settledHeight(proposed: idle, previous: idle, lineCount: 1, multiline: false)
+            == idle
     )
+    #expect(
+        HUDLayout.settledHeight(
+            proposed: idle + HUDLayout.heightFlicker,
+            previous: idle,
+            lineCount: 1,
+            multiline: false
+        ) == idle
+    )
+    let window = HUDLayout.windowHeight(card: idle, hasLip: true)
+    #expect(window == idle + HUDLayout.lipVisible)
+    #expect(
+        HUDLayout.settledHeight(proposed: idle, previous: idle, lineCount: 1, multiline: false)
+            == idle
+    )
+    #expect(window != idle)
 }
 
 @Test func multilineLineIncreaseChangesHeight() {
@@ -2389,6 +2627,20 @@ import Testing
     #expect(next.height == 200)
     #expect(next.origin.x == current.origin.x)
     #expect(next.width == HUDMetrics.cardWidth)
+
+    let idle = NSRect(x: 80, y: 148, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight)
+    let grown = HUDLayout.framePinnedTop(
+        current: idle,
+        height: HUDLayout.windowHeight(card: idle.height, hasLip: true)
+    )
+    #expect(grown.maxY == idle.maxY)
+    #expect(grown.height == idle.height + HUDLayout.lipVisible)
+    #expect(grown.origin.y == idle.origin.y - HUDLayout.lipVisible)
+
+    let shrunk = HUDLayout.framePinnedTop(current: grown, height: idle.height)
+    #expect(shrunk.maxY == grown.maxY)
+    #expect(shrunk.height == idle.height)
+    #expect(shrunk.origin.y == idle.origin.y)
 }
 
 private extension Result where Failure == EndpointError {
