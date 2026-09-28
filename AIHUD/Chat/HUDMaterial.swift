@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 enum HUDMaterial {
@@ -27,8 +28,17 @@ enum HUDMaterial {
         return amount >= 0.99 ? 0 : 1 - amount
     }
 
+    /// AppKit `effectIsInteractive` exists on macOS 27+. Keep it off: a click
+    /// must not distort the card.
+    static func prefersInteractiveGlass(isControlBackdrop: Bool, osMajorVersion: Int) -> Bool {
+        false
+    }
+
+    /// Zero batches similar descendant glass without merging shapes that only sit nearby.
+    static var glassContainerSpacing: CGFloat { 0 }
+
     static func loadAmount(from defaults: UserDefaults) -> Double {
-        guard defaults.object(forKey: amountKey) != nil else { return 1 }
+        guard defaults.object(forKey: amountKey) != nil else { return 0.5 }
         return clampAmount(defaults.double(forKey: amountKey))
     }
 

@@ -9,6 +9,7 @@ final class HUDController: NSObject, NSWindowDelegate {
 
     private var hosting: ClickThroughHosting<HUDView>?
     private var glass: NSGlassEffectView?
+    private var glassContainer: NSGlassEffectContainerView?
     private var solid: SolidCardView?
     private var globalMonitor: Any?
     private var localMonitor: Any?
@@ -156,13 +157,31 @@ final class HUDController: NSObject, NSWindowDelegate {
             solid = card
             card.embed(hosting)
             glass?.contentView = nil
+            glassContainer?.contentView = nil
             panel.contentView = card
         } else {
             let glassView = glass ?? CardGlassView(frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight))
             glass = glassView
             applyGlass(glassView)
             glassView.contentView = hosting
-            panel.contentView = glassView
+            let container = glassContainer ?? NSGlassEffectContainerView(
+                frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight)
+            )
+            glassContainer = container
+            container.spacing = HUDMaterial.glassContainerSpacing
+            let wrapper = container.contentView ?? NSView(frame: container.bounds)
+            wrapper.wantsLayer = true
+            wrapper.layer?.isOpaque = false
+            wrapper.layer?.backgroundColor = NSColor.clear.cgColor
+            wrapper.autoresizingMask = [.width, .height]
+            if glassView.superview !== wrapper {
+                glassView.removeFromSuperview()
+                wrapper.addSubview(glassView)
+            }
+            glassView.frame = wrapper.bounds
+            glassView.autoresizingMask = [.width, .height]
+            container.contentView = wrapper
+            panel.contentView = container
         }
         clipHosting(hosting)
     }
@@ -184,7 +203,11 @@ final class HUDController: NSObject, NSWindowDelegate {
     private func syncFrame(animated: Bool = true) {
         let height = measuredHeight()
         panel.resizePinnedTop(to: height, animated: animated && panel.isVisible)
-        hosting?.frame = NSRect(origin: .zero, size: NSSize(width: HUDMetrics.cardWidth, height: panel.frame.height))
+        let bounds = NSRect(origin: .zero, size: NSSize(width: HUDMetrics.cardWidth, height: panel.frame.height))
+        hosting?.frame = bounds
+        glass?.frame = bounds
+        glassContainer?.frame = bounds
+        glassContainer?.contentView?.frame = bounds
         panel.contentView?.frame = NSRect(origin: .zero, size: panel.frame.size)
     }
 
@@ -407,7 +430,7 @@ final class HUDController: NSObject, NSWindowDelegate {
         )
         window.title = "Settings"
         window.contentView = host
-        window.contentMinSize = NSSize(width: 680, height: 440)
+        window.contentMinSize = NSSize(width: 680, height: 500)
         window.isReleasedWhenClosed = false
         window.delegate = self
         return window
@@ -494,24 +517,23 @@ final class HUDController: NSObject, NSWindowDelegate {
             beginCapture()
             return
         }
-        if let denied = VoicePermission.deniedSentence() {
-            if !model.debugDriven {
-                model.voiceStatus = denied
-            }
+        if VoicePermission.deniedSentence() != nil {
             return
         }
         let asset = await VoiceCapture.ensureInstalled()
         if model.debugDriven { return }
         guard asset == .installed else {
-            model.voiceStatus = asset.statusSentence
             return
         }
-        model.voiceStatus = nil
         beginCapture()
     }
 
     private func startDictationCapture() async {
         if model.debugDriven { return }
+        if let denied = VoicePermission.deniedSentence() {
+            model.voiceStatus = denied
+            return
+        }
         let asset = await VoiceCapture.ensureInstalled()
         if model.debugDriven { return }
         guard asset == .installed else {
@@ -557,7 +579,9 @@ final class HUDController: NSObject, NSWindowDelegate {
 
     private func handleCaptureFailure(_ message: String) {
         if model.debugDriven { return }
-        model.voiceStatus = message
+        if model.dictating || model.voicePermissionPrompt {
+            model.voiceStatus = message
+        }
         setDictating(false)
         stopCapture()
     }
@@ -716,18 +740,28 @@ final class CardGlassView: NSGlassEffectView {
     }
 
     func containKeyFringe() {
-        wantsLayer = true
-        focusRingType = .none
-        layer?.isOpaque = false
-        layer?.backgroundColor = NSColor.clear.cgColor
-        guard let frameView = superview else { return }
-        frameView.wantsLayer = true
-        frameView.focusRingType = .none
-        frameView.layer?.isOpaque = false
-        frameView.layer?.backgroundColor = NSColor.clear.cgColor
-        frameView.layer?.cornerRadius = cornerRadius
-        frameView.layer?.cornerCurve = .continuous
-        frameView.layer?.masksToBounds = true
+        applyClearRoundedMask(to: self)
+        var node = superview
+        while let view = node {
+            applyClearRoundedMask(to: view)
+            if view === window?.contentView {
+                if let frameView = view.superview {
+                    applyClearRoundedMask(to: frameView)
+                }
+                break
+            }
+            node = view.superview
+        }
+    }
+
+    private func applyClearRoundedMask(to view: NSView) {
+        view.wantsLayer = true
+        view.focusRingType = .none
+        view.layer?.isOpaque = false
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        view.layer?.cornerRadius = cornerRadius
+        view.layer?.cornerCurve = .continuous
+        view.layer?.masksToBounds = true
     }
 }
 

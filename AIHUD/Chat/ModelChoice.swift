@@ -4,11 +4,12 @@ struct ServiceCredentials: Equatable, Sendable {
     var url: String
     var model: String
     var apiKey: String
+    var kind: EndpointKind = .openaiCompatible
 
     var isComplete: Bool {
         !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !apiKey.isEmpty
+            && (kind == .chatgptSubscription ? ChatGPTAuth.parse(apiKey) != nil : !apiKey.isEmpty)
     }
 }
 

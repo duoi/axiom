@@ -29,6 +29,22 @@ enum VoiceStatusCopy {
     static let unsupportedModel = "This Mac does not support the speech model."
     static let downloading = "The speech model is still downloading."
     static let captureFailed = "The microphone capture failed."
+
+    private static let privacySecurityBase =
+        "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
+
+    static func systemSettingsURL(for status: String) -> URL? {
+        let pane: String
+        switch status {
+        case micDenied:
+            pane = "Privacy_Microphone"
+        case speechDenied:
+            pane = "Privacy_SpeechRecognition"
+        default:
+            return nil
+        }
+        return URL(string: "\(privacySecurityBase)?\(pane)")
+    }
 }
 
 enum VoiceParser {

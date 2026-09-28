@@ -5,6 +5,7 @@ import SwiftUI
 struct HUDView: View {
     @Bindable var model: HUDModel
     var store: EndpointStore
+    @State private var promptHeight = HUDMetrics.rowHeight
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -22,7 +23,7 @@ struct HUDView: View {
                 settingsLine(notice, action: model.openScreenSettings)
             }
             if let voice = model.voiceStatus, !voice.isEmpty {
-                settingsLine(voice, action: model.openSettings)
+                settingsLine(voice, action: model.openVoiceSettings)
             }
             if model.session.showsAnswer || model.historyExpanded {
                 history
@@ -54,8 +55,15 @@ struct HUDView: View {
                     set: { model.setDraft($0) }
                 ),
                 placeholder: model.dictating && model.session.draft.isEmpty ? "Listening..." : "Ask anything...",
+                multiline: store.usesMultilinePrompt,
                 onSubmit: { model.submit() },
-                onReady: { model.textField = $0 }
+                onReady: { model.promptEditor = $0 },
+                onHeight: { height in
+                    if promptHeight != height {
+                        promptHeight = height
+                        model.onLayout()
+                    }
+                }
             )
             Button(action: model.submitOrStop) {
                 Image(systemName: model.session.showsStop ? "stop.fill" : "arrow.up.right")
@@ -66,8 +74,14 @@ struct HUDView: View {
             .opacity(model.session.canSend || model.captureArmed || model.session.showsStop ? 0.9 : 0.35)
             .disabled(!model.session.canSend && !model.captureArmed && !model.session.showsStop)
         }
-        .frame(height: HUDMetrics.rowHeight)
+        .frame(height: store.usesMultilinePrompt ? promptHeight : HUDMetrics.rowHeight)
         .padding(.horizontal, HUDMetrics.inset)
+        .onChange(of: store.usesMultilinePrompt) {
+            if !store.usesMultilinePrompt {
+                promptHeight = HUDMetrics.rowHeight
+            }
+            model.onLayout()
+        }
     }
 
     private var chipRow: some View {
@@ -146,7 +160,7 @@ struct HUDView: View {
                     .foregroundStyle(.secondary)
             }
             if !model.session.displayAnswer.isEmpty {
-                Text(model.session.displayAnswer)
+                Text(ReplyMarkdown.attributed(model.session.displayAnswer))
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -214,7 +228,7 @@ struct HUDView: View {
                     .font(.body)
                     .foregroundStyle(.secondary)
             } else {
-                Text(markup(row.text))
+                Text(ReplyMarkdown.attributed(row.text))
                     .font(.body)
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
@@ -223,36 +237,10 @@ struct HUDView: View {
         }
     }
 
-    private func markup(_ source: String) -> AttributedString {
-        var result = AttributedString()
-        for run in LightMarkup.parse(source) {
-            switch run {
-            case .plain(let text):
-                result += AttributedString(text)
-            case .bold(let text):
-                var piece = AttributedString(text)
-                piece.font = .body.bold()
-                result += piece
-            case .bullet(let text):
-                if !result.characters.isEmpty {
-                    result += AttributedString("\n")
-                }
-                result += AttributedString("• \(text)")
-            case .numbered(let number, let text):
-                if !result.characters.isEmpty {
-                    result += AttributedString("\n")
-                }
-                result += AttributedString("\(number). \(text)")
-            }
-        }
-        return result
-    }
-
     private var toolbar: some View {
-        HStack(alignment: .center, spacing: HUDMetrics.controlSpacing) {
+        HUDToolbarCluster {
             presetToggle
             captureControl
-            micButton
             Button(action: model.addContext) {
                 HStack(spacing: 6) {
                     Image(systemName: "paperclip")
@@ -262,10 +250,12 @@ struct HUDView: View {
                 .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            Spacer(minLength: HUDMetrics.controlSpacing)
+        } trailing: {
             shortcutBadge
+            micButton
         }
         .frame(height: HUDMetrics.rowHeight)
+        .clipped()
         .padding(.horizontal, HUDMetrics.inset)
     }
 
@@ -281,8 +271,6 @@ struct HUDView: View {
         .help(model.dictating ? "Stop dictation" : "Dictate")
     }
 
-    private var pillMatte: Bool { model.pillIsMatte }
-
     private var presetToggle: some View {
         Button(action: togglePreset) {
             ZStack(alignment: .leading) {
@@ -296,14 +284,9 @@ struct HUDView: View {
                     Text(model.session.preset.title)
                 }
             }
-            .padding(HUDMetrics.pillInset)
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.secondary)
-            .background {
-                if model.session.preset == .agent {
-                    GlassBackdrop(matte: pillMatte, amount: model.store.glassAmount)
-                }
-            }
+            .hudCapsule(highlighted: model.session.preset == .agent)
         }
         .buttonStyle(.plain)
         .fixedSize()
@@ -315,29 +298,34 @@ struct HUDView: View {
 
     private var captureControl: some View {
         let tint = model.captureArmed ? Color.primary : Color.secondary
-        return HStack(spacing: 6) {
-            Button(action: model.toggleCapture) {
+        return ZStack(alignment: .leading) {
+            ForEach(CaptureTarget.allCases) { target in
                 HStack(spacing: 6) {
-                    Image(systemName: model.store.captureTarget.symbolName)
-                    Text(model.store.captureTarget.title)
+                    Image(systemName: target.symbolName)
+                    Text(target.title)
+                    toolbarChevron
                 }
-                .contentShape(Rectangle())
+                .hidden()
             }
-            .buttonStyle(.plain)
-            Button(action: popCaptureMenu) {
-                toolbarChevron
+            HStack(spacing: 6) {
+                Button(action: model.toggleCapture) {
+                    HStack(spacing: 6) {
+                        Image(systemName: model.store.captureTarget.symbolName)
+                        Text(model.store.captureTarget.title)
+                    }
                     .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Button(action: popCaptureMenu) {
+                    toolbarChevron
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
-        .padding(HUDMetrics.pillInset)
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(tint)
-        .background {
-            if model.captureArmed {
-                GlassBackdrop(matte: pillMatte, amount: model.store.glassAmount)
-            }
-        }
+        .hudCapsule(highlighted: model.captureArmed)
         .fixedSize()
     }
 

@@ -1,5 +1,95 @@
 import Foundation
 
+enum SystemPrompt {
+    static let datetimeToken = "%datetime%"
+    static let globalKey = "chat.defaultSystemPrompt"
+
+    static let defaultTemplate = #"""
+The current time and date is %datetime%.
+
+You are a helpful AI assistant inside a HUD on a MacOS machine. Assist users with clear, *concise*, and polite responses.
+
+**Guidelines:**
+- **Conciseness:** Keep responses under 6 sentences or 80 words.
+- **Tone:** Use a neutral, courteous tone.
+- **Inappropriate Behavior:** If the user is rude, hostile, vulgar, or tries to deceive or manipulate you, reply in a non-hostile or defensive way and steer the conversation back to being productive.
+- **Clarify:** Ask clarifying questions if needed; avoid assumptions.
+- **Accuracy:** Ensure responses are unbiased, positive, and accurate.
+- **Uncertainty:** If a question is nonsensical or you're unsure, politely explain or admit uncertainty rather than guessing.
+- **Code Formatting:** For coding questions, use Markdown: backticks (`) for inline code, triple backticks with language name (```language```) for code blocks.
+- **Markdown:** Use Markdown where appropriate, but do not include links or image URLs.
+"""#
+
+    static func displayed(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? defaultTemplate : value
+    }
+
+    static func loadGlobal(from defaults: UserDefaults) -> String {
+        if let stored = defaults.string(forKey: globalKey) {
+            let shown = displayed(stored)
+            if shown != stored {
+                defaults.set(shown, forKey: globalKey)
+            }
+            return shown
+        }
+        defaults.set(defaultTemplate, forKey: globalKey)
+        return defaultTemplate
+    }
+
+    static func saveGlobal(_ value: String, to defaults: UserDefaults) {
+        defaults.set(displayed(value), forKey: globalKey)
+    }
+
+    static func formattedDateTime(
+        _ date: Date,
+        locale: Locale = .current,
+        timeZone: TimeZone = .current
+    ) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    static func resolve(
+        override: String,
+        global: String = "",
+        now: Date,
+        locale: Locale = .current,
+        timeZone: TimeZone = .current
+    ) -> String {
+        let trimmedOverride = override.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedGlobal = global.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base: String
+        if !trimmedOverride.isEmpty {
+            base = override
+        } else if !trimmedGlobal.isEmpty {
+            base = global
+        } else {
+            base = defaultTemplate
+        }
+        return base.replacingOccurrences(
+            of: datetimeToken,
+            with: formattedDateTime(now, locale: locale, timeZone: timeZone)
+        )
+    }
+
+    static func composed(
+        override: String,
+        global: String = "",
+        preset: Preset,
+        now: Date,
+        locale: Locale = .current,
+        timeZone: TimeZone = .current
+    ) -> String {
+        resolve(override: override, global: global, now: now, locale: locale, timeZone: timeZone)
+            + "\n\n"
+            + preset.systemPrompt
+    }
+}
+
 enum Preset: String, Equatable, Sendable, CaseIterable {
     case ask
     case agent
@@ -81,6 +171,7 @@ struct Session: Equatable, Sendable {
     var startedAt: Date?
     private var sentDraft = ""
     private var sentChips: [Chip] = []
+    private var activeSystemPrompt = ""
 
     var showsStop: Bool {
         phase == .waiting || phase == .streaming
@@ -101,7 +192,11 @@ struct Session: Equatable, Sendable {
         return !text.isEmpty || !chips.isEmpty
     }
 
-    mutating func send(attachedJPEG: Data? = nil, attachmentName: String = "Screen") -> SendOutcome {
+    mutating func send(
+        attachedJPEG: Data? = nil,
+        attachmentName: String = "Screen",
+        systemPrompt: String = ""
+    ) -> SendOutcome {
         guard !showsStop else { return .ignored }
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         var turnChips = chips
@@ -109,6 +204,7 @@ struct Session: Equatable, Sendable {
             turnChips.append(Chip(id: UUID(), name: attachmentName, payload: .jpeg(attachedJPEG), isScreen: true))
         }
         guard !trimmed.isEmpty || !turnChips.isEmpty else { return .ignored }
+        activeSystemPrompt = systemPrompt
         sentDraft = draft
         sentChips = chips
         if startedAt == nil {
@@ -177,7 +273,7 @@ struct Session: Equatable, Sendable {
 
     func outboundMessages() -> [OutboundMessage] {
         var messages = [
-            OutboundMessage(role: "system", text: preset.systemPrompt, imageJPEGs: [])
+            OutboundMessage(role: "system", text: activeSystemPrompt, imageJPEGs: [])
         ]
         for turn in turns {
             var text = turn.text

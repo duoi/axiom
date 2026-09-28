@@ -55,6 +55,15 @@ import Testing
     #expect(session.turns.contains { $0.role == .assistant })
 }
 
+@Test func debugMarkdownReplyInjectsAFenceAndList() {
+    let session = DebugRouting.apply("markdown-reply", to: Session())
+    #expect(session.phase == .finished)
+    #expect(session.displayAnswer == DebugRouting.markdownReply)
+    #expect(session.displayAnswer.contains("```swift"))
+    #expect(session.displayAnswer.contains("- First"))
+    #expect(session.turns.contains { $0.role == .assistant && $0.text == DebugRouting.markdownReply })
+}
+
 @Test func debugPhaseCommandsClearStatusLines() {
     var snapshot = DebugRouting.apply("mic-denied", to: DebugSnapshot())
     snapshot = DebugRouting.apply("generic-failure", to: snapshot)

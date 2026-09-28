@@ -193,6 +193,15 @@ import Testing
     )
 }
 
+@Test func voiceStatusOpensTheMatchingPrivacyPane() {
+    let mic = VoiceStatusCopy.systemSettingsURL(for: VoiceStatusCopy.micDenied)
+    #expect(mic?.absoluteString.contains("Privacy_Microphone") == true)
+    #expect(mic?.absoluteString.contains("PrivacySecurity.extension") == true)
+    let speech = VoiceStatusCopy.systemSettingsURL(for: VoiceStatusCopy.speechDenied)
+    #expect(speech?.absoluteString.contains("Privacy_SpeechRecognition") == true)
+    #expect(VoiceStatusCopy.systemSettingsURL(for: VoiceStatusCopy.captureFailed) == nil)
+}
+
 @Test func togglingVoiceOptionsDoesNotClearEndpointFields() {
     let suite = "aihud.tests.voice-persist"
     let defaults = UserDefaults(suiteName: suite)!

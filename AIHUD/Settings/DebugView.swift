@@ -28,6 +28,7 @@ struct DebugView: View {
                             Button("Finished") { send(.finished) }
                             Button("Failed") { send(.failed) }
                         }
+                        Button("Markdown reply") { send(.markdownReply) }
                     }
                 }
 

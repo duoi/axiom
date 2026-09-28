@@ -21,6 +21,7 @@ enum DebugCommand: String, Equatable, Sendable, CaseIterable {
     case clearStatus = "clear-status"
     case makeKey = "make-key"
     case resignKey = "resign-key"
+    case markdownReply = "markdown-reply"
 }
 
 struct DebugSnapshot: Equatable, Sendable {
@@ -48,6 +49,18 @@ enum DebugRouting {
     static let draft = "What is the total mass of the sun?"
     static let partial = "The Sun's mass is about"
     static let reply = "The Sun's mass is about 1.989e30 kilograms."
+    static let markdownReply = #"""
+Here is a short plan:
+
+- First
+- Second
+
+```swift
+func greet() {
+    print("hello")
+}
+```
+"""#
     static let timedOut = "The request timed out."
     static let genericFailure = "The screen capture failed."
     static let chipName = "notes.txt"
@@ -82,7 +95,7 @@ enum DebugRouting {
             return .waiting
         case .streaming:
             return .streaming
-        case .finished:
+        case .finished, .markdownReply:
             return .finished
         case .failed:
             return .failed(timedOut)
@@ -119,6 +132,9 @@ enum DebugRouting {
             clearStatus(&next)
         case .finished:
             next.session = finished()
+            clearStatus(&next)
+        case .markdownReply:
+            next.session = markdownFinished()
             clearStatus(&next)
         case .failed:
             next.session = failed()
@@ -193,6 +209,14 @@ enum DebugRouting {
         var session = streaming()
         session.displayAnswer = reply
         session.turns.append(Turn(role: .assistant, text: reply, chips: []))
+        session.phase = .finished
+        return session
+    }
+
+    private static func markdownFinished() -> Session {
+        var session = waiting()
+        session.displayAnswer = markdownReply
+        session.turns.append(Turn(role: .assistant, text: markdownReply, chips: []))
         session.phase = .finished
         return session
     }

@@ -32,25 +32,26 @@ struct DevEndpointFile: Codable, Equatable, Sendable {
 @MainActor
 @Observable
 final class EndpointStore {
-    private static let modelKey = "endpoint.model"
-    private static let urlKey = "endpoint.completionsURL"
     private static let visionModelKey = "endpoint.visionModel"
     private static let visionURLKey = "endpoint.visionURL"
     private static let hoverKey = "hud.keepHovering"
     private static let captureKey = "hud.captureTarget"
     private static let matteKey = HUDMaterial.matteKey
-    private static let fallbackURL = "https://api.openai.com/v1"
-    private static let fallbackModel = "gpt-4o"
 
-    var model: String
-    var completionsURL: String
-    var apiKey: String
+    var endpoints: [ChatEndpoint]
+    var defaultEndpointID: UUID?
+    var visionEndpointID: UUID?
+    var apiKeys: [UUID: String]
+    var modelListErrors: [UUID: String]
     var visionModel: String
     var visionURL: String
     var visionAPIKey: String
     var devCleartextHost: String?
     var keepHovering: Bool {
         didSet { UserDefaults.standard.set(keepHovering, forKey: Self.hoverKey) }
+    }
+    var usesMultilinePrompt: Bool {
+        didSet { PromptSettings.saveMultiline(usesMultilinePrompt, to: .standard) }
     }
     var captureTarget: CaptureTarget {
         didSet { UserDefaults.standard.set(captureTarget.rawValue, forKey: Self.captureKey) }
@@ -80,8 +81,19 @@ final class EndpointStore {
         get { glassAmount * 100 }
         set { glassAmount = newValue / 100 }
     }
+    var defaultSystemPrompt: String {
+        didSet {
+            let shown = SystemPrompt.displayed(defaultSystemPrompt)
+            if shown != defaultSystemPrompt {
+                defaultSystemPrompt = shown
+                return
+            }
+            SystemPrompt.saveGlobal(shown, to: .standard)
+        }
+    }
+
     var usesOnDevice: Bool {
-        didSet { ChatSettings.saveOnDevice(usesOnDevice, to: .standard) }
+        ChatEndpointCatalog.usesOnDevice(endpoints: endpoints, defaultID: defaultEndpointID)
     }
     var wakeOnAxiom: Bool {
         didSet { VoiceSettings.saveWakeOnAxiom(wakeOnAxiom, to: .standard) }
@@ -95,33 +107,142 @@ final class EndpointStore {
         let defaults = UserDefaults.standard
         let dev = DevEndpointFile.bundled()
         devCleartextHost = dev.flatMap { URL(string: $0.completionsURL)?.host }
-        let storedKey = KeychainStore.read()
-        if storedKey == nil, let dev {
-            model = dev.model
-            completionsURL = dev.completionsURL
-            apiKey = dev.apiKey
-            try? KeychainStore.write(dev.apiKey)
-            defaults.set(dev.model, forKey: Self.modelKey)
-            defaults.set(dev.completionsURL, forKey: Self.urlKey)
-        } else {
-            model = defaults.string(forKey: Self.modelKey) ?? dev?.model ?? Self.fallbackModel
-            completionsURL = defaults.string(forKey: Self.urlKey) ?? dev?.completionsURL ?? Self.fallbackURL
-            apiKey = storedKey ?? ""
+        let loaded = ChatEndpointCatalog.load(from: defaults)
+        var loadedEndpoints = ChatEndpointCatalog.ensuringCatalog(
+            ChatEndpointCatalog.decodedEndpoints(from: defaults) ?? loaded.endpoints
+        )
+        var loadedDefault = loaded.defaultID
+        var loadedVision = loaded.visionID
+        let vision = ChatEndpointCatalog.migrateVision(
+            endpoints: loadedEndpoints,
+            visionID: loadedVision,
+            legacyURL: defaults.string(forKey: Self.visionURLKey),
+            legacyModel: defaults.string(forKey: Self.visionModelKey)
+        )
+        loadedEndpoints = vision.endpoints
+        loadedVision = vision.visionID
+        var seededFromDev = false
+        if let dev {
+            if let match = loadedEndpoints.first(where: {
+                ChatEndpointCatalog.matchesHost($0.completionsURL, dev.completionsURL)
+                    && !ChatEndpointCatalog.isOnDevice($0)
+            }) {
+                if match.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   let index = loadedEndpoints.firstIndex(where: { $0.id == match.id })
+                {
+                    loadedEndpoints[index].model = dev.model
+                    seededFromDev = true
+                }
+            } else {
+                let seeded = ChatEndpoint(
+                    id: UUID(),
+                    name: ChatEndpointCatalog.migratedName,
+                    completionsURL: dev.completionsURL,
+                    model: dev.model,
+                    systemPrompt: ""
+                )
+                loadedEndpoints.append(seeded)
+                seededFromDev = true
+            }
         }
-        visionModel = defaults.string(forKey: Self.visionModelKey) ?? ""
-        visionURL = defaults.string(forKey: Self.visionURLKey) ?? ""
-        visionAPIKey = KeychainStore.read(account: KeychainStore.visionAccount) ?? ""
+        var keys: [UUID: String] = [:]
+        for endpoint in loadedEndpoints {
+            keys[endpoint.id] = KeychainStore.read(account: KeychainStore.chatAccount(for: endpoint.id)) ?? ""
+        }
+        if loadedDefault == nil || !loadedEndpoints.contains(where: { $0.id == loadedDefault }) {
+            loadedDefault = ChatEndpointCatalog.resolvedDefault(
+                endpoints: loadedEndpoints,
+                defaultID: loadedDefault
+            )?.id
+        }
+        var resolvedVisionID = ChatEndpointCatalog.resolvedVision(
+            endpoints: loadedEndpoints,
+            visionID: loadedVision
+        )?.id
+        if let id = loadedDefault,
+           id != ChatEndpointCatalog.onDeviceID,
+           (keys[id] ?? "").isEmpty,
+           let legacy = KeychainStore.read(),
+           !legacy.isEmpty
+        {
+            keys[id] = legacy
+            try? KeychainStore.write(legacy, account: KeychainStore.chatAccount(for: id))
+        }
+        if let visionID = resolvedVisionID,
+           (keys[visionID] ?? "").isEmpty,
+           let visionKey = KeychainStore.read(account: KeychainStore.visionAccount),
+           !visionKey.isEmpty
+        {
+            keys[visionID] = visionKey
+            try? KeychainStore.write(visionKey, account: KeychainStore.chatAccount(for: visionID))
+        }
+        if let dev {
+            if let match = loadedEndpoints.first(where: {
+                ChatEndpointCatalog.matchesHost($0.completionsURL, dev.completionsURL)
+                    && !ChatEndpointCatalog.isOnDevice($0)
+            }), (keys[match.id] ?? "").isEmpty {
+                keys[match.id] = dev.apiKey
+                try? KeychainStore.write(dev.apiKey, account: KeychainStore.chatAccount(for: match.id))
+            }
+        }
+        let beforePrune = loadedEndpoints.map(\.id)
+        loadedEndpoints = ChatEndpointCatalog.pruningUnusedSeeds(
+            loadedEndpoints,
+            defaultID: loadedDefault,
+            visionID: loadedVision,
+            hasSecret: { !(keys[$0] ?? "").isEmpty }
+        )
+        if beforePrune != loadedEndpoints.map(\.id) {
+            seededFromDev = true
+        }
+        if loadedDefault == nil || !loadedEndpoints.contains(where: { $0.id == loadedDefault }) {
+            loadedDefault = ChatEndpointCatalog.resolvedDefault(
+                endpoints: loadedEndpoints,
+                defaultID: loadedDefault
+            )?.id
+        }
+        resolvedVisionID = ChatEndpointCatalog.resolvedVision(
+            endpoints: loadedEndpoints,
+            visionID: loadedVision
+        )?.id
+        var nextVisionURL = defaults.string(forKey: Self.visionURLKey) ?? ""
+        var nextVisionModel = defaults.string(forKey: Self.visionModelKey) ?? ""
+        var nextVisionKey = KeychainStore.read(account: KeychainStore.visionAccount) ?? ""
+        if let vision = ChatEndpointCatalog.resolvedVision(endpoints: loadedEndpoints, visionID: resolvedVisionID) {
+            nextVisionURL = vision.completionsURL
+            nextVisionModel = vision.model
+            nextVisionKey = keys[vision.id] ?? nextVisionKey
+        }
+        endpoints = loadedEndpoints
+        defaultEndpointID = loadedDefault
+        visionEndpointID = resolvedVisionID
+        apiKeys = keys
+        modelListErrors = [:]
+        visionModel = nextVisionModel
+        visionURL = nextVisionURL
+        visionAPIKey = nextVisionKey
         if defaults.object(forKey: Self.hoverKey) == nil {
             keepHovering = true
         } else {
             keepHovering = defaults.bool(forKey: Self.hoverKey)
         }
+        usesMultilinePrompt = PromptSettings.loadMultiline(from: defaults)
         captureTarget = CaptureTarget(rawValue: defaults.string(forKey: Self.captureKey) ?? "") ?? .screen
         usesMatte = defaults.bool(forKey: Self.matteKey)
         glassAmount = HUDMaterial.loadAmount(from: defaults)
-        usesOnDevice = ChatSettings.loadOnDevice(from: defaults)
+        defaultSystemPrompt = SystemPrompt.loadGlobal(from: defaults)
         wakeOnAxiom = VoiceSettings.loadWakeOnAxiom(from: defaults)
         pauseToSend = VoiceSettings.loadPauseToSend(from: defaults)
+        if ChatSettings.loadOnDevice(from: defaults) {
+            ChatSettings.saveOnDevice(false, to: defaults)
+        }
+        if loaded.didMigrate || resolvedVisionID != nil {
+            defaults.removeObject(forKey: Self.visionURLKey)
+            defaults.removeObject(forKey: Self.visionModelKey)
+        }
+        if loaded.didMigrate || seededFromDev {
+            persistCatalog()
+        }
     }
 
     var allowedCleartextHosts: Set<String> {
@@ -129,7 +250,7 @@ final class EndpointStore {
         if let devCleartextHost {
             hosts.insert(devCleartextHost.lowercased())
         }
-        for configured in [completionsURL, visionURL] {
+        for configured in endpoints.map(\.completionsURL) + [visionURL] {
             if let host = URL(string: configured)?.host?.lowercased() {
                 hosts.insert(host)
             }
@@ -137,9 +258,29 @@ final class EndpointStore {
         return hosts
     }
 
+    var selectedEndpoint: ChatEndpoint? {
+        ChatEndpointCatalog.resolvedDefault(endpoints: endpoints, defaultID: defaultEndpointID)
+    }
+
+    var visionEndpoint: ChatEndpoint? {
+        ChatEndpointCatalog.resolvedVision(endpoints: endpoints, visionID: visionEndpointID)
+    }
+
+    func visionCredentials() -> ServiceCredentials {
+        guard let endpoint = visionEndpoint else {
+            return ServiceCredentials(url: "", model: "", apiKey: "")
+        }
+        return ServiceCredentials(
+            url: endpoint.completionsURL,
+            model: endpoint.model,
+            apiKey: apiKeys[endpoint.id] ?? "",
+            kind: endpoint.kind
+        )
+    }
+
     func route(for messages: [OutboundMessage]) -> ChatRoute {
         let hasImage = messages.contains { !$0.imageJPEGs.isEmpty }
-        let vision = ServiceCredentials(url: visionURL, model: visionModel, apiKey: visionAPIKey)
+        let vision = visionCredentials()
         return ChatRouting.decide(
             onDevice: usesOnDevice,
             availability: OnDeviceChat.availability,
@@ -152,23 +293,15 @@ final class EndpointStore {
 
     func target(for messages: [OutboundMessage]) -> SendTarget {
         let hasImage = messages.contains { !$0.imageJPEGs.isEmpty }
-        let chat = ServiceCredentials(url: completionsURL, model: model, apiKey: apiKey)
-        let vision = ServiceCredentials(url: visionURL, model: visionModel, apiKey: visionAPIKey)
-        if hasImage, ModelChoice.visionIsIncomplete(vision) {
-            return .blocked("Finish the vision endpoint in Settings")
-        }
-        let chosen = ModelChoice.pick(chat: chat, vision: vision, hasImage: hasImage)
-        let usingVision = hasImage && vision.isComplete
-        switch EndpointResolver.completionsURL(configured: chosen.url, allowedCleartextHosts: allowedCleartextHosts) {
-        case .success(let url):
-            let modelID = chosen.model.trimmingCharacters(in: .whitespacesAndNewlines)
-            if modelID.isEmpty || chosen.apiKey.isEmpty {
-                return .blocked(usingVision ? "Finish the vision endpoint in Settings" : "Add an API key in Settings")
-            }
-            return .ready(url: url, model: modelID, apiKey: chosen.apiKey)
-        case .failure:
-            return .blocked(usingVision ? "Check the vision URL in Settings" : "Check the base URL in Settings")
-        }
+        let endpoint = selectedEndpoint
+        let key = endpoint.flatMap { apiKeys[$0.id] } ?? ""
+        return ChatEndpointCatalog.target(
+            endpoint: endpoint,
+            apiKey: key,
+            vision: visionCredentials(),
+            hasImage: hasImage,
+            allowedCleartextHosts: allowedCleartextHosts
+        )
     }
 
     var blockingMessage: String? {
@@ -186,20 +319,168 @@ final class EndpointStore {
     }
 
     func save() {
-        model = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        completionsURL = completionsURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        persistCatalog()
+        saveVision()
+    }
+
+    func setDefault(_ id: UUID) {
+        guard endpoints.contains(where: { $0.id == id }) else { return }
+        defaultEndpointID = id
+        persistCatalog()
+    }
+
+    func setVision(_ id: UUID) {
+        guard let endpoint = endpoints.first(where: { $0.id == id }),
+              !ChatEndpointCatalog.isOnDevice(endpoint)
+        else {
+            return
+        }
+        visionEndpointID = id
+        visionURL = endpoint.completionsURL
+        visionModel = endpoint.model
+        visionAPIKey = apiKeys[id] ?? ""
+        persistCatalog()
+        saveVision()
+    }
+
+    func draftEndpoint(for choice: EndpointAddChoice = .custom) -> ChatEndpoint {
+        EndpointAddPolicy.draft(for: choice)
+    }
+
+    func addEndpoint() -> ChatEndpoint {
+        draftEndpoint(for: .custom)
+    }
+
+    @discardableResult
+    func saveEndpoint(_ endpoint: ChatEndpoint, apiKey: String) -> String? {
+        if ChatEndpointCatalog.isOnDevice(endpoint) {
+            return nil
+        }
+        let isNew = !endpoints.contains(where: { $0.id == endpoint.id })
+        var updated = endpoint
+        updated.name = updated.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.completionsURL = updated.completionsURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.model = updated.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rejection = EndpointSavePolicy.rejection(
+            EndpointDraft(
+                kind: updated.kind,
+                name: updated.name,
+                completionsURL: updated.completionsURL,
+                model: updated.model,
+                isNew: isNew,
+                hasChatGPTToken: ChatGPTAuth.parse(apiKey) != nil || ChatGPTAuth.parse(apiKeys[updated.id] ?? "") != nil
+            )
+        )
+        if let rejection {
+            return rejection
+        }
+        if let index = endpoints.firstIndex(where: { $0.id == updated.id }) {
+            if updated.availableModels.isEmpty {
+                updated.availableModels = endpoints[index].availableModels
+            }
+            endpoints[index] = updated
+        } else {
+            endpoints.append(updated)
+        }
+        if updated.kind == .chatgptSubscription {
+            if ChatGPTAuth.parse(apiKey) != nil {
+                writeChatKey(apiKey, id: updated.id)
+            }
+        } else if !apiKey.isEmpty {
+            writeChatKey(apiKey, id: updated.id)
+        }
+        if visionEndpointID == updated.id {
+            visionURL = updated.completionsURL
+            visionModel = updated.model
+            saveVision()
+        }
+        persistCatalog()
+        return nil
+    }
+
+    func replaceChatSecret(_ value: String, id: UUID) {
+        guard !value.isEmpty else { return }
+        writeChatKey(value, id: id)
+    }
+
+    func clearChatSecret(id: UUID) {
+        apiKeys[id] = ""
+        KeychainStore.delete(account: KeychainStore.chatAccount(for: id))
+    }
+
+    func applyListedModels(_ models: [String], to id: UUID) {
+        guard let index = endpoints.firstIndex(where: { $0.id == id }) else { return }
+        if ModelList.isFailed(models: models) {
+            modelListErrors[id] = ModelList.failureMessage
+            return
+        }
+        modelListErrors[id] = nil
+        endpoints[index] = ModelList.apply(models: models, to: endpoints[index])
+        persistCatalog()
+    }
+
+    func deleteEndpoint(_ id: UUID) {
+        guard id != ChatEndpointCatalog.onDeviceID else { return }
+        endpoints = ChatEndpointCatalog.removing(id, from: endpoints)
+        apiKeys[id] = nil
+        modelListErrors[id] = nil
+        KeychainStore.delete(account: KeychainStore.chatAccount(for: id))
+        if defaultEndpointID == id {
+            defaultEndpointID = ChatEndpointCatalog.resolvedDefault(
+                endpoints: endpoints,
+                defaultID: nil
+            )?.id
+        }
+        if visionEndpointID == id {
+            visionEndpointID = nil
+            visionURL = ""
+            visionModel = ""
+            visionAPIKey = ""
+            saveVision()
+        }
+        persistCatalog()
+    }
+
+    func apiKey(for id: UUID) -> String {
+        apiKeys[id] ?? ""
+    }
+
+    private func persistCatalog() {
+        ChatEndpointCatalog.save(
+            endpoints: endpoints,
+            defaultID: defaultEndpointID,
+            visionID: visionEndpointID,
+            to: .standard
+        )
+        if let selected = selectedEndpoint, !ChatEndpointCatalog.isOnDevice(selected) {
+            UserDefaults.standard.set(selected.model, forKey: ChatSettings.modelKey)
+            UserDefaults.standard.set(selected.completionsURL, forKey: ChatSettings.urlKey)
+        }
+    }
+
+    private func writeChatKey(_ value: String, id: UUID) {
+        apiKeys[id] = value
+        let account = KeychainStore.chatAccount(for: id)
+        if value.isEmpty {
+            KeychainStore.delete(account: account)
+        } else {
+            try? KeychainStore.write(value, account: account)
+            if id == defaultEndpointID {
+                try? KeychainStore.write(value)
+            }
+        }
+    }
+
+    private func saveVision() {
         visionModel = visionModel.trimmingCharacters(in: .whitespacesAndNewlines)
         visionURL = visionURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        UserDefaults.standard.set(model, forKey: Self.modelKey)
-        UserDefaults.standard.set(completionsURL, forKey: Self.urlKey)
         UserDefaults.standard.set(visionModel, forKey: Self.visionModelKey)
         UserDefaults.standard.set(visionURL, forKey: Self.visionURLKey)
-        try? KeychainStore.write(apiKey)
         try? KeychainStore.write(visionAPIKey, account: KeychainStore.visionAccount)
     }
 }
 
 enum SendTarget: Equatable {
-    case ready(url: URL, model: String, apiKey: String)
+    case ready(url: URL, model: String, apiKey: String, kind: CloudSendKind)
     case blocked(String)
 }

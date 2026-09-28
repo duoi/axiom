@@ -6,15 +6,28 @@ enum KeychainStore {
     static let chatAccount = "api-key"
     static let visionAccount = "vision-api-key"
 
+    static func chatAccount(for id: UUID) -> String {
+        "api-key.\(id.uuidString)"
+    }
+
     static func read(account: String = chatAccount) -> String? {
-        let query: [String: Any] = [
+        if let value = read(account: account, dataProtection: true), !value.isEmpty {
+            return value
+        }
+        return read(account: account, dataProtection: false)
+    }
+
+    private static func read(account: String, dataProtection: Bool) -> String? {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseDataProtectionKeychain as String: true
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
+        if dataProtection {
+            query[kSecUseDataProtectionKeychain as String] = true
+        }
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else { return nil }

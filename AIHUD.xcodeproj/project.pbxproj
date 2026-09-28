@@ -30,6 +30,10 @@
 		5549BFC1ADA8894DE36A90C2 /* LightMarkup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14A26C554EE1E2DA01E82F15 /* LightMarkup.swift */; };
 		59BF0F8B1528F17A44320A6C /* DebugRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41A198263BA1E1CA5C6CF0E /* DebugRoutingTests.swift */; };
 		5CCAE571A382C48D4FBA7DB0 /* ChatClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F623404177015ED2FA3E943B /* ChatClient.swift */; };
+		91B5F3DAC1245E7FA038D2B1 /* ModelList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81A4E2C9B0134D6E9F27C1A0 /* ModelList.swift */; };
+		92C604EB12356F80B149E3C3 /* AnthropicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B5F3DAC1245E7FA038D2B2 /* AnthropicClient.swift */; };
+		93D715FC23467091C25AF4D5 /* ChatGPTAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83C604EB12356F80B149E3C4 /* ChatGPTAuth.swift */; };
+		94E8260D345781A2D36B05E7 /* ChatGPTClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D715FC23467091C25AF4D6 /* ChatGPTClient.swift */; };
 		5E8FFD7797CE9B12E7FB0179 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6102DA81D3462C92CF68ABEF /* StatusItemController.swift */; };
 		65256569CE10A5C1C175FE0E /* Endpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD3897F7EF0E6BA05A8BBD3A /* Endpoint.swift */; };
 		7B8059409C8308376921776B /* GlassPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = D61227B24442414DB368E663 /* GlassPill.swift */; };
@@ -96,6 +100,10 @@
 		F0EB2CFBB99A836CCA1FE923 /* ScreenImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenImage.swift; sourceTree = "<group>"; };
 		F41A198263BA1E1CA5C6CF0E /* DebugRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugRoutingTests.swift; sourceTree = "<group>"; };
 		F623404177015ED2FA3E943B /* ChatClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatClient.swift; sourceTree = "<group>"; };
+		81A4E2C9B0134D6E9F27C1A0 /* ModelList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelList.swift; sourceTree = "<group>"; };
+		82B5F3DAC1245E7FA038D2B2 /* AnthropicClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicClient.swift; sourceTree = "<group>"; };
+		83C604EB12356F80B149E3C4 /* ChatGPTAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGPTAuth.swift; sourceTree = "<group>"; };
+		84D715FC23467091C25AF4D6 /* ChatGPTClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGPTClient.swift; sourceTree = "<group>"; };
 		FEE9870CC187C6268ABA29BF /* EditCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditCommands.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -148,6 +156,10 @@
 				4CEE970766A01C0881AF6338 /* Attachments.swift */,
 				113B3E5F970B925773050B48 /* CaptureTarget.swift */,
 				F623404177015ED2FA3E943B /* ChatClient.swift */,
+				81A4E2C9B0134D6E9F27C1A0 /* ModelList.swift */,
+				82B5F3DAC1245E7FA038D2B2 /* AnthropicClient.swift */,
+				83C604EB12356F80B149E3C4 /* ChatGPTAuth.swift */,
+				84D715FC23467091C25AF4D6 /* ChatGPTClient.swift */,
 				C562A740EAD60F7AB8792347 /* ChatRouting.swift */,
 				508066B0024D8B4A67910894 /* DebugRouting.swift */,
 				BD3897F7EF0E6BA05A8BBD3A /* Endpoint.swift */,
@@ -336,6 +348,10 @@
 				AFCBF04A323C838A6DDCFF7D /* Attachments.swift in Sources */,
 				B14947843513E347854D06A4 /* CaptureTarget.swift in Sources */,
 				5CCAE571A382C48D4FBA7DB0 /* ChatClient.swift in Sources */,
+				91B5F3DAC1245E7FA038D2B1 /* ModelList.swift in Sources */,
+				92C604EB12356F80B149E3C3 /* AnthropicClient.swift in Sources */,
+				93D715FC23467091C25AF4D5 /* ChatGPTAuth.swift in Sources */,
+				94E8260D345781A2D36B05E7 /* ChatGPTClient.swift in Sources */,
 				4272902FA806F139CBA1E843 /* ChatRouting.swift in Sources */,
 				DBCAC2381AAEC4314B54A848 /* DebugRouting.swift in Sources */,
 				0572023306D36EB5BEEBBFE0 /* DebugView.swift in Sources */,

@@ -1,52 +1,52 @@
-import AppKit
 import SwiftUI
 
-struct GlassBackdrop: NSViewRepresentable {
-    var matte: Bool
-    var amount: Double
+/// Groups the HUD toolbar the way `ToolbarSpacer` splits a system bar:
+/// a leading cluster, a flexible gap, then the trailing hint and mic.
+struct HUDToolbarCluster<Leading: View, Trailing: View>: View {
+    var leading: Leading
+    var trailing: Trailing
 
-    func makeNSView(context: Context) -> GlassBackdropView {
-        let view = GlassBackdropView()
-        view.apply(matte: matte, amount: amount)
-        return view
+    init(
+        @ViewBuilder _ leading: () -> Leading,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.leading = leading()
+        self.trailing = trailing()
     }
 
-    func updateNSView(_ nsView: GlassBackdropView, context: Context) {
-        nsView.apply(matte: matte, amount: amount)
+    var body: some View {
+        GlassEffectContainer(spacing: HUDMaterial.glassContainerSpacing) {
+            HStack(alignment: .center, spacing: 0) {
+                HStack(spacing: HUDMetrics.controlSpacing) {
+                    leading
+                }
+                Spacer(minLength: HUDMetrics.controlSpacing)
+                HStack(spacing: HUDMetrics.controlSpacing) {
+                    trailing
+                }
+            }
+        }
     }
 }
 
-final class GlassBackdropView: NSView {
-    private let glass = NSGlassEffectView()
-    private var appliedMatte: Bool?
-    private var appliedAmount: Double?
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.clear.cgColor
-        glass.cornerRadius = HUDMetrics.cornerRadius
-        if #available(macOS 27.0, *) {
-            glass.effectIsInteractive = false
-        }
-        addSubview(glass)
+/// Quiet fill for an overlay that sits on the card plate. Not glass.
+struct HUDSelectionFill: View {
+    var body: some View {
+        Capsule()
+            .fill(Color.primary.opacity(0.08))
     }
+}
 
-    required init?(coder: NSCoder) { return nil }
-
-    override func layout() {
-        super.layout()
-        glass.frame = bounds
-    }
-
-    func apply(matte: Bool, amount: Double) {
-        if appliedMatte == matte, appliedAmount == amount { return }
-        appliedMatte = matte
-        appliedAmount = amount
-        let style = HUDMaterial.effectStyle(matte: matte)
-        glass.style = style == .regular ? .regular : .clear
-        glass.cornerRadius = HUDMetrics.cornerRadius
-        let veil = HUDMaterial.veilOpacity(glassAmount: amount)
-        glass.tintColor = veil == 0 ? nil : NSColor.windowBackgroundColor.withAlphaComponent(veil)
+extension View {
+    /// Content-hugging capsule on the card plate. Not a system glass bezel.
+    func hudCapsule(highlighted: Bool) -> some View {
+        padding(HUDMetrics.pillInset)
+            .background {
+                if highlighted {
+                    HUDSelectionFill()
+                }
+            }
+            .clipShape(Capsule())
+            .contentShape(Capsule())
     }
 }

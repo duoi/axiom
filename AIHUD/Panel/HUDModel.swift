@@ -6,7 +6,7 @@ import Observation
 final class HUDModel {
     var session = Session()
     var stickToBottom = true
-    weak var textField: NSTextField?
+    weak var promptEditor: (any PromptEditing)?
 
     let store: EndpointStore
     var onOpenSettings: () -> Void = {}
@@ -71,16 +71,7 @@ final class HUDModel {
     }
 
     func pushDraftToField(_ text: String) {
-        guard let textField else { return }
-        if textField.stringValue != text {
-            textField.stringValue = text
-        }
-        guard let editor = textField.currentEditor() else { return }
-        if editor.string != text {
-            editor.string = text
-            let end = (text as NSString).length
-            editor.selectedRange = NSRange(location: end, length: 0)
-        }
+        promptEditor?.applyPrompt(text)
     }
 
     func setPreset(_ preset: Preset) {
@@ -138,7 +129,13 @@ final class HUDModel {
     }
 
     func beginSend(jpeg: Data?, name: String) {
-        let outcome = session.send(attachedJPEG: jpeg, attachmentName: name)
+        let prompt = SystemPrompt.composed(
+            override: store.selectedEndpoint?.systemPrompt ?? "",
+            global: store.defaultSystemPrompt,
+            preset: session.preset,
+            now: Date()
+        )
+        let outcome = session.send(attachedJPEG: jpeg, attachmentName: name, systemPrompt: prompt)
         guard case .request(let messages) = outcome else {
             onLayout()
             return
@@ -152,11 +149,11 @@ final class HUDModel {
             case .blocked(let message):
                 session.fail(message)
                 onLayout()
-            case .ready(let url, let model, let key):
+            case .ready(let url, let model, let key, let kind):
                 captureArmed = false
                 stickToBottom = true
                 onSendBegan()
-                startStream(url: url, model: model, apiKey: key, messages: messages)
+                startStream(url: url, model: model, apiKey: key, kind: kind, messages: messages)
                 onLayout()
                 focusField()
             }
@@ -188,6 +185,7 @@ final class HUDModel {
         if hide {
             historyExpanded = false
             screenNotice = nil
+            voiceStatus = nil
             captureArmed = false
             dictating = false
             task?.cancel()
@@ -227,6 +225,15 @@ final class HUDModel {
         NSWorkspace.shared.open(url)
     }
 
+    func openVoiceSettings() {
+        guard let status = voiceStatus,
+              let url = VoiceStatusCopy.systemSettingsURL(for: status)
+        else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
     func toggleHistory() {
         historyExpanded.toggle()
         onLayout()
@@ -240,8 +247,9 @@ final class HUDModel {
     }
 
     func focusField() {
-        guard let textField, let window = textField.window else { return }
-        window.makeFirstResponder(textField)
+        guard let promptEditor else { return }
+        let view = promptEditor.promptFocusView
+        view.window?.makeFirstResponder(view)
     }
 
     private func startOnDeviceStream(messages: [OutboundMessage]) {
@@ -276,13 +284,18 @@ final class HUDModel {
         }
     }
 
-    private func startStream(url: URL, model: String, apiKey: String, messages: [OutboundMessage]) {
+    private func startStream(
+        url: URL,
+        model: String,
+        apiKey: String,
+        kind: CloudSendKind,
+        messages: [OutboundMessage]
+    ) {
         task?.cancel()
         let host = url.host ?? ""
         let (session, guardDelegate) = ChatClient.makeSession(host: host)
         clientSession = session
         redirectGuard = guardDelegate
-        let client = ChatClient(session: session)
         let request = ChatRequest(
             url: url,
             model: model,
@@ -292,7 +305,23 @@ final class HUDModel {
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                for try await event in client.stream(request) {
+                let events: AsyncThrowingStream<ChatStreamEvent, Error>
+                switch kind {
+                case .openaiCompletions:
+                    events = ChatClient(session: session).stream(request)
+                case .anthropicMessages:
+                    events = AnthropicClient(session: session).stream(request)
+                case .chatgptResponses:
+                    let credential = try await ChatGPTAuth.freshCredential(apiKey)
+                    let secret = ChatGPTAuth.serialize(credential)
+                    if let id = self.store.endpoints.first(where: { self.store.apiKey(for: $0.id) == apiKey })?.id {
+                        self.store.replaceChatSecret(secret, id: id)
+                    }
+                    events = ChatGPTClient(session: session).stream(
+                        ChatRequest(url: url, model: model, apiKey: secret, messages: messages)
+                    )
+                }
+                for try await event in events {
                     if Task.isCancelled { return }
                     switch event {
                     case .token(let token):

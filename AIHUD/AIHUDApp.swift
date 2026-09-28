@@ -15,7 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+        let isTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        if !isTest {
+            Self.installApplicationIcon()
+        }
+        if isTest {
             return
         }
         let controller = StatusItemController()
@@ -41,5 +45,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         status?.shutdown()
+    }
+
+    private static func installApplicationIcon() {
+        guard let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+              let image = NSImage(contentsOf: url)
+        else {
+            return
+        }
+        NSApp.applicationIconImage = image
     }
 }
