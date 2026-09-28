@@ -22,6 +22,25 @@ enum DebugCommand: String, Equatable, Sendable, CaseIterable {
     case makeKey = "make-key"
     case resignKey = "resign-key"
     case markdownReply = "markdown-reply"
+    case secondTurn = "second-turn"
+    case armWindow = "arm-window"
+    case multilineOn = "multiline-on"
+    case multilineOff = "multiline-off"
+    case historyOn = "history-on"
+    case historyOff = "history-off"
+    case missingEndpoint = "missing-endpoint"
+    case missingKey = "missing-key"
+    case missingModel = "missing-model"
+    case signIn = "sign-in"
+    case requestFailed = "request-failed"
+}
+
+struct DebugLogoChoice: Equatable, Sendable, Identifiable {
+    var title: String
+    var command: String
+    var kind: ProviderLogoKind
+
+    var id: String { command }
 }
 
 struct DebugSnapshot: Equatable, Sendable {
@@ -31,6 +50,10 @@ struct DebugSnapshot: Equatable, Sendable {
     var voiceStatus: String?
     var screenNotice: String?
     var wantsCardKey: Bool?
+    var logoOverride: ProviderLogoKind?
+    var captureTargetOverride: CaptureTarget?
+    var multilineOverride: Bool?
+    var historyExpanded = false
 }
 
 enum DebugSettings {
@@ -64,6 +87,28 @@ func greet() {
     static let timedOut = "The request timed out."
     static let genericFailure = "The screen capture failed."
     static let chipName = "notes.txt"
+    static let followUp = "And the Earth?"
+    static let missingKey = "Add an API key in Settings"
+    static let missingModel = "Add a model id in Settings"
+    static let signIn = "Sign in to ChatGPT in Settings"
+    static let requestFailed = "The request failed."
+
+    static let logoChoices: [DebugLogoChoice] = {
+        var rows = [
+            DebugLogoChoice(title: "On-device", command: "logo-on-device", kind: .appleIntelligence),
+            DebugLogoChoice(title: "Axiom", command: "logo-axiom", kind: .axiom)
+        ]
+        for preset in ChatEndpointCatalog.cloudPresets {
+            rows.append(
+                DebugLogoChoice(
+                    title: preset.name,
+                    command: logoCommand(forPreset: preset.id),
+                    kind: HUDModelMenu.logo(forPresetID: preset.id)
+                )
+            )
+        }
+        return rows
+    }()
 
     static func enabled(by arguments: [String]) -> Bool {
         arguments.contains("--debug")
@@ -87,6 +132,26 @@ func greet() {
         DebugCommand(rawValue: command)
     }
 
+    static func logoKind(from command: String) -> ProviderLogoKind? {
+        guard command.hasPrefix("logo-") else { return nil }
+        let slug = String(command.dropFirst("logo-".count))
+        if slug == "chatgpt" {
+            return .openai
+        }
+        if slug == "on-device" || slug == "apple" {
+            return .appleIntelligence
+        }
+        return ProviderLogoKind(rawValue: slug)
+    }
+
+    static func logoCommand(forPreset id: String) -> String {
+        switch id {
+        case "alibaba_cloud": return "logo-alibaba"
+        case "chatgpt": return "logo-chatgpt"
+        default: return "logo-\(id)"
+        }
+    }
+
     static func phase(for command: String) -> Phase? {
         switch parse(command) {
         case .composingEmpty, .composingDraft, .reset:
@@ -95,12 +160,23 @@ func greet() {
             return .waiting
         case .streaming:
             return .streaming
-        case .finished, .markdownReply:
+        case .finished, .markdownReply, .secondTurn:
             return .finished
         case .failed:
             return .failed(timedOut)
+        case .missingEndpoint:
+            return .failed(ChatEndpointCatalog.missingEndpointMessage)
+        case .missingKey:
+            return .failed(missingKey)
+        case .missingModel:
+            return .failed(missingModel)
+        case .signIn:
+            return .failed(signIn)
+        case .requestFailed:
+            return .failed(requestFailed)
         case .none, .ask, .agent, .armScreen, .disarmScreen, .dictateOn, .dictateOff,
-             .addChip, .micDenied, .speechDenied, .genericFailure, .clearStatus, .makeKey, .resignKey:
+             .addChip, .micDenied, .speechDenied, .genericFailure, .clearStatus, .makeKey, .resignKey,
+             .armWindow, .multilineOn, .multilineOff, .historyOn, .historyOff:
             return nil
         }
     }
@@ -110,6 +186,12 @@ func greet() {
     }
 
     static func apply(_ command: String, to snapshot: DebugSnapshot) -> DebugSnapshot {
+        if let kind = logoKind(from: command) {
+            var next = snapshot
+            next.wantsCardKey = nil
+            next.logoOverride = kind
+            return next
+        }
         guard let parsed = parse(command) else { return snapshot }
         return apply(parsed, to: snapshot)
     }
@@ -137,7 +219,7 @@ func greet() {
             next.session = markdownFinished()
             clearStatus(&next)
         case .failed:
-            next.session = failed()
+            next.session = failed(timedOut)
             clearStatus(&next)
         case .reset:
             next = DebugSnapshot()
@@ -147,6 +229,7 @@ func greet() {
             next.session.preset = .agent
         case .armScreen:
             next.captureArmed = true
+            next.captureTargetOverride = .screen
         case .disarmScreen:
             next.captureArmed = false
         case .dictateOn:
@@ -174,6 +257,35 @@ func greet() {
             next.wantsCardKey = true
         case .resignKey:
             next.wantsCardKey = false
+        case .secondTurn:
+            next.session = secondTurnSession()
+            clearStatus(&next)
+        case .armWindow:
+            next.captureArmed = true
+            next.captureTargetOverride = .window
+        case .multilineOn:
+            next.multilineOverride = true
+        case .multilineOff:
+            next.multilineOverride = false
+        case .historyOn:
+            next.historyExpanded = true
+        case .historyOff:
+            next.historyExpanded = false
+        case .missingEndpoint:
+            next.session = failed(ChatEndpointCatalog.missingEndpointMessage)
+            clearStatus(&next)
+        case .missingKey:
+            next.session = failed(missingKey)
+            clearStatus(&next)
+        case .missingModel:
+            next.session = failed(missingModel)
+            clearStatus(&next)
+        case .signIn:
+            next.session = failed(signIn)
+            clearStatus(&next)
+        case .requestFailed:
+            next.session = failed(requestFailed)
+            clearStatus(&next)
         }
         return next
     }
@@ -221,11 +333,48 @@ func greet() {
         return session
     }
 
-    private static func failed() -> Session {
+    private static func secondTurnSession() -> Session {
+        var session = finished()
+        session.draft = followUp
+        return session
+    }
+
+    private static func failed(_ message: String) -> Session {
         var session = Session()
         session.draft = draft
-        session.errorMessage = timedOut
-        session.phase = .failed(timedOut)
+        session.errorMessage = message
+        session.phase = .failed(message)
         return session
+    }
+}
+
+enum DebugChatApply {
+    static func readyPick(
+        logo: ProviderLogoKind,
+        endpoints: [ChatEndpoint],
+        current: ChatModelSelection,
+        secret: (UUID) -> String,
+        onDeviceReady: Bool = true
+    ) -> ChatModelSelection? {
+        let items = HUDModelMenu.items(
+            endpoints: endpoints,
+            chatID: current.chatID,
+            chatModelID: current.chatModelID,
+            secret: secret,
+            onDeviceReady: onDeviceReady
+        )
+        for item in items {
+            guard let endpoint = endpoints.first(where: { $0.id == item.providerID }) else {
+                continue
+            }
+            guard HUDModelMenu.logo(for: endpoint) == logo else { continue }
+            guard let model = item.models.first(where: \.enabled) else { continue }
+            return HUDModelMenu.selecting(
+                providerID: item.providerID,
+                modelID: model.id,
+                in: current
+            )
+        }
+        return nil
     }
 }

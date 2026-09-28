@@ -80,31 +80,19 @@ final class HUDPanel: NSPanel {
     }
 
     func resizePinnedTop(to height: CGFloat, animated: Bool) {
-        let nextHeight = max(HUDMetrics.minCardHeight, height)
-        guard abs(nextHeight - frame.height) > 2 else { return }
-        var next = frame
-        let delta = nextHeight - next.height
-        next.size.width = cardWidth
-        next.size.height = nextHeight
-        if didPlace {
-            next.origin.y -= delta
-        }
-        if animated {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.15
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                animator().setFrame(next, display: true)
-            } completionHandler: { [weak self] in
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        self?.invalidateShadow()
-                    }
-                }
-            }
-        } else {
-            setFrame(next, display: true)
+        let next = HUDLayout.framePinnedTop(current: frame, height: height)
+        guard next.height != frame.height else { return }
+        if !didPlace {
+            var placed = next
+            placed.origin = frame.origin
+            _ = animated
+            setFrame(placed, display: true)
             invalidateShadow()
+            return
         }
+        _ = animated
+        setFrame(next, display: true)
+        invalidateShadow()
     }
 
     func reveal() {

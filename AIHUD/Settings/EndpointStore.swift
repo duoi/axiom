@@ -41,6 +41,7 @@ final class EndpointStore {
     var endpoints: [ChatEndpoint]
     var defaultEndpointID: UUID?
     var visionEndpointID: UUID?
+    var chatModelID: String
     var apiKeys: [UUID: String]
     var modelListErrors: [UUID: String]
     var visionModel: String
@@ -206,16 +207,31 @@ final class EndpointStore {
             visionID: loadedVision
         )?.id
         var nextVisionURL = defaults.string(forKey: Self.visionURLKey) ?? ""
-        var nextVisionModel = defaults.string(forKey: Self.visionModelKey) ?? ""
         var nextVisionKey = KeychainStore.read(account: KeychainStore.visionAccount) ?? ""
         if let vision = ChatEndpointCatalog.resolvedVision(endpoints: loadedEndpoints, visionID: resolvedVisionID) {
             nextVisionURL = vision.completionsURL
-            nextVisionModel = vision.model
             nextVisionKey = keys[vision.id] ?? nextVisionKey
+        }
+        var nextChatModel = loaded.chatModelID
+        var nextVisionModel = loaded.visionModelID
+        if nextChatModel.isEmpty,
+           let selected = loadedDefault,
+           let row = loadedEndpoints.first(where: { $0.id == selected }),
+           !ChatEndpointCatalog.isOnDevice(row)
+        {
+            nextChatModel = row.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if nextVisionModel.isEmpty,
+           let visionID = resolvedVisionID,
+           let row = loadedEndpoints.first(where: { $0.id == visionID }),
+           !ChatEndpointCatalog.isOnDevice(row)
+        {
+            nextVisionModel = row.model.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         endpoints = loadedEndpoints
         defaultEndpointID = loadedDefault
         visionEndpointID = resolvedVisionID
+        chatModelID = nextChatModel
         apiKeys = keys
         modelListErrors = [:]
         visionModel = nextVisionModel
@@ -266,13 +282,33 @@ final class EndpointStore {
         ChatEndpointCatalog.resolvedVision(endpoints: endpoints, visionID: visionEndpointID)
     }
 
+    var visionModelID: String {
+        get { visionModel }
+        set { visionModel = newValue }
+    }
+
+    func sendEndpoint(hasImage: Bool) -> ChatEndpoint? {
+        sendSelection(hasImage: hasImage).endpoint
+    }
+
+    func sendSelection(hasImage: Bool) -> ChatEndpointCatalog.SendSelection {
+        ChatEndpointCatalog.resolvedSend(
+            endpoints: endpoints,
+            chatID: defaultEndpointID,
+            chatModelID: chatModelID,
+            visionID: visionEndpointID,
+            visionModelID: visionModelID,
+            hasImage: hasImage
+        )
+    }
+
     func visionCredentials() -> ServiceCredentials {
-        guard let endpoint = visionEndpoint else {
+        guard let endpoint = visionEndpoint, !ChatEndpointCatalog.isOnDevice(endpoint) else {
             return ServiceCredentials(url: "", model: "", apiKey: "")
         }
         return ServiceCredentials(
             url: endpoint.completionsURL,
-            model: endpoint.model,
+            model: visionModelID,
             apiKey: apiKeys[endpoint.id] ?? "",
             kind: endpoint.kind
         )
@@ -280,27 +316,42 @@ final class EndpointStore {
 
     func route(for messages: [OutboundMessage]) -> ChatRoute {
         let hasImage = messages.contains { !$0.imageJPEGs.isEmpty }
-        let vision = visionCredentials()
+        let selection = sendSelection(hasImage: hasImage)
+        let usingOnDevice = selection.usesOnDevice
         return ChatRouting.decide(
-            onDevice: usesOnDevice,
+            onDevice: usingOnDevice,
             availability: OnDeviceChat.availability,
-            cloud: target(for: messages),
+            cloud: cloudTarget(for: selection),
             hasImage: hasImage,
-            visionConfigured: vision.isComplete,
+            visionConfigured: false,
             supportsOnDeviceImage: OnDeviceChat.supportsImages
         )
     }
 
     func target(for messages: [OutboundMessage]) -> SendTarget {
         let hasImage = messages.contains { !$0.imageJPEGs.isEmpty }
-        let endpoint = selectedEndpoint
+        return cloudTarget(for: sendSelection(hasImage: hasImage))
+    }
+
+    private func cloudTarget(for selection: ChatEndpointCatalog.SendSelection) -> SendTarget {
+        if selection.usesOnDevice {
+            return ChatEndpointCatalog.target(
+                endpoint: nil,
+                apiKey: "",
+                vision: ServiceCredentials(url: "", model: "", apiKey: ""),
+                hasImage: false,
+                allowedCleartextHosts: allowedCleartextHosts
+            )
+        }
+        let endpoint = selection.endpoint
         let key = endpoint.flatMap { apiKeys[$0.id] } ?? ""
         return ChatEndpointCatalog.target(
             endpoint: endpoint,
             apiKey: key,
-            vision: visionCredentials(),
-            hasImage: hasImage,
-            allowedCleartextHosts: allowedCleartextHosts
+            vision: ServiceCredentials(url: "", model: "", apiKey: ""),
+            hasImage: false,
+            allowedCleartextHosts: allowedCleartextHosts,
+            modelID: selection.modelID
         )
     }
 
@@ -324,21 +375,55 @@ final class EndpointStore {
     }
 
     func setDefault(_ id: UUID) {
-        guard endpoints.contains(where: { $0.id == id }) else { return }
+        guard let endpoint = endpoints.first(where: { $0.id == id }) else { return }
         defaultEndpointID = id
+        if ChatEndpointCatalog.isOnDevice(endpoint) {
+            chatModelID = ""
+        } else {
+            chatModelID = ModelList.selectModel(saved: chatModelID, models: endpoint.availableModels)
+        }
+        persistCatalog()
+    }
+
+    func selectChat(providerID: UUID, modelID: String) {
+        guard endpoints.contains(where: { $0.id == providerID }) else { return }
+        let next = HUDModelMenu.selecting(
+            providerID: providerID,
+            modelID: modelID,
+            in: ChatModelSelection(
+                chatID: defaultEndpointID,
+                chatModelID: chatModelID,
+                visionID: visionEndpointID,
+                visionModelID: visionModelID
+            )
+        )
+        defaultEndpointID = next.chatID
+        chatModelID = next.chatModelID
         persistCatalog()
     }
 
     func setVision(_ id: UUID) {
-        guard let endpoint = endpoints.first(where: { $0.id == id }),
-              !ChatEndpointCatalog.isOnDevice(endpoint)
-        else {
-            return
-        }
+        guard endpoints.contains(where: { $0.id == id }) else { return }
         visionEndpointID = id
-        visionURL = endpoint.completionsURL
-        visionModel = endpoint.model
-        visionAPIKey = apiKeys[id] ?? ""
+        let endpoint = endpoints.first(where: { $0.id == id })
+        if endpoint.map(ChatEndpointCatalog.isOnDevice) == true {
+            visionModel = ""
+            visionURL = ""
+            visionAPIKey = ""
+        } else if let endpoint {
+            visionURL = endpoint.completionsURL
+            visionModel = ModelList.selectModel(saved: visionModel, models: endpoint.availableModels)
+            visionAPIKey = apiKeys[id] ?? ""
+        }
+        persistCatalog()
+        saveVision()
+    }
+
+    func clearVisionSelection() {
+        visionEndpointID = nil
+        visionModel = ""
+        visionURL = ""
+        visionAPIKey = ""
         persistCatalog()
         saveVision()
     }
@@ -389,11 +474,6 @@ final class EndpointStore {
         } else if !apiKey.isEmpty {
             writeChatKey(apiKey, id: updated.id)
         }
-        if visionEndpointID == updated.id {
-            visionURL = updated.completionsURL
-            visionModel = updated.model
-            saveVision()
-        }
         persistCatalog()
         return nil
     }
@@ -416,7 +496,23 @@ final class EndpointStore {
         }
         modelListErrors[id] = nil
         endpoints[index] = ModelList.apply(models: models, to: endpoints[index])
+        if defaultEndpointID == id {
+            chatModelID = ModelList.selectModel(saved: chatModelID, models: models)
+        }
+        if visionEndpointID == id {
+            visionModel = ModelList.selectModel(saved: visionModel, models: models)
+        }
         persistCatalog()
+    }
+
+    func refreshModels(for id: UUID) async {
+        guard let endpoint = endpoints.first(where: { $0.id == id }) else { return }
+        let models = await ModelListClient().list(
+            endpoint: endpoint,
+            secret: apiKeys[id] ?? "",
+            allowedCleartextHosts: allowedCleartextHosts
+        )
+        applyListedModels(models, to: id)
     }
 
     func deleteEndpoint(_ id: UUID) {
@@ -430,6 +526,13 @@ final class EndpointStore {
                 endpoints: endpoints,
                 defaultID: nil
             )?.id
+            if let next = endpoints.first(where: { $0.id == defaultEndpointID }) {
+                chatModelID = ChatEndpointCatalog.isOnDevice(next)
+                    ? ""
+                    : ModelList.selectModel(saved: "", models: next.availableModels)
+            } else {
+                chatModelID = ""
+            }
         }
         if visionEndpointID == id {
             visionEndpointID = nil
@@ -450,10 +553,12 @@ final class EndpointStore {
             endpoints: endpoints,
             defaultID: defaultEndpointID,
             visionID: visionEndpointID,
+            chatModelID: chatModelID,
+            visionModelID: visionModel,
             to: .standard
         )
         if let selected = selectedEndpoint, !ChatEndpointCatalog.isOnDevice(selected) {
-            UserDefaults.standard.set(selected.model, forKey: ChatSettings.modelKey)
+            UserDefaults.standard.set(chatModelID, forKey: ChatSettings.modelKey)
             UserDefaults.standard.set(selected.completionsURL, forKey: ChatSettings.urlKey)
         }
     }

@@ -34,7 +34,7 @@ final class HUDController: NSObject, NSWindowDelegate {
         model.onOpenSettings = { [weak self] in self?.openSettings() }
         model.onAddContext = { [weak self] in self?.addContext() }
         model.onCaptureScreen = { [weak self] in self?.captureForSend() }
-        model.onLayout = { [weak self] in self?.syncFrame() }
+        model.onLayout = { [weak self] in self?.syncFrame(animated: false) }
         model.onToggleDictation = { [weak self] in self?.toggleDictation() }
         model.onSetWake = { [weak self] on in self?.setWake(on) }
         model.onSendBegan = { [weak self] in self?.handleSendBegan() }
@@ -188,27 +188,54 @@ final class HUDController: NSObject, NSWindowDelegate {
 
     private func clipHosting(_ hosting: NSView) {
         hosting.wantsLayer = true
+        hosting.clipsToBounds = true
         hosting.layer?.isOpaque = false
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         hosting.layer?.cornerRadius = HUDMetrics.cornerRadius
+        hosting.layer?.cornerCurve = .continuous
         hosting.layer?.masksToBounds = true
     }
 
     private func measuredHeight() -> CGFloat {
-        guard let hosting else { return 110 }
+        let floor = HUDLayout.cardHeight(hasErrorLine: showsErrorLine)
+        guard let hosting else { return floor }
         hosting.layoutSubtreeIfNeeded()
-        return max(HUDMetrics.minCardHeight, hosting.fittingSize.height)
+        return max(floor, hosting.fittingSize.height)
     }
 
-    private func syncFrame(animated: Bool = true) {
-        let height = measuredHeight()
-        panel.resizePinnedTop(to: height, animated: animated && panel.isVisible)
-        let bounds = NSRect(origin: .zero, size: NSSize(width: HUDMetrics.cardWidth, height: panel.frame.height))
+    private var showsErrorLine: Bool {
+        if store.blockingMessage != nil, model.session.phase == .composing {
+            return true
+        }
+        if case .failed = model.session.phase {
+            return true
+        }
+        if model.screenNotice != nil {
+            return true
+        }
+        if let voice = model.voiceStatus, !voice.isEmpty {
+            return true
+        }
+        return false
+    }
+
+    private func syncFrame(animated: Bool = false) {
+        let proposed = measuredHeight()
+        let height = HUDLayout.settledHeight(
+            proposed: proposed,
+            previous: panel.frame.height,
+            lineCount: model.promptLineCount,
+            multiline: model.displayedMultiline
+        )
+        _ = animated
+        panel.resizePinnedTop(to: height, animated: false)
+        let size = NSSize(width: HUDMetrics.cardWidth, height: panel.frame.height)
+        let bounds = NSRect(origin: .zero, size: size)
         hosting?.frame = bounds
         glass?.frame = bounds
         glassContainer?.frame = bounds
         glassContainer?.contentView?.frame = bounds
-        panel.contentView?.frame = NSRect(origin: .zero, size: panel.frame.size)
+        panel.contentView?.frame = bounds
     }
 
     private func installMonitors() {
@@ -373,6 +400,7 @@ final class HUDController: NSObject, NSWindowDelegate {
     func applyDebugCommand(_ command: String) {
         let next = DebugRouting.apply(command, to: model.debugSnapshot())
         model.apply(next)
+        hosting?.rootView = HUDView(model: model, store: store)
         if !panel.isVisible {
             show()
         }

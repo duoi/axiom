@@ -25,6 +25,18 @@ final class HUDModel {
     var onSetWake: (Bool) -> Void = { _ in }
     var onSendBegan: () -> Void = {}
     var debugDriven = false
+    var promptLineCount = 1
+    var logoOverride: ProviderLogoKind?
+    var captureTargetOverride: CaptureTarget?
+    var multilineOverride: Bool?
+
+    var displayedCaptureTarget: CaptureTarget {
+        captureTargetOverride ?? store.captureTarget
+    }
+
+    var displayedMultiline: Bool {
+        multilineOverride ?? store.usesMultilinePrompt
+    }
 
     var pillIsMatte: Bool {
         HUDMaterial.pillIsMatte(
@@ -48,7 +60,11 @@ final class HUDModel {
             captureArmed: captureArmed,
             dictating: dictating,
             voiceStatus: voiceStatus,
-            screenNotice: screenNotice
+            screenNotice: screenNotice,
+            logoOverride: logoOverride,
+            captureTargetOverride: captureTargetOverride,
+            multilineOverride: multilineOverride,
+            historyExpanded: historyExpanded
         )
     }
 
@@ -60,14 +76,44 @@ final class HUDModel {
         dictating = snapshot.dictating
         voiceStatus = snapshot.voiceStatus
         screenNotice = snapshot.screenNotice
+        logoOverride = snapshot.logoOverride
+        captureTargetOverride = snapshot.captureTargetOverride
+        multilineOverride = snapshot.multilineOverride
+        historyExpanded = snapshot.historyExpanded
         pushDraftToField(session.draft)
+        onLayout()
+    }
+
+    func applyDebugLogoAsChat() {
+        guard let logo = logoOverride else { return }
+        let current = ChatModelSelection(
+            chatID: store.defaultEndpointID,
+            chatModelID: store.chatModelID,
+            visionID: store.visionEndpointID,
+            visionModelID: store.visionModelID
+        )
+        guard let pick = DebugChatApply.readyPick(
+            logo: logo,
+            endpoints: store.endpoints,
+            current: current,
+            secret: { store.apiKey(for: $0) },
+            onDeviceReady: OnDeviceChat.availability == .available
+        ), let providerID = pick.chatID else {
+            return
+        }
+        store.selectChat(
+            providerID: providerID,
+            modelID: pick.chatModelID
+        )
         onLayout()
     }
 
     func setDraft(_ text: String) {
         session.draft = text
         pushDraftToField(text)
-        onLayout()
+        if displayedMultiline {
+            onLayout()
+        }
     }
 
     func pushDraftToField(_ text: String) {
@@ -130,7 +176,10 @@ final class HUDModel {
 
     func beginSend(jpeg: Data?, name: String) {
         let prompt = SystemPrompt.composed(
-            override: store.selectedEndpoint?.systemPrompt ?? "",
+            override: store.sendEndpoint(hasImage: jpeg != nil || session.chips.contains { chip in
+                if case .jpeg = chip.payload { return true }
+                return false
+            })?.systemPrompt ?? "",
             global: store.defaultSystemPrompt,
             preset: session.preset,
             now: Date()
@@ -197,6 +246,25 @@ final class HUDModel {
 
     func openSettings() {
         onOpenSettings()
+    }
+
+    func selectChat(providerID: UUID, modelID: String) {
+        let pick = HUDModelMenu.picking(
+            providerID: providerID,
+            modelID: modelID,
+            in: ChatModelSelection(
+                chatID: store.defaultEndpointID,
+                chatModelID: store.chatModelID,
+                visionID: store.visionEndpointID,
+                visionModelID: store.visionModelID
+            ),
+            secret: store.apiKey(for: providerID)
+        )
+        store.selectChat(
+            providerID: pick.selection.chatID ?? providerID,
+            modelID: pick.selection.chatModelID
+        )
+        onLayout()
     }
 
     func addContext() {

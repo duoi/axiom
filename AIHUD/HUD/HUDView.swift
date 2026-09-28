@@ -8,8 +8,13 @@ struct HUDView: View {
     @State private var promptHeight = HUDMetrics.rowHeight
 
     var body: some View {
+        let override = model.logoOverride
         VStack(alignment: .leading, spacing: 0) {
-            promptRow
+            promptRow(idleSlot: HUDModelMenu.idleSlot(
+                dictating: model.dictating,
+                override: override,
+                endpoint: store.selectedEndpoint ?? ChatEndpointCatalog.onDeviceEndpoint
+            ))
             if !model.session.chips.isEmpty {
                 chipRow
             }
@@ -31,23 +36,41 @@ struct HUDView: View {
             toolbar
         }
         .frame(width: HUDMetrics.cardWidth)
-        .frame(minHeight: HUDMetrics.minCardHeight, alignment: .top)
+        .frame(minHeight: HUDLayout.cardHeight(hasErrorLine: showsErrorLine), alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
+        .clipShape(RoundedRectangle(cornerRadius: HUDMetrics.cornerRadius, style: .continuous))
         .background(Color.clear)
     }
 
-    private var promptRow: some View {
+    private func promptRow(idleSlot: HUDIdleSlot) -> some View {
         HStack(alignment: .center, spacing: 10) {
             Group {
-                if model.dictating {
+                switch idleSlot {
+                case .waveform:
                     Image(systemName: "waveform")
                         .font(.system(size: 16))
                         .foregroundStyle(Color.orange)
                         .symbolEffect(.variableColor.iterative, isActive: true)
-                } else {
-                    AxiomLogo(template: true)
-                        .foregroundStyle(.secondary)
+                case .logo(let kind):
+                    ProviderLogo(kind: kind, template: HUDIdleMark.usesTemplate)
+                        .id(kind)
+                        .foregroundStyle(
+                            Color(
+                                red: HUDIdleMark.red,
+                                green: HUDIdleMark.green,
+                                blue: HUDIdleMark.blue
+                            )
+                        )
+                        .overlay {
+                            ModelMenuHitView { view in
+                                popModelMenu(from: view)
+                            }
+                        }
+                        .help("Change model")
+                        .accessibilityLabel("Change model")
                 }
             }
+            .id(model.logoOverride)
             .frame(width: 18, height: 18)
             PromptField(
                 text: Binding(
@@ -55,12 +78,20 @@ struct HUDView: View {
                     set: { model.setDraft($0) }
                 ),
                 placeholder: model.dictating && model.session.draft.isEmpty ? "Listening..." : "Ask anything...",
-                multiline: store.usesMultilinePrompt,
+                multiline: model.displayedMultiline,
                 onSubmit: { model.submit() },
                 onReady: { model.promptEditor = $0 },
                 onHeight: { height in
-                    if promptHeight != height {
-                        promptHeight = height
+                    let line = PromptLayout.lineHeight(for: PromptLayout.font())
+                    let extra = max(0, height - HUDMetrics.rowHeight)
+                    let lines = model.displayedMultiline
+                        ? min(PromptLayout.maxVisibleLines, 1 + Int((extra / max(line, 1)).rounded()))
+                        : 1
+                    let heightChanged = promptHeight != height
+                    let linesChanged = model.promptLineCount != lines
+                    promptHeight = height
+                    model.promptLineCount = lines
+                    if heightChanged || linesChanged {
                         model.onLayout()
                     }
                 }
@@ -74,11 +105,12 @@ struct HUDView: View {
             .opacity(model.session.canSend || model.captureArmed || model.session.showsStop ? 0.9 : 0.35)
             .disabled(!model.session.canSend && !model.captureArmed && !model.session.showsStop)
         }
-        .frame(height: store.usesMultilinePrompt ? promptHeight : HUDMetrics.rowHeight)
+        .frame(height: model.displayedMultiline ? promptHeight : HUDMetrics.rowHeight)
         .padding(.horizontal, HUDMetrics.inset)
-        .onChange(of: store.usesMultilinePrompt) {
-            if !store.usesMultilinePrompt {
+        .onChange(of: model.displayedMultiline) {
+            if !model.displayedMultiline {
                 promptHeight = HUDMetrics.rowHeight
+                model.promptLineCount = 1
             }
             model.onLayout()
         }
@@ -118,6 +150,22 @@ struct HUDView: View {
             .padding(.horizontal, HUDMetrics.inset)
     }
 
+    private var showsErrorLine: Bool {
+        if store.blockingMessage != nil, model.session.phase == .composing {
+            return true
+        }
+        if case .failed = model.session.phase {
+            return true
+        }
+        if model.screenNotice != nil {
+            return true
+        }
+        if let voice = model.voiceStatus, !voice.isEmpty {
+            return true
+        }
+        return false
+    }
+
     private func settingsLine(_ message: String, action: (() -> Void)? = nil) -> some View {
         Button(action: action ?? model.openSettings) {
             Text(message)
@@ -127,7 +175,7 @@ struct HUDView: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, HUDMetrics.inset)
-        .padding(.top, 10)
+        .frame(height: HUDLayout.errorLineHeight, alignment: .leading)
     }
 
     private var history: some View {
@@ -298,24 +346,27 @@ struct HUDView: View {
 
     private var captureControl: some View {
         let tint = model.captureArmed ? Color.primary : Color.secondary
-        return ZStack(alignment: .leading) {
+        return ZStack {
             ForEach(CaptureTarget.allCases) { target in
                 HStack(spacing: 6) {
                     Image(systemName: target.symbolName)
                     Text(target.title)
                     toolbarChevron
                 }
-                .hidden()
             }
-            HStack(spacing: 6) {
+            .hidden()
+        }
+        .overlay {
+            HStack(spacing: 0) {
                 Button(action: model.toggleCapture) {
                     HStack(spacing: 6) {
-                        Image(systemName: model.store.captureTarget.symbolName)
-                        Text(model.store.captureTarget.title)
+                        Image(systemName: model.displayedCaptureTarget.symbolName)
+                        Text(model.displayedCaptureTarget.title)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                Spacer(minLength: 6)
                 Button(action: popCaptureMenu) {
                     toolbarChevron
                         .contentShape(Rectangle())
@@ -334,6 +385,55 @@ struct HUDView: View {
             .font(.system(size: 9, weight: .semibold))
     }
 
+    private func popModelMenu(from view: NSView) {
+        let proxy = ModelMenuProxy { providerID, modelID in
+            model.selectChat(providerID: providerID, modelID: modelID)
+        }
+        let menu = NSMenu()
+        let currentID = store.defaultEndpointID
+        let currentModel = store.chatModelID
+        for item in HUDModelMenu.items(
+            endpoints: store.endpoints,
+            chatID: currentID,
+            chatModelID: currentModel,
+            secret: { store.apiKey(for: $0) },
+            onDeviceReady: OnDeviceChat.availability == .available
+        ) {
+            let row = NSMenuItem(title: item.title, action: nil, keyEquivalent: "")
+            row.state = item.providerID == currentID ? .on : .off
+            let enabled = item.models.filter(\.enabled)
+            if enabled.count == 1, let only = enabled.first {
+                row.target = proxy
+                row.action = #selector(ModelMenuProxy.pick(_:))
+                row.representedObject = ModelMenuChoice(providerID: item.providerID, modelID: only.id)
+            } else {
+                let submenu = NSMenu()
+                for model in item.models {
+                    let modelItem = NSMenuItem(
+                        title: model.title,
+                        action: model.enabled ? #selector(ModelMenuProxy.pick(_:)) : nil,
+                        keyEquivalent: ""
+                    )
+                    modelItem.isEnabled = model.enabled
+                    if model.enabled {
+                        modelItem.target = proxy
+                        modelItem.representedObject = ModelMenuChoice(
+                            providerID: item.providerID,
+                            modelID: model.id
+                        )
+                    }
+                    if item.providerID == currentID, model.enabled, model.id == currentModel {
+                        modelItem.state = .on
+                    }
+                    submenu.addItem(modelItem)
+                }
+                row.submenu = submenu
+            }
+            menu.addItem(row)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: 0), in: view)
+    }
+
     private func popCaptureMenu() {
         let proxy = CaptureMenuProxy { model.setCaptureTarget($0) }
         let menu = NSMenu()
@@ -345,7 +445,7 @@ struct HUDView: View {
             )
             item.target = proxy
             item.representedObject = target.rawValue
-            item.state = target == model.store.captureTarget ? .on : .off
+            item.state = target == model.displayedCaptureTarget ? .on : .off
             menu.addItem(item)
         }
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
@@ -375,6 +475,30 @@ struct HUDView: View {
     }
 }
 
+private struct ModelMenuHitView: NSViewRepresentable {
+    var action: (NSView) -> Void
+
+    func makeNSView(context: Context) -> HitView {
+        let view = HitView()
+        view.action = action
+        return view
+    }
+
+    func updateNSView(_ nsView: HitView, context: Context) {
+        nsView.action = action
+    }
+
+    final class HitView: NSView {
+        var action: ((NSView) -> Void)?
+
+        override func mouseDown(with event: NSEvent) {
+            action?(self)
+        }
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
+}
+
 @MainActor
 private final class CaptureMenuProxy: NSObject {
     let handler: (CaptureTarget) -> Void
@@ -391,15 +515,59 @@ private final class CaptureMenuProxy: NSObject {
     }
 }
 
+private final class ModelMenuChoice: NSObject {
+    let providerID: UUID
+    let modelID: String
+
+    init(providerID: UUID, modelID: String) {
+        self.providerID = providerID
+        self.modelID = modelID
+    }
+}
+
+@MainActor
+private final class ModelMenuProxy: NSObject {
+    let handler: (UUID, String) -> Void
+
+    init(_ handler: @escaping (UUID, String) -> Void) {
+        self.handler = handler
+    }
+
+    @objc func pick(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? ModelMenuChoice else { return }
+        handler(choice.providerID, choice.modelID)
+    }
+}
+
+struct ProviderLogo: View {
+    var kind: ProviderLogoKind
+    var template: Bool = false
+
+    var body: some View {
+        Group {
+            if let symbol = kind.systemSymbolName {
+                Image(systemName: symbol)
+                    .renderingMode(template ? .template : .original)
+                    .resizable()
+                    .scaledToFit()
+                    .symbolRenderingMode(.monochrome)
+            } else {
+                Image(kind.imageName)
+                    .resizable()
+                    .interpolation(.high)
+                    .renderingMode(template ? .template : .original)
+                    .scaledToFit()
+            }
+        }
+        .accessibilityLabel(kind.accessibilityName)
+        .id(kind.systemSymbolName ?? kind.imageName)
+    }
+}
+
 struct AxiomLogo: View {
     var template: Bool = false
 
     var body: some View {
-        Image("AxiomLogo")
-            .resizable()
-            .interpolation(.high)
-            .renderingMode(template ? .template : .original)
-            .scaledToFit()
-            .accessibilityLabel("Axiom")
+        ProviderLogo(kind: .axiom, template: template)
     }
 }

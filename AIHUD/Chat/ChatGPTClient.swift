@@ -121,7 +121,7 @@ struct ChatGPTClient: Sendable {
     }
 }
 
-private struct ResponsesBody: Encodable {
+struct ResponsesBody: Encodable {
     struct Content: Encodable {
         var type: String
         var text: String?
@@ -149,9 +149,10 @@ private struct ResponsesBody: Encodable {
         store = false
         stream = true
         input = request.messages.map { message in
+            let textType = message.role == "assistant" ? "output_text" : "input_text"
             var content: [Content] = []
             if !message.text.isEmpty {
-                content.append(Content(type: "input_text", text: message.text, imageURL: nil))
+                content.append(Content(type: textType, text: message.text, imageURL: nil))
             }
             for data in message.imageJPEGs {
                 content.append(
@@ -163,7 +164,7 @@ private struct ResponsesBody: Encodable {
                 )
             }
             if content.isEmpty {
-                content.append(Content(type: "input_text", text: message.text, imageURL: nil))
+                content.append(Content(type: textType, text: message.text, imageURL: nil))
             }
             return Input(role: message.role == "system" ? "developer" : message.role, content: content)
         }

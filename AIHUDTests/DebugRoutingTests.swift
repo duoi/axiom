@@ -8,7 +8,12 @@ import Testing
     #expect(DebugRouting.phase(for: "waiting") == .waiting)
     #expect(DebugRouting.phase(for: "streaming") == .streaming)
     #expect(DebugRouting.phase(for: "finished") == .finished)
+    #expect(DebugRouting.phase(for: "markdown-reply") == .finished)
+    #expect(DebugRouting.phase(for: "second-turn") == .finished)
     #expect(DebugRouting.phase(for: "failed") == .failed(DebugRouting.timedOut))
+    #expect(DebugRouting.phase(for: "missing-endpoint") == .failed(ChatEndpointCatalog.missingEndpointMessage))
+    #expect(DebugRouting.phase(for: "ask") == nil)
+    #expect(DebugRouting.phase(for: "make-key") == nil)
     #expect(DebugRouting.phase(for: "reset") == .composing)
     #expect(DebugRouting.phase(for: "not-a-command") == nil)
 }
@@ -97,6 +102,9 @@ import Testing
     snapshot = DebugRouting.apply("add-chip", to: snapshot)
     snapshot = DebugRouting.apply("mic-denied", to: snapshot)
     snapshot = DebugRouting.apply("generic-failure", to: snapshot)
+    snapshot = DebugRouting.apply("logo-openai", to: snapshot)
+    snapshot = DebugRouting.apply("multiline-on", to: snapshot)
+    snapshot = DebugRouting.apply("history-on", to: snapshot)
     snapshot = DebugRouting.apply("reset", to: snapshot)
     #expect(snapshot.session.phase == .composing)
     #expect(snapshot.session.draft.isEmpty)
@@ -107,6 +115,10 @@ import Testing
     #expect(!snapshot.captureArmed)
     #expect(snapshot.voiceStatus == nil)
     #expect(snapshot.screenNotice == nil)
+    #expect(snapshot.logoOverride == nil)
+    #expect(snapshot.captureTargetOverride == nil)
+    #expect(snapshot.multilineOverride == nil)
+    #expect(!snapshot.historyExpanded)
 }
 
 @Test func debugToolbarCommandsStayOnTheCurrentPhase() {
@@ -127,6 +139,16 @@ import Testing
     #expect(!snapshot.dictating)
     snapshot = DebugRouting.apply("add-chip", to: snapshot)
     #expect(snapshot.session.chips.map(\.name) == [DebugRouting.chipName])
+}
+
+@Test func debugAddChipClearsAFailedPhaseAndDoesNotDuplicate() {
+    var snapshot = DebugRouting.apply("failed", to: DebugSnapshot())
+    snapshot = DebugRouting.apply("add-chip", to: snapshot)
+    #expect(snapshot.session.phase == .composing)
+    #expect(snapshot.session.chips.map(\.name) == [DebugRouting.chipName])
+    #expect(snapshot.session.errorMessage == nil)
+    snapshot = DebugRouting.apply("add-chip", to: snapshot)
+    #expect(snapshot.session.chips.count == 1)
 }
 
 @Test func debugStatusLinesDoNotPromptAndDoNotChangePhase() {
@@ -160,7 +182,175 @@ import Testing
     #expect(DebugRouting.enabled(by: ["AIHUD", "--debug"]))
     #expect(DebugRouting.initialCommand(from: ["--debug-state=failed"]) == "failed")
     #expect(DebugRouting.initialCommand(from: ["--debug-state", "dictate-on"]) == "dictate-on")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state="]) == nil)
+    #expect(DebugRouting.initialCommand(from: ["--debug-state", ""]) == nil)
+    #expect(DebugRouting.initialCommand(from: ["AIHUD"]) == nil)
     #expect(DebugRouting.phase(for: DebugRouting.initialCommand(from: ["--debug-state=streaming"]) ?? "") == .streaming)
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=logo-anthropic"]) == "logo-anthropic")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=logo-openai"]) == "logo-openai")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=second-turn"]) == "second-turn")
+    #expect(DebugRouting.phase(for: "logo-anthropic") == nil)
+    #expect(DebugRouting.phase(for: "second-turn") == .finished)
+    #expect(DebugRouting.phase(for: "arm-window") == nil)
+    #expect(DebugRouting.parse("not-a-command") == nil)
+    #expect(DebugRouting.logoKind(from: "logo-nope") == nil)
+}
+
+@Test func debugLogoFlagsParseWithoutChangingChatOrVision() {
+    #expect(DebugRouting.logoKind(from: "logo-anthropic") == .anthropic)
+    #expect(DebugRouting.logoKind(from: "logo-openai") == .openai)
+    #expect(DebugRouting.logoKind(from: "logo-chatgpt") == .openai)
+    #expect(DebugRouting.logoKind(from: "logo-axiom") == .axiom)
+    #expect(DebugRouting.logoKind(from: "logo-on-device") == .appleIntelligence)
+    #expect(DebugRouting.logoKind(from: "logo-apple") == .appleIntelligence)
+    for choice in DebugRouting.logoChoices {
+        #expect(DebugRouting.logoKind(from: choice.command) == choice.kind)
+    }
+    #expect(DebugRouting.logoChoices.contains { $0.command == "logo-on-device" && $0.kind == .appleIntelligence })
+    #expect(DebugRouting.logoChoices.contains { $0.command == "logo-axiom" && $0.kind == .axiom })
+
+    let chatID = UUID()
+    let visionID = UUID()
+    let current = ChatModelSelection(
+        chatID: chatID,
+        chatModelID: "kept-chat",
+        visionID: visionID,
+        visionModelID: "kept-vision"
+    )
+    var snapshot = DebugSnapshot()
+    snapshot = DebugRouting.apply("logo-anthropic", to: snapshot)
+    #expect(snapshot.logoOverride == .anthropic)
+    #expect(snapshot.session.phase == .composing)
+    #expect(snapshot.session.errorMessage == nil)
+    #expect(snapshot.session.errorMessage != "Sign in to ChatGPT in Settings")
+    #expect(snapshot.session.errorMessage != "Sign in to ChatGPT.")
+    #expect(
+        DebugChatApply.readyPick(
+            logo: snapshot.logoOverride ?? .anthropic,
+            endpoints: [ChatEndpointCatalog.onDeviceEndpoint],
+            current: current,
+            secret: { _ in "" },
+            onDeviceReady: false
+        ) == nil
+    )
+
+    snapshot = DebugRouting.apply("logo-openai", to: snapshot)
+    #expect(snapshot.logoOverride == .openai)
+    #expect(current.chatID == chatID)
+    #expect(current.chatModelID == "kept-chat")
+    #expect(current.visionID == visionID)
+    #expect(current.visionModelID == "kept-vision")
+
+    snapshot = DebugRouting.apply("logo-on-device", to: snapshot)
+    #expect(snapshot.logoOverride == .appleIntelligence)
+    #expect(snapshot.session.phase == .composing)
+    #expect(current.chatID == chatID)
+    #expect(current.chatModelID == "kept-chat")
+    #expect(current.visionID == visionID)
+    #expect(current.visionModelID == "kept-vision")
+    snapshot = DebugRouting.apply("logo-apple", to: snapshot)
+    #expect(snapshot.logoOverride == .appleIntelligence)
+}
+
+@Test func debugLogoOverrideDoesNotReplaceTheWaveform() {
+    let anthropic = ChatEndpointCatalog.seededEndpoint(
+        ChatEndpointCatalog.cloudPresets.first { $0.id == "anthropic" }!
+    )
+    #expect(
+        HUDModelMenu.idleSlot(dictating: true, override: .openai, endpoint: anthropic)
+            == .waveform
+    )
+    #expect(
+        HUDModelMenu.idleSlot(dictating: false, override: .openai, endpoint: anthropic)
+            == .logo(.openai)
+    )
+    #expect(
+        HUDModelMenu.idleSlot(dictating: false, override: nil, endpoint: anthropic)
+            == .logo(.anthropic)
+    )
+    var snapshot = DebugRouting.apply("logo-anthropic", to: DebugSnapshot())
+    snapshot = DebugRouting.apply("dictate-on", to: snapshot)
+    #expect(snapshot.logoOverride == .anthropic)
+    #expect(snapshot.dictating)
+    #expect(
+        HUDModelMenu.idleSlot(
+            dictating: snapshot.dictating,
+            override: snapshot.logoOverride,
+            endpoint: ChatEndpointCatalog.onDeviceEndpoint
+        ) == .waveform
+    )
+}
+
+@Test func debugSecondTurnKeepsTheFinishedReply() {
+    let snapshot = DebugRouting.apply("second-turn", to: DebugSnapshot())
+    #expect(snapshot.session.phase == .finished)
+    #expect(snapshot.session.displayAnswer == DebugRouting.reply)
+    #expect(snapshot.session.draft == DebugRouting.followUp)
+    #expect(snapshot.session.turns.contains { $0.role == .assistant })
+    #expect(snapshot.session.canSend)
+}
+
+@Test func debugArmWindowAndMultilineDoNotClearTheSession() {
+    var snapshot = DebugRouting.apply("composing-draft", to: DebugSnapshot())
+    snapshot = DebugRouting.apply("arm-window", to: snapshot)
+    #expect(snapshot.captureArmed)
+    #expect(snapshot.captureTargetOverride == .window)
+    #expect(snapshot.session.phase == .composing)
+    snapshot = DebugRouting.apply("arm-screen", to: snapshot)
+    #expect(snapshot.captureTargetOverride == .screen)
+    snapshot = DebugRouting.apply("multiline-on", to: snapshot)
+    #expect(snapshot.multilineOverride == true)
+    #expect(snapshot.session.draft == DebugRouting.draft)
+    snapshot = DebugRouting.apply("history-on", to: snapshot)
+    #expect(snapshot.historyExpanded)
+}
+
+@Test func debugErrorVariantsStayInsideTheCard() {
+    var snapshot = DebugRouting.apply("missing-endpoint", to: DebugSnapshot())
+    #expect(snapshot.session.phase == .failed(ChatEndpointCatalog.missingEndpointMessage))
+    snapshot = DebugRouting.apply("missing-key", to: snapshot)
+    #expect(snapshot.session.errorMessage == "Add an API key in Settings")
+    snapshot = DebugRouting.apply("sign-in", to: snapshot)
+    #expect(snapshot.session.errorMessage == "Sign in to ChatGPT in Settings")
+    snapshot = DebugRouting.apply("logo-openai", to: snapshot)
+    #expect(snapshot.logoOverride == .openai)
+    #expect(snapshot.session.errorMessage == "Sign in to ChatGPT in Settings")
+}
+
+@Test func debugApplyChatModelNeedsAReadySavedRow() {
+    let anthropic = ChatEndpoint(
+        id: UUID(),
+        name: "Work Claude",
+        completionsURL: "https://api.anthropic.com/v1",
+        model: "claude-opus-4-8",
+        systemPrompt: "",
+        kind: .anthropic,
+        presetID: "anthropic"
+    )
+    let current = ChatModelSelection(
+        chatID: ChatEndpointCatalog.onDeviceID,
+        chatModelID: "",
+        visionID: UUID(),
+        visionModelID: "kept-vision"
+    )
+    #expect(
+        DebugChatApply.readyPick(
+            logo: .anthropic,
+            endpoints: [ChatEndpointCatalog.onDeviceEndpoint, anthropic],
+            current: current,
+            secret: { _ in "" }
+        ) == nil
+    )
+    let pick = DebugChatApply.readyPick(
+        logo: .anthropic,
+        endpoints: [ChatEndpointCatalog.onDeviceEndpoint, anthropic],
+        current: current,
+        secret: { id in id == anthropic.id ? "sk-live" : "" }
+    )
+    #expect(pick?.chatID == anthropic.id)
+    #expect(pick?.chatModelID == "claude-opus-4-8")
+    #expect(pick?.visionID == current.visionID)
+    #expect(pick?.visionModelID == "kept-vision")
 }
 
 @Test func enablingDebugDoesNotClearEndpointOrWake() {
@@ -169,17 +359,43 @@ import Testing
     defaults.removePersistentDomain(forName: suite)
     defaults.set("https://api.openai.com/v1", forKey: ChatSettings.urlKey)
     defaults.set("gpt-4o", forKey: ChatSettings.modelKey)
+    let provider = UUID(uuidString: "00000000-0000-4000-A1D0-00000000ABCD")!
+    let row = ChatEndpoint(
+        id: provider,
+        name: "Kept",
+        completionsURL: "https://api.openai.com/v1",
+        model: "gpt-4o",
+        systemPrompt: "",
+        kind: .openaiCompatible,
+        presetID: "openai"
+    )
+    ChatEndpointCatalog.save(
+        endpoints: [ChatEndpointCatalog.onDeviceEndpoint, row],
+        defaultID: provider,
+        visionID: provider,
+        chatModelID: "gpt-4o",
+        visionModelID: "gpt-4o-mini",
+        to: defaults
+    )
     VoiceSettings.saveWakeOnAxiom(false, to: defaults)
     VoiceSettings.savePauseToSend(false, to: defaults)
     DebugSettings.saveEnabled(true, to: defaults)
+    _ = DebugRouting.apply("logo-anthropic", to: DebugSnapshot())
+    _ = DebugRouting.apply("reset", to: DebugSnapshot())
     #expect(defaults.bool(forKey: DebugSettings.enabledKey))
     #expect(defaults.string(forKey: ChatSettings.urlKey) == "https://api.openai.com/v1")
     #expect(defaults.string(forKey: ChatSettings.modelKey) == "gpt-4o")
+    #expect(defaults.string(forKey: ChatEndpointCatalog.defaultIDKey) == provider.uuidString)
+    #expect(defaults.string(forKey: ChatEndpointCatalog.chatModelIDKey) == "gpt-4o")
+    #expect(defaults.string(forKey: ChatEndpointCatalog.visionIDKey) == provider.uuidString)
+    #expect(defaults.string(forKey: ChatEndpointCatalog.visionModelIDKey) == "gpt-4o-mini")
     #expect(!defaults.bool(forKey: VoiceSettings.wakeOnAxiomKey))
     #expect(!defaults.bool(forKey: VoiceSettings.pauseToSendKey))
     DebugSettings.saveEnabled(false, to: defaults)
     #expect(!defaults.bool(forKey: DebugSettings.enabledKey))
     #expect(defaults.string(forKey: ChatSettings.urlKey) == "https://api.openai.com/v1")
     #expect(defaults.string(forKey: ChatSettings.modelKey) == "gpt-4o")
+    #expect(defaults.string(forKey: ChatEndpointCatalog.defaultIDKey) == provider.uuidString)
+    #expect(defaults.string(forKey: ChatEndpointCatalog.chatModelIDKey) == "gpt-4o")
     defaults.removePersistentDomain(forName: suite)
 }

@@ -1,0 +1,21 @@
+{
+  "images": [
+    {
+      "filename": "XAILogo.png",
+      "idiom": "universal",
+      "scale": "1x"
+    },
+    {
+      "filename": "XAILogo@2x.png",
+      "idiom": "universal",
+      "scale": "2x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "template-rendering-intent": "template"
+  }
+}

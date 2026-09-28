@@ -14,7 +14,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .general: "General"
         case .appearance: "Appearance"
-        case .chat: "Chat"
+        case .chat: "Models"
         case .about: "About"
         }
     }
@@ -22,7 +22,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     static func launchPage(from arguments: [String] = CommandLine.arguments) -> SettingsPage {
         if let paired = arguments.first(where: { $0.hasPrefix("--settings-page=") }) {
             let raw = String(paired.dropFirst("--settings-page=".count))
-            if raw == "vision" { return .chat }
+            if raw == "vision" || raw == "models" { return .chat }
             return SettingsPage(rawValue: raw) ?? .general
         }
         return .general
@@ -157,7 +157,7 @@ struct SettingsView: View {
                             }
                             Text(endpoint.name)
                             if endpoint.id == store.defaultEndpointID {
-                                Text("Default")
+                                Text("Chat")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -181,10 +181,10 @@ struct SettingsView: View {
                 .frame(minHeight: 280)
                 .contextMenu(forSelectionType: ChatEndpoint.ID.self) { ids in
                     if let id = ids.first, let endpoint = store.endpoints.first(where: { $0.id == id }) {
-                        Button("Edit") { presentEditor(endpoint) }
-                        Button("Make default") { store.setDefault(id) }
+                        if EndpointTablePolicy.allowsEdit(id) {
+                            Button("Edit") { presentEditor(endpoint) }
+                        }
                         if !ChatEndpointCatalog.isOnDevice(endpoint) {
-                            Button("Set as vision model") { store.setVision(id) }
                             Button("Delete", role: .destructive) { store.deleteEndpoint(id) }
                         }
                     }
@@ -206,19 +206,7 @@ struct SettingsView: View {
                             presentEditor(row)
                         }
                     }
-                    .disabled(selectedRow == nil)
-                    Button("Make default") {
-                        if let id = selectedRow?.id {
-                            store.setDefault(id)
-                        }
-                    }
-                    .disabled(selectedRow == nil || selectedRow?.id == store.defaultEndpointID)
-                    Button("Set as vision model") {
-                        if let id = selectedRow?.id {
-                            store.setVision(id)
-                        }
-                    }
-                    .disabled(selectedRow.map(ChatEndpointCatalog.isOnDevice) ?? true)
+                    .disabled(selectedRow == nil || selectedRow.map { ChatEndpointCatalog.isOnDevice($0) } == true)
                     Button("Delete", role: .destructive) {
                         if let id = endpointSelection {
                             store.deleteEndpoint(id)
@@ -228,9 +216,49 @@ struct SettingsView: View {
                     .disabled(selectedRow.map(ChatEndpointCatalog.isOnDevice) ?? store.endpoints.isEmpty)
                     Spacer()
                 }
-                Text("Click a row to select it. Edit opens the details. Make default sets the chat endpoint. Set as vision model marks the row used for images. On-device cannot be deleted.")
+                Text("Click a row to select it. Edit opens the details. On-device cannot be edited or deleted.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            }
+            SettingsCard {
+                ModelRoleSection(
+                    title: "Chat model",
+                    detail: "Used for text sends.",
+                    store: store,
+                    providerID: Binding(
+                        get: { store.defaultEndpointID },
+                        set: { id in
+                            if let id { store.setDefault(id) }
+                        }
+                    ),
+                    modelID: Binding(
+                        get: { store.chatModelID },
+                        set: { store.chatModelID = $0; store.save() }
+                    ),
+                    allowsUnset: false
+                )
+            }
+            SettingsCard {
+                ModelRoleSection(
+                    title: "Vision model",
+                    detail: "Used when a send includes an image. Leave unset to use the chat model.",
+                    store: store,
+                    providerID: Binding(
+                        get: { store.visionEndpointID },
+                        set: { id in
+                            if let id {
+                                store.setVision(id)
+                            } else {
+                                store.clearVisionSelection()
+                            }
+                        }
+                    ),
+                    modelID: Binding(
+                        get: { store.visionModelID },
+                        set: { store.visionModelID = $0; store.save() }
+                    ),
+                    allowsUnset: true
+                )
             }
             SettingsCard {
                 Text("Default prompt")
@@ -260,7 +288,9 @@ struct SettingsView: View {
                     endpointSelection = match.id
                     editingEndpoint = match
                 } else if CommandLine.arguments.contains("--edit-endpoint") {
-                    if let existing = selectedRow ?? store.selectedEndpoint ?? store.endpoints.first {
+                    if let existing = selectedRow ?? store.selectedEndpoint ?? store.endpoints.first,
+                       EndpointTablePolicy.allowsEdit(existing.id)
+                    {
                         editingEndpoint = existing
                     }
                 }
@@ -340,7 +370,6 @@ private struct EndpointEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var completionsURL: String
-    @State private var model: String
     @State private var apiKey: String
     @State private var systemPrompt: String
     @State private var saveError: String?
@@ -356,7 +385,6 @@ private struct EndpointEditorView: View {
         self.endpoint = endpoint
         _name = State(initialValue: endpoint.name)
         _completionsURL = State(initialValue: endpoint.completionsURL)
-        _model = State(initialValue: endpoint.model)
         _apiKey = State(initialValue: endpoint.usesChatGPTAuth ? "" : store.apiKey(for: endpoint.id))
         _systemPrompt = State(initialValue: endpoint.systemPrompt)
         _listError = State(initialValue: store.modelListErrors[endpoint.id])
@@ -399,10 +427,9 @@ private struct EndpointEditorView: View {
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     } else {
-                        modelField
                         if isChatGPT {
                             chatgptAuth
-                        } else if !isOnDevice {
+                        } else {
                             SecureField("API key", text: $apiKey)
                                 .textFieldStyle(.roundedBorder)
                             Text(endpoint.kind == .anthropic
@@ -414,7 +441,7 @@ private struct EndpointEditorView: View {
                         Button("Refresh") {
                             Task { await refreshModels() }
                         }
-                        .disabled(isListing)
+                        .disabled(isListing || isNew)
                     }
                     if let saveError, !saveError.isEmpty {
                         Text(saveError)
@@ -465,24 +492,6 @@ private struct EndpointEditorView: View {
                     dismiss()
                 }
                 .disabled(isOnDevice || isNew)
-                Button("Make default") {
-                    if isNew {
-                        saveError = "Save this endpoint before making it the default."
-                    } else {
-                        store.setDefault(endpoint.id)
-                    }
-                }
-                .disabled(endpoint.id == store.defaultEndpointID)
-                if !isOnDevice {
-                    Button("Set as vision model") {
-                        if isNew {
-                            saveError = "Save this endpoint before using it for vision."
-                        } else {
-                            store.setVision(endpoint.id)
-                        }
-                    }
-                    .disabled(endpoint.id == store.visionEndpointID)
-                }
                 Spacer()
                 Button("Cancel") { dismiss() }
                 if !isOnDevice {
@@ -494,28 +503,7 @@ private struct EndpointEditorView: View {
             }
         }
         .padding(HUDMetrics.inset)
-        .frame(width: 520, height: 620)
-    }
-
-    @ViewBuilder
-    private var modelField: some View {
-        if availableModels.isEmpty {
-            TextField("Model", text: $model)
-                .textFieldStyle(.roundedBorder)
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Picker("Model", selection: $model) {
-                    ForEach(availableModels, id: \.self) { id in
-                        Text(id).tag(id)
-                    }
-                    if !availableModels.contains(model) && !model.isEmpty {
-                        Text(model).tag(model)
-                    }
-                }
-                TextField("Model", text: $model)
-                    .textFieldStyle(.roundedBorder)
-            }
-        }
+        .frame(width: 520, height: 560)
     }
 
     @ViewBuilder
@@ -554,7 +542,7 @@ private struct EndpointEditorView: View {
             id: endpoint.id,
             name: name,
             completionsURL: endpoint.urlIsFixed ? endpoint.completionsURL : completionsURL,
-            model: model,
+            model: endpoint.model,
             systemPrompt: systemPrompt,
             kind: endpoint.kind,
             presetID: endpoint.presetID,
@@ -578,25 +566,12 @@ private struct EndpointEditorView: View {
     private func refreshModels() async {
         isListing = true
         defer { isListing = false }
-        if !isChatGPT, !apiKey.isEmpty {
-            _ = store.saveEndpoint(drafted(), apiKey: apiKey)
-        }
-        let current = store.endpoints.first(where: { $0.id == endpoint.id }) ?? drafted()
-        let secret = store.apiKey(for: current.id)
-        let models = await ModelListClient().list(
-            endpoint: current,
-            secret: secret,
-            allowedCleartextHosts: store.allowedCleartextHosts
-        )
-        if ModelList.isFailed(models: models) {
-            listError = ModelList.failureMessage
-            store.modelListErrors[current.id] = ModelList.failureMessage
-            return
-        }
-        listError = nil
-        store.applyListedModels(models, to: current.id)
-        if let updated = store.endpoints.first(where: { $0.id == current.id }) {
-            model = updated.model
+        guard !isNew else { return }
+        await store.refreshModels(for: endpoint.id)
+        if let error = store.modelListErrors[endpoint.id] {
+            listError = error
+        } else {
+            listError = nil
         }
     }
 
@@ -657,6 +632,92 @@ private struct EndpointEditorView: View {
         }
         saveError = nil
         await refreshModels()
+    }
+}
+
+private struct ModelRoleSection: View {
+    let title: String
+    let detail: String
+    @Bindable var store: EndpointStore
+    @Binding var providerID: UUID?
+    @Binding var modelID: String
+    var allowsUnset: Bool
+    @State private var isListing = false
+
+    private var provider: ChatEndpoint? {
+        guard let providerID else { return nil }
+        return store.endpoints.first(where: { $0.id == providerID })
+    }
+
+    private var isOnDevice: Bool {
+        provider.map(ChatEndpointCatalog.isOnDevice) ?? false
+    }
+
+    private var availableModels: [String] {
+        provider?.availableModels ?? []
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+            Text(detail)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Picker("Provider", selection: $providerID) {
+                if allowsUnset {
+                    Text("Same as chat").tag(Optional<UUID>.none)
+                }
+                ForEach(store.endpoints) { endpoint in
+                    Text(endpoint.name).tag(Optional(endpoint.id))
+                }
+            }
+            if providerID == nil && allowsUnset {
+                Text("Images use the chat model.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else if isOnDevice {
+                Text("Apple Intelligence")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            } else if availableModels.isEmpty {
+                TextField("Model id", text: $modelID)
+                    .textFieldStyle(.roundedBorder)
+            } else {
+                Picker("Model", selection: $modelID) {
+                    ForEach(availableModels, id: \.self) { id in
+                        Text(id).tag(id)
+                    }
+                    if !availableModels.contains(modelID) && !modelID.isEmpty {
+                        Text(modelID).tag(modelID)
+                    }
+                    if modelID.isEmpty {
+                        Text("Choose a model").tag("")
+                    }
+                }
+            }
+            if let provider, !isOnDevice {
+                HStack {
+                    Button("Refresh") {
+                        Task { await refresh() }
+                    }
+                    .disabled(isListing)
+                    if let error = store.modelListErrors[provider.id], !error.isEmpty {
+                        Text(error)
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+        }
+    }
+
+    private func refresh() async {
+        guard let id = providerID else { return }
+        isListing = true
+        defer { isListing = false }
+        await store.refreshModels(for: id)
     }
 }
 

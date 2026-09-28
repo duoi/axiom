@@ -24,6 +24,10 @@ enum ModelChoice {
 
     static func visionIsIncomplete(_ vision: ServiceCredentials) -> Bool {
         let url = vision.url.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !url.isEmpty && !vision.isComplete
+        let model = vision.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if url.isEmpty || model.isEmpty {
+            return false
+        }
+        return !vision.isComplete
     }
 }

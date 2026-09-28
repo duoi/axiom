@@ -1,0 +1,21 @@
+{
+  "images": [
+    {
+      "filename": "FireworksLogo.png",
+      "idiom": "universal",
+      "scale": "1x"
+    },
+    {
+      "filename": "FireworksLogo@2x.png",
+      "idiom": "universal",
+      "scale": "2x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "template-rendering-intent": "template"
+  }
+}

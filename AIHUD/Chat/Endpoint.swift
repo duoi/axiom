@@ -192,7 +192,6 @@ enum EndpointSavePolicy {
     static func rejection(_ draft: EndpointDraft) -> String? {
         let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let url = draft.completionsURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        let model = draft.model.trimmingCharacters(in: .whitespacesAndNewlines)
         switch draft.kind {
         case .onDevice:
             return nil
@@ -207,7 +206,6 @@ enum EndpointSavePolicy {
         case .openaiCompatible, .anthropic:
             if name.isEmpty { return "Add a name." }
             if url.isEmpty { return "Add a base URL." }
-            if model.isEmpty { return "Add a model id." }
             return nil
         }
     }
@@ -236,12 +234,20 @@ enum EndpointTablePolicy {
         case .highlight:
             return Result(defaultID: defaultID, visionID: visionID, opensEditor: nil)
         case .edit(let id):
-            return Result(defaultID: defaultID, visionID: visionID, opensEditor: id)
+            return Result(
+                defaultID: defaultID,
+                visionID: visionID,
+                opensEditor: allowsEdit(id) ? id : nil
+            )
         case .makeDefault(let id):
             return Result(defaultID: id, visionID: visionID, opensEditor: nil)
         case .setVision(let id):
             return Result(defaultID: defaultID, visionID: id, opensEditor: nil)
         }
+    }
+
+    static func allowsEdit(_ id: UUID) -> Bool {
+        id != ChatEndpointCatalog.onDeviceID
     }
 }
 
@@ -283,8 +289,10 @@ struct ChatEndpointCatalog: Equatable, Sendable {
     static let endpointsKey = "chat.endpoints"
     static let defaultIDKey = "chat.defaultEndpointID"
     static let visionIDKey = "chat.visionEndpointID"
+    static let chatModelIDKey = "chat.chatModelID"
+    static let visionModelIDKey = "chat.visionModelID"
     static let migratedName = "Default"
-    static let missingEndpointMessage = "Make an endpoint the default in Settings"
+    static let missingEndpointMessage = "Choose a chat model in Settings"
     static let onDeviceID = UUID(uuidString: "00000000-0000-4000-A1D0-000000000001")!
     static let onDeviceName = "On-device"
 
@@ -327,6 +335,8 @@ struct ChatEndpointCatalog: Equatable, Sendable {
     var endpoints: [ChatEndpoint]
     var defaultID: UUID?
     var visionID: UUID?
+    var chatModelID: String = ""
+    var visionModelID: String = ""
     var didMigrate: Bool
 
     static func isOnDevice(_ endpoint: ChatEndpoint) -> Bool {
@@ -377,6 +387,7 @@ struct ChatEndpointCatalog: Equatable, Sendable {
     ) -> Bool {
         if isOnDevice(endpoint) { return false }
         if hasSecret { return false }
+        if defaultID == endpoint.id { return false }
         if visionID == endpoint.id { return false }
         if !endpoint.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return false
@@ -425,7 +436,40 @@ struct ChatEndpointCatalog: Equatable, Sendable {
 
     static func resolvedVision(endpoints: [ChatEndpoint], visionID: UUID?) -> ChatEndpoint? {
         guard let visionID else { return nil }
-        return endpoints.first(where: { $0.id == visionID && !isOnDevice($0) })
+        return endpoints.first(where: { $0.id == visionID })
+    }
+
+    struct SendSelection: Equatable, Sendable {
+        var endpoint: ChatEndpoint?
+        var modelID: String
+
+        var usesOnDevice: Bool {
+            endpoint.map(isOnDevice) ?? false
+        }
+    }
+
+    static func resolvedSend(
+        endpoints: [ChatEndpoint],
+        chatID: UUID?,
+        chatModelID: String,
+        visionID: UUID?,
+        visionModelID: String,
+        hasImage: Bool
+    ) -> SendSelection {
+        let chat = resolvedDefault(endpoints: endpoints, defaultID: chatID)
+        let chatModel = chat.map(isOnDevice) == true
+            ? ""
+            : chatModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if hasImage, let vision = resolvedVision(endpoints: endpoints, visionID: visionID) {
+            if isOnDevice(vision) {
+                return SendSelection(endpoint: vision, modelID: "")
+            }
+            let visionModel = visionModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !visionModel.isEmpty {
+                return SendSelection(endpoint: vision, modelID: visionModel)
+            }
+        }
+        return SendSelection(endpoint: chat, modelID: chatModel)
     }
 
     static func requiresAPIKey(_ endpoint: ChatEndpoint) -> Bool {
@@ -452,7 +496,9 @@ struct ChatEndpointCatalog: Equatable, Sendable {
             onDeviceWasEnabled: ChatSettings.loadOnDevice(from: defaults),
             visionID: defaults.string(forKey: visionIDKey),
             legacyVisionURL: defaults.string(forKey: "endpoint.visionURL"),
-            legacyVisionModel: defaults.string(forKey: "endpoint.visionModel")
+            legacyVisionModel: defaults.string(forKey: "endpoint.visionModel"),
+            chatModelID: defaults.string(forKey: chatModelIDKey),
+            visionModelID: defaults.string(forKey: visionModelIDKey)
         )
     }
 
@@ -460,6 +506,8 @@ struct ChatEndpointCatalog: Equatable, Sendable {
         endpoints: [ChatEndpoint],
         defaultID: UUID?,
         visionID: UUID? = nil,
+        chatModelID: String = "",
+        visionModelID: String = "",
         to defaults: UserDefaults
     ) {
         if let data = try? JSONEncoder().encode(endpoints) {
@@ -475,6 +523,8 @@ struct ChatEndpointCatalog: Equatable, Sendable {
         } else {
             defaults.removeObject(forKey: visionIDKey)
         }
+        defaults.set(chatModelID, forKey: chatModelIDKey)
+        defaults.set(visionModelID, forKey: visionModelIDKey)
     }
 
     static func migrate(
@@ -485,7 +535,9 @@ struct ChatEndpointCatalog: Equatable, Sendable {
         onDeviceWasEnabled: Bool = false,
         visionID: String? = nil,
         legacyVisionURL: String? = nil,
-        legacyVisionModel: String? = nil
+        legacyVisionModel: String? = nil,
+        chatModelID: String? = nil,
+        visionModelID: String? = nil
     ) -> ChatEndpointCatalog {
         let parsedDefault = defaultID.flatMap(UUID.init(uuidString:))
         let parsedVision = visionID.flatMap(UUID.init(uuidString:))
@@ -536,12 +588,33 @@ struct ChatEndpointCatalog: Equatable, Sendable {
             endpoints: vision.endpoints,
             defaultID: parsedDefault
         )?.id
+        let chatRow = vision.endpoints.first(where: { $0.id == selected })
+        let visionRow = vision.endpoints.first(where: { $0.id == vision.visionID })
+        let chatMigrated = migratedModelID(stored: chatModelID, endpoint: chatRow)
+        let visionMigrated = migratedModelID(stored: visionModelID, endpoint: visionRow)
+        didMigrate = didMigrate || chatMigrated.didMigrate || visionMigrated.didMigrate
         return ChatEndpointCatalog(
             endpoints: vision.endpoints,
             defaultID: selected,
             visionID: vision.visionID,
+            chatModelID: chatMigrated.value,
+            visionModelID: visionMigrated.value,
             didMigrate: didMigrate
         )
+    }
+
+    private static func migratedModelID(
+        stored: String?,
+        endpoint: ChatEndpoint?
+    ) -> (value: String, didMigrate: Bool) {
+        if let stored {
+            return (stored.trimmingCharacters(in: .whitespacesAndNewlines), false)
+        }
+        guard let endpoint, !isOnDevice(endpoint) else {
+            return ("", false)
+        }
+        let fromRow = endpoint.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (fromRow, !fromRow.isEmpty)
     }
 
     static func migrateVision(
@@ -576,7 +649,8 @@ struct ChatEndpointCatalog: Equatable, Sendable {
         apiKey: String,
         vision: ServiceCredentials,
         hasImage: Bool,
-        allowedCleartextHosts: Set<String>
+        allowedCleartextHosts: Set<String>,
+        modelID: String? = nil
     ) -> SendTarget {
         if hasImage, ModelChoice.visionIsIncomplete(vision) {
             return .blocked("Finish the vision model in Settings")
@@ -589,7 +663,7 @@ struct ChatEndpointCatalog: Equatable, Sendable {
         }
         let chat = ServiceCredentials(
             url: endpoint.completionsURL,
-            model: endpoint.model,
+            model: modelID ?? endpoint.model,
             apiKey: apiKey,
             kind: endpoint.kind
         )
@@ -684,7 +758,8 @@ struct ChatEndpointCatalog: Equatable, Sendable {
         while path.count > 1 && path.hasSuffix("/") {
             path.removeLast()
         }
-        return host + path.lowercased()
+        let port = url.port.map { ":\($0)" } ?? ""
+        return host + port + path.lowercased()
     }
 
     private static func presetUUID(_ presetID: String) -> UUID {

@@ -17,6 +17,12 @@ import Testing
     #expect(VoiceParser.wake(in: "axiomatic") == nil)
 }
 
+@Test func axiomWakeIsCaseInsensitiveAndStripsLeadingPunctuation() {
+    #expect(VoiceParser.wake(in: "AXIOM hello")?.remainder == "hello")
+    #expect(VoiceParser.wake(in: "Axiom... wait")?.remainder == "wait")
+    #expect(VoiceParser.wake(in: "hey Axiom, draft this")?.remainder == "draft this")
+}
+
 @Test func axDoesNotWake() {
     #expect(VoiceParser.wake(in: "ax") == nil)
     #expect(VoiceParser.wake(in: "axi") == nil)
@@ -105,6 +111,19 @@ import Testing
     #expect(!empty)
 }
 
+@Test func joinLeavesEmptySidesAndInsertsASingleSpace() {
+    #expect(VoiceParser.join("", "hello") == "hello")
+    #expect(VoiceParser.join("hello", "") == "hello")
+    #expect(VoiceParser.join("hello", "world") == "hello world")
+    #expect(VoiceParser.join("hello ", "world") == "hello world")
+    #expect(VoiceParser.join("hello", " world") == "hello world")
+}
+
+@Test func draftWithoutWakeKeepsTheRecognizedText() {
+    #expect(VoiceParser.draftText(from: "  just a note  ") == "just a note")
+    #expect(VoiceParser.draftText(from: "axiom") == "")
+}
+
 @Test func leftoverSpeechAfterAFinishedStreamDoesNotSend() {
     let leftover = VoiceParser.shouldAutoSend(
         optionOn: true,
@@ -125,6 +144,17 @@ import Testing
         dictating: true
     )
     #expect(followUp)
+}
+
+@Test func failedPhaseWhileDictatingDoesSend() {
+    let afterFail = VoiceParser.shouldAutoSend(
+        optionOn: true,
+        draft: "hello",
+        silentFor: VoiceParser.silenceBuffer,
+        phase: .failed("The request timed out."),
+        dictating: true
+    )
+    #expect(afterFail)
 }
 
 @Test func noAutoSendWhileWaitingOrStreaming() {
@@ -200,6 +230,10 @@ import Testing
     let speech = VoiceStatusCopy.systemSettingsURL(for: VoiceStatusCopy.speechDenied)
     #expect(speech?.absoluteString.contains("Privacy_SpeechRecognition") == true)
     #expect(VoiceStatusCopy.systemSettingsURL(for: VoiceStatusCopy.captureFailed) == nil)
+    #expect(VoiceStatusCopy.systemSettingsURL(for: VoiceStatusCopy.missingModel) == nil)
+    #expect(VoiceStatusCopy.systemSettingsURL(for: VoiceStatusCopy.unsupportedModel) == nil)
+    #expect(VoiceStatusCopy.systemSettingsURL(for: VoiceStatusCopy.downloading) == nil)
+    #expect(VoiceStatusCopy.systemSettingsURL(for: VoiceStatusCopy.adHocPermission) == nil)
 }
 
 @Test func togglingVoiceOptionsDoesNotClearEndpointFields() {
