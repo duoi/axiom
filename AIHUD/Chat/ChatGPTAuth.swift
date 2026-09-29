@@ -322,7 +322,7 @@ final class OAuthCallbackServer: @unchecked Sendable {
             if let url = URL(string: "http://localhost:\(ChatGPTAuth.callbackPort)\(target)"),
                url.path == "/auth/callback"
             {
-                self.reply(connection, status: 200, body: "<html><body>You can close this window and return to AI HUD.</body></html>")
+                self.reply(connection, status: 200, body: "<html><body>You can close this window and return to Axiom.</body></html>")
                 self.finish(.success(url))
             } else {
                 self.reply(connection, status: 404, body: "Not found")

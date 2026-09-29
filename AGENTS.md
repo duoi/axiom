@@ -1,4 +1,4 @@
-# AI HUD
+# Axiom
 
 Native macOS menu-bar app. A hotkey shows a Liquid Glass prompt card and streams an OpenAI-compatible chat completion into that card.
 
@@ -17,13 +17,13 @@ Cover SSE parsing, completions URL joining, session rules, attachment limits, an
 Run:
 
 ```bash
-xcodebuild test -scheme AIHUD -destination 'platform=macOS'
+xcodebuild test -scheme Axiom -destination 'platform=macOS'
 ```
 
 Glass, focus, and layout are not snapshot tests. After a visual change, capture the live panel and compare it with `notes/references/launcher-hud.jpg`. Record the capture path in `notes/README.md`.
 
 ```bash
-python3 ~/.codex/skills/screenshot/scripts/take_screenshot.py --app "AI HUD" --path notes/captures/<name>.png
+python3 ~/.codex/skills/screenshot/scripts/take_screenshot.py --app "Axiom" --path notes/captures/<name>.png
 ```
 
 Screen Recording permission is required once. Use `--list-windows` and `--window-id` for the panel alone. Do not commit `notes/captures/`.
@@ -41,6 +41,10 @@ The HUD is a nonactivating panel. Do not call `NSApp.activate` to show it or to 
 `.nonactivatingPanel` belongs in the panel initializer.
 
 Center on the screen that contains `NSEvent.mouseLocation`, inside `visibleFrame`. Later height changes pin the top edge.
+
+## Rebuild after app changes
+
+After any change that affects the running app, rebuild the Debug Axiom.app, quit any running Axiom process, open the new .app with `open`, and confirm the process is running before you tell the user the change is ready. Do not leave a stale binary running. Do not launch the Mach-O stub inside Contents/MacOS.
 
 ## Out of this version
 

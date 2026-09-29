@@ -1,4 +1,4 @@
-name: AIHUD
+name: Axiom
 options:
   bundleIdPrefix: com.stevenjohns
   deploymentTarget:
@@ -12,8 +12,11 @@ packages:
   KeyboardShortcuts:
     url: https://github.com/sindresorhus/KeyboardShortcuts
     from: "2.2.4"
+  ThinkingOrbs:
+    url: https://github.com/haplollc/ThinkingOrbs
+    from: "1.0.0"
 targets:
-  AIHUD:
+  Axiom:
     type: application
     platform: macOS
     sources:
@@ -24,6 +27,7 @@ targets:
           - Assets/AxiomLogo.png
     dependencies:
       - package: KeyboardShortcuts
+      - package: ThinkingOrbs
     postBuildScripts:
       - name: Copy dev endpoint
         basedOnDependencyAnalysis: false
@@ -33,8 +37,8 @@ targets:
           fi
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.stevenjohns.AIHUD
-        PRODUCT_NAME: AIHUD
+        PRODUCT_BUNDLE_IDENTIFIER: com.stevenjohns.Axiom
+        PRODUCT_NAME: Axiom
         INFOPLIST_FILE: AIHUD/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_ENTITLEMENTS: AIHUD/AIHUD.entitlements
@@ -45,27 +49,37 @@ targets:
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-  AIHUDTests:
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Development: steven@sjohns.net (6V6MHJBVWL)"
+          DEVELOPMENT_TEAM: S7D8Q56TGV
+  AxiomTests:
     type: bundle.unit-test
     platform: macOS
     sources:
       - path: AIHUDTests
     dependencies:
-      - target: AIHUD
+      - target: Axiom
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.stevenjohns.AIHUDTests
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/AIHUD.app/Contents/MacOS/AIHUD"
+        PRODUCT_BUNDLE_IDENTIFIER: com.stevenjohns.AxiomTests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Axiom.app/Contents/MacOS/Axiom"
         BUNDLE_LOADER: "$(TEST_HOST)"
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Development: steven@sjohns.net (6V6MHJBVWL)"
+          DEVELOPMENT_TEAM: S7D8Q56TGV
 schemes:
-  AIHUD:
+  Axiom:
     build:
       targets:
-        AIHUD: all
-        AIHUDTests: [test]
+        Axiom: all
+        AxiomTests: [test]
     test:
       targets:
-        - AIHUDTests
+        - AxiomTests

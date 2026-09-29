@@ -6,32 +6,46 @@ struct HUDView: View {
     @Bindable var model: HUDModel
     var store: EndpointStore
     @State private var promptHeight = HUDMetrics.rowHeight
+    @State private var scrollerVisible = false
+    @Bindable private var preview = DebugPreviewStore.shared
 
     var body: some View {
         let override = model.logoOverride
         VStack(alignment: .leading, spacing: 0) {
-            promptRow(idleSlot: HUDModelMenu.idleSlot(
-                dictating: model.dictating,
-                override: override,
-                endpoint: store.selectedEndpoint ?? ChatEndpointCatalog.onDeviceEndpoint
-            ))
+            promptRow(
+                idleSlot: HUDModelMenu.idleSlot(
+                    dictating: model.dictating,
+                    override: override,
+                    endpoint: store.selectedEndpoint ?? ChatEndpointCatalog.onDeviceEndpoint
+                ),
+                shimmerStyle: preview.cardShimmer,
+                orbChoice: preview.cardOrb
+            )
             if !model.session.chips.isEmpty {
                 chipRow
             }
             hairline
-            if model.session.showsAnswer || model.historyExpanded {
+            if HistoryChromePolicy.showsReplyRegion(
+                answer: model.session.displayAnswer,
+                phase: model.session.phase,
+                historyExpanded: model.historyExpanded
+            ) {
                 history
             }
             toolbar
         }
+        .padding(.bottom, HUDLayout.cardBottomSlack)
         .frame(width: HUDMetrics.cardWidth)
         .frame(minHeight: HUDLayout.cardHeight(), alignment: .top)
         .fixedSize(horizontal: false, vertical: true)
-        .clipShape(RoundedRectangle(cornerRadius: HUDMetrics.cornerRadius, style: .continuous))
         .background(Color.clear)
     }
 
-    private func promptRow(idleSlot: HUDIdleSlot) -> some View {
+    private func promptRow(
+        idleSlot: HUDIdleSlot,
+        shimmerStyle: InFlightShimmerStyle,
+        orbChoice: ThinkingOrbChoice
+    ) -> some View {
         HStack(alignment: .center, spacing: 10) {
             Group {
                 switch idleSlot {
@@ -61,40 +75,65 @@ struct HUDView: View {
             }
             .id(model.logoOverride)
             .frame(width: 18, height: 18)
-            PromptField(
-                text: Binding(
-                    get: { model.session.draft },
-                    set: { model.setDraft($0) }
-                ),
-                placeholder: model.dictating && model.session.draft.isEmpty ? "Listening..." : "Ask anything...",
-                multiline: model.displayedMultiline,
-                onSubmit: { model.submit() },
-                onReady: { model.promptEditor = $0 },
-                onHeight: { height in
-                    let line = PromptLayout.lineHeight(for: PromptLayout.font())
-                    let extra = max(0, height - HUDMetrics.rowHeight)
-                    let lines = model.displayedMultiline
-                        ? min(PromptLayout.maxVisibleLines, 1 + Int((extra / max(line, 1)).rounded()))
-                        : 1
-                    let heightChanged = promptHeight != height
-                    let linesChanged = model.promptLineCount != lines
-                    promptHeight = height
-                    model.promptLineCount = lines
-                    if heightChanged || linesChanged {
-                        model.onLayout()
+            ZStack(alignment: .leading) {
+                PromptField(
+                    text: Binding(
+                        get: { model.session.draft },
+                        set: { model.setDraft($0) }
+                    ),
+                    placeholder: model.dictating && model.session.draft.isEmpty ? "Listening..." : "Ask anything...",
+                    multiline: model.displayedMultiline,
+                    isEditable: PromptInFlightPolicy.isEditable(phase: model.session.phase),
+                    onSubmit: { model.submit() },
+                    onReady: { model.promptEditor = $0 },
+                    onHeight: { height in
+                        let line = PromptLayout.lineHeight(for: PromptLayout.font())
+                        let extra = max(0, height - HUDMetrics.rowHeight)
+                        let lines = model.displayedMultiline
+                            ? min(PromptLayout.maxVisibleLines, 1 + Int((extra / max(line, 1)).rounded()))
+                            : 1
+                        let heightChanged = promptHeight != height
+                        let linesChanged = model.promptLineCount != lines
+                        promptHeight = height
+                        model.promptLineCount = lines
+                        if heightChanged || linesChanged {
+                            model.onLayout()
+                        }
                     }
+                )
+                .opacity(showsInFlightShimmer ? 0 : 1)
+
+                if showsInFlightShimmer {
+                    InFlightPromptShimmer(
+                        text: model.session.draft,
+                        style: shimmerStyle
+                    )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .allowsHitTesting(false)
                 }
-            )
-            Button(action: model.submitOrStop) {
-                Image(systemName: model.session.showsStop ? "stop.fill" : "arrow.up.right")
-                    .font(.system(size: 15, weight: .medium))
             }
+            Button(action: model.submitOrStop) {
+                if ReplyWaitingChrome.showsComposingOrb(
+                    phase: model.session.phase,
+                    answer: model.session.displayAnswer
+                ) {
+                    AnimatedThinkingOrb(choice: orbChoice)
+                } else {
+                    Image(systemName: model.session.showsStop ? "stop.fill" : "arrow.up.right")
+                        .font(.system(size: 15, weight: .medium))
+                }
+            }
+            .frame(width: HUDMetrics.controlSize, height: HUDMetrics.controlSize)
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .opacity(model.session.canSend || model.captureArmed || model.session.showsStop ? 0.9 : 0.35)
             .disabled(!model.session.canSend && !model.captureArmed && !model.session.showsStop)
         }
-        .frame(height: model.displayedMultiline ? promptHeight : HUDMetrics.rowHeight)
+        .frame(
+            width: HUDLayout.rowWidth,
+            height: model.displayedMultiline ? promptHeight : HUDMetrics.rowHeight
+        )
         .padding(.horizontal, HUDMetrics.inset)
         .onChange(of: model.displayedMultiline) {
             if !model.displayedMultiline {
@@ -103,6 +142,11 @@ struct HUDView: View {
             }
             model.onLayout()
         }
+    }
+
+    private var showsInFlightShimmer: Bool {
+        PromptInFlightPolicy.isInFlight(model.session.phase)
+            && !model.session.draft.isEmpty
     }
 
     private var chipRow: some View {
@@ -140,80 +184,109 @@ struct HUDView: View {
     }
 
     private var history: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if model.historyExpanded {
-                expandedTranscript
-            } else {
-                compactAnswer
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if model.historyExpanded {
+                    middleScroll(
+                        height: HUDLayout.replyBodyHeight(lines: HUDLayout.replyMaxLines),
+                        tailID: "answer-end",
+                        tracked: model.session.displayAnswer
+                    ) {
+                        expandedTranscriptContent
+                    }
+                } else {
+                    compactAnswer
+                }
             }
-        }
-        .overlay(alignment: .topTrailing) {
-            if model.session.turns.contains(where: { $0.role == .user }) {
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if HistoryChromePolicy.showsExpandChevron(
+                answer: model.session.displayAnswer,
+                phase: model.session.phase,
+                historyExpanded: model.historyExpanded,
+                hasUserTurns: model.session.turns.contains(where: { $0.role == .user })
+            ) {
                 Button(action: model.toggleHistory) {
                     Image(systemName: model.historyExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 22)
+                        .frame(width: HUDMetrics.controlSize, height: HUDMetrics.controlSize)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 8)
-                .padding(.trailing, 10)
+                .padding(.trailing, HUDMetrics.inset)
+                .opacity(HUDLayout.expandChevronOpacity(scrollerVisible: scrollerVisible))
+                .animation(
+                    .easeInOut(duration: HUDLayout.scrollerFadeDuration),
+                    value: scrollerVisible
+                )
+                .allowsHitTesting(!scrollerVisible)
+                .accessibilityHidden(scrollerVisible)
             }
         }
     }
 
     private var compactAnswer: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if model.session.phase == .waiting, model.session.displayAnswer.isEmpty {
-                Text("Thinking…")
-                    .foregroundStyle(.secondary)
-            }
-            if !model.session.displayAnswer.isEmpty {
-                Text(ReplyMarkdown.attributed(model.session.displayAnswer))
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        let text = model.session.displayAnswer
+        let lines = HUDLayout.wrappedReplyLines(text)
+        let bodyHeight = HUDLayout.replyBodyHeight(lines: lines)
+        let content = compactReplyText(text)
+        return Group {
+            if model.session.phase == .waiting, text.isEmpty {
+                EmptyView()
+            } else if lines > HUDLayout.replyMaxLines {
+                middleScroll(height: bodyHeight, tailID: "reply-tail", tracked: text) {
+                    content
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    content
+                        .frame(height: bodyHeight, alignment: .top)
+                }
+                .padding(.leading, HUDMetrics.inset)
+                .padding(.trailing, HUDMetrics.inset + HUDMetrics.controlSize)
+                .padding(.vertical, 12)
+                .onAppear { scrollerVisible = false }
             }
         }
-        .font(.body)
-        .padding(.horizontal, HUDMetrics.inset)
-        .padding(.vertical, 12)
-        .padding(.trailing, 18)
+        .font(Font(HUDLayout.replyFont))
     }
 
-    private var expandedTranscript: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if let started = model.session.startedAt {
-                        Text(started.formatted(date: .omitted, time: .shortened))
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                    ForEach(Array(Transcript.rows(in: model.session, expanded: true).enumerated()), id: \.offset) { _, row in
-                        transcriptRow(row)
-                    }
-                    Color.clear
-                        .frame(height: 1)
-                        .id("answer-end")
-                }
-                .padding(.horizontal, HUDMetrics.inset)
-                .padding(.vertical, 12)
-                .padding(.trailing, 18)
+    private func compactReplyText(_ text: String) -> some View {
+        Text(HUDLayout.styledReply(text))
+            .foregroundStyle(.primary)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func middleScroll<Content: View>(
+        height: CGFloat,
+        tailID: String,
+        tracked: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        ReplyScroll(
+            height: height,
+            tailID: tailID,
+            tracked: tracked,
+            stickToBottom: $model.stickToBottom,
+            scrollerVisible: $scrollerVisible,
+            content: content
+        )
+        .padding(.horizontal, HUDMetrics.inset)
+        .padding(.vertical, 12)
+    }
+
+    private var expandedTranscriptContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let started = model.session.startedAt {
+                Text(started.formatted(date: .omitted, time: .shortened))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
-            .frame(maxHeight: 480)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                if geometry.contentSize.height <= geometry.containerSize.height + 1 {
-                    return true
-                }
-                let leftover = geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height
-                return leftover < 24
-            } action: { _, atBottom in
-                model.stickToBottom = atBottom
-            }
-            .onChange(of: model.session.displayAnswer) {
-                guard model.stickToBottom else { return }
-                proxy.scrollTo("answer-end", anchor: .bottom)
+            ForEach(Array(Transcript.rows(in: model.session, expanded: true).enumerated()), id: \.offset) { _, row in
+                transcriptRow(row)
             }
         }
     }
@@ -233,9 +306,7 @@ struct HUDView: View {
                         .foregroundStyle(.tertiary)
                 }
             } else if row.live, row.text.isEmpty {
-                Text("Thinking…")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
+                EmptyView()
             } else {
                 Text(ReplyMarkdown.attributed(row.text))
                     .font(.body)
@@ -260,10 +331,14 @@ struct HUDView: View {
             }
             .buttonStyle(.plain)
         } trailing: {
-            shortcutBadge
+            if store.savesHistory {
+                historyGhostButton
+            } else {
+                shortcutBadge
+            }
             micButton
         }
-        .frame(height: HUDMetrics.rowHeight)
+        .frame(width: HUDLayout.rowWidth, height: HUDMetrics.rowHeight)
         .clipped()
         .padding(.horizontal, HUDMetrics.inset)
     }
@@ -274,7 +349,7 @@ struct HUDView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(model.dictating ? Color.orange : Color.secondary)
                 .symbolEffect(.variableColor.iterative, isActive: model.dictating)
-                .frame(width: 24, height: 24)
+                .frame(width: HUDMetrics.controlSize, height: HUDMetrics.controlSize)
         }
         .buttonStyle(.plain)
         .help(model.dictating ? "Stop dictation" : "Dictate")
@@ -350,6 +425,9 @@ struct HUDView: View {
         let proxy = ModelMenuProxy { providerID, modelID in
             model.selectChat(providerID: providerID, modelID: modelID)
         }
+        let reasoningProxy = ReasoningMenuProxy { effort in
+            store.reasoningEffort = effort
+        }
         let menu = NSMenu()
         let currentID = store.defaultEndpointID
         let currentModel = store.chatModelID
@@ -392,6 +470,22 @@ struct HUDView: View {
             }
             menu.addItem(row)
         }
+        menu.addItem(.separator())
+        let reasoning = NSMenuItem(title: "Reasoning", action: nil, keyEquivalent: "")
+        let reasoningMenu = NSMenu()
+        for effort in ReasoningEffort.allCases {
+            let item = NSMenuItem(
+                title: effort.title,
+                action: #selector(ReasoningMenuProxy.pick(_:)),
+                keyEquivalent: ""
+            )
+            item.target = reasoningProxy
+            item.representedObject = effort.rawValue
+            item.state = effort == store.reasoningEffort ? .on : .off
+            reasoningMenu.addItem(item)
+        }
+        reasoning.submenu = reasoningMenu
+        menu.addItem(reasoning)
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: 0), in: view)
     }
 
@@ -410,6 +504,19 @@ struct HUDView: View {
             menu.addItem(item)
         }
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    private var historyGhostButton: some View {
+        Button(action: model.toggleHistoryExclusion) {
+            Image(systemName: HistoryChrome.symbol(excluded: model.historyExcluded))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(model.historyExcluded ? Color.primary : Color.secondary)
+                .frame(width: HUDMetrics.controlSize, height: HUDMetrics.controlSize)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(model.historyExcluded ? "Record this chat" : "Don't record this chat")
+        .accessibilityLabel(model.historyExcluded ? "Recording off" : "Recording on")
     }
 
     private var shortcutBadge: some View {
@@ -433,6 +540,204 @@ struct HUDView: View {
             return "⌃⌥K"
         }
         return shortcut.description
+    }
+}
+
+private struct ReplyScroll<Content: View>: View {
+    var height: CGFloat
+    var tailID: String
+    var tracked: String
+    @Binding var stickToBottom: Bool
+    @Binding var scrollerVisible: Bool
+    @ViewBuilder var content: Content
+    @State private var fade = HUDLayout.ScrollFadeEdges.none
+    @State private var hideTask: Task<Void, Never>?
+    @State private var didReachBottom = false
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            Color.clear
+                .frame(height: height)
+                .overlay {
+                    ScrollView {
+                        content
+                            .background {
+                                OverlayScrollerInstaller(active: scrollerVisible)
+                            }
+                        Color.clear
+                            .frame(height: 1)
+                            .id(tailID)
+                    }
+                    .scrollIndicators(.automatic)
+                    .onScrollPhaseChange { _, phase in
+                        let live: Bool
+                        switch phase {
+                        case .interacting, .tracking, .decelerating:
+                            live = true
+                        default:
+                            live = false
+                        }
+                        if live {
+                            hideTask?.cancel()
+                            scrollerVisible = true
+                        } else if scrollerVisible {
+                            hideTask?.cancel()
+                            hideTask = Task { @MainActor in
+                                let delay = UInt64(HUDLayout.scrollerHideDelay * 1_000_000_000)
+                                try? await Task.sleep(nanoseconds: delay)
+                                guard !Task.isCancelled else { return }
+                                scrollerVisible = false
+                            }
+                        }
+                    }
+                    .onDisappear {
+                        hideTask?.cancel()
+                        scrollerVisible = false
+                    }
+                    .mask {
+                        fadeMask
+                    }
+                    .onScrollGeometryChange(for: HUDLayout.ScrollFadeEdges.self) { geometry in
+                        HUDLayout.scrollFadeEdges(
+                            offset: geometry.contentOffset.y,
+                            contentHeight: geometry.contentSize.height,
+                            viewport: geometry.containerSize.height
+                        )
+                    } action: { _, next in
+                        fade = next
+                    }
+                    .onScrollGeometryChange(for: HUDLayout.ScrollPin.self) { geometry in
+                        HUDLayout.scrollPin(
+                            offset: geometry.contentOffset.y,
+                            contentHeight: geometry.contentSize.height,
+                            viewport: geometry.containerSize.height
+                        )
+                    } action: { _, next in
+                        if next.fits {
+                            return
+                        }
+                        if next.atBottom {
+                            didReachBottom = true
+                            stickToBottom = true
+                        } else if didReachBottom {
+                            stickToBottom = false
+                        } else {
+                            proxy.scrollTo(tailID, anchor: .bottom)
+                        }
+                    }
+                    .onChange(of: tracked) {
+                        guard stickToBottom else { return }
+                        proxy.scrollTo(tailID, anchor: .bottom)
+                    }
+                    .onAppear {
+                        proxy.scrollTo(tailID, anchor: .bottom)
+                    }
+                }
+                .clipShape(Rectangle())
+        }
+    }
+
+    private var fadeMask: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                colors: [.clear, .black],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: fade.top ? HUDLayout.scrollFadeLength : 0)
+            Rectangle()
+                .fill(.black)
+            LinearGradient(
+                colors: [.black, .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: fade.bottom ? HUDLayout.scrollFadeLength : 0)
+        }
+    }
+}
+
+private struct OverlayScrollerInstaller: NSViewRepresentable {
+    var active: Bool
+
+    func makeNSView(context: Context) -> Probe {
+        let view = Probe()
+        view.active = active
+        return view
+    }
+
+    func updateNSView(_ nsView: Probe, context: Context) {
+        nsView.active = active
+        nsView.install()
+    }
+
+    final class Probe: NSView {
+        var active = false
+        private var configured = false
+        private var applied: Bool?
+        private var fading = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            install()
+        }
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            install()
+        }
+
+        override func layout() {
+            super.layout()
+            install()
+        }
+
+        func install() {
+            guard let scroll = enclosingScrollView ?? nearestScrollView() else { return }
+            if !configured {
+                scroll.scrollerStyle = .overlay
+                scroll.autohidesScrollers = true
+                scroll.hasVerticalScroller = true
+                scroll.hasHorizontalScroller = false
+                scroll.horizontalScrollElasticity = .none
+                configured = true
+            }
+            guard let scroller = scroll.verticalScroller else { return }
+            scroller.isHidden = false
+            let target: CGFloat = active ? 1 : 0
+            if applied == nil {
+                scroller.alphaValue = target
+                applied = active
+                return
+            }
+            if applied != active {
+                applied = active
+                fading = true
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = HUDLayout.scrollerFadeDuration
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    scroller.animator().alphaValue = target
+                }, completionHandler: { [weak self] in
+                    self?.fading = false
+                    scroller.alphaValue = target
+                })
+                return
+            }
+            if !fading, abs(scroller.alphaValue - target) > 0.02 {
+                scroller.alphaValue = target
+            }
+        }
+
+        private func nearestScrollView() -> NSScrollView? {
+            var view: NSView? = self
+            while let current = view {
+                if let scroll = current as? NSScrollView {
+                    return scroll
+                }
+                view = current.superview
+            }
+            return nil
+        }
     }
 }
 
@@ -497,6 +802,22 @@ private final class ModelMenuProxy: NSObject {
     @objc func pick(_ sender: NSMenuItem) {
         guard let choice = sender.representedObject as? ModelMenuChoice else { return }
         handler(choice.providerID, choice.modelID)
+    }
+}
+
+@MainActor
+private final class ReasoningMenuProxy: NSObject {
+    let handler: (ReasoningEffort) -> Void
+
+    init(_ handler: @escaping (ReasoningEffort) -> Void) {
+        self.handler = handler
+    }
+
+    @objc func pick(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let effort = ReasoningEffort(rawValue: raw)
+        else { return }
+        handler(effort)
     }
 }
 

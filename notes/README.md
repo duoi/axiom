@@ -1,5 +1,61 @@
 # Notes
 
+## 2026-09-29
+
+- Debug has Open transcript. It opens a second titled window "Axiom transcript" that streams live redacted HTTP request and response lines from ChatClient, AnthropicClient, and ChatGPTClient. Authorization, x-api-key, api-key, bearer values, refresh_token / api_key JSON fields, and secret query params become `[redacted]`. Prompt text stays. Closing the window keeps the buffer; chat keeps working.
+
+- Debug Thinking orb panel now has a Shimmer picker for every text treatment in mdo91/AI-Animation-Demo: ChatGPT style (default), Grok style, ShimmeringText, Summerizing the text, Processing label. Selecting one drives the locked in-flight prompt when Debug is on; Preview shimmer / `--debug-state=shimmer-<slug>` shows a sample draft without a network send. Production sends stay ChatGPT style when Debug has not picked another. Not ported as text shimmers: Analyzing the text (Pulsing orb) and Sequential dot grid. Captures: `notes/captures/hud-shimmer-grok-a.png`, `notes/captures/hud-shimmer-grok-b.png` (14477 changed pixels), `notes/captures/hud-shimmer-chatgpt-a.png`, `notes/captures/hud-shimmer-chatgpt-b.png` (13232 changed), `notes/captures/hud-shimmer-summerizing.png`.
+
+- While waiting or streaming, the prompt stays filled with the exact submitted string and is not editable (`PromptInFlightPolicy`). Success clears the draft; failure restores it and unlocks editing. Dictation cannot rewrite the field in flight. The retained text uses a ported ChatGPT-style shimmer (`InFlightPromptShimmer`) over a hidden field. Debug "In-flight prompt" (`--debug-state=in-flight-prompt`) shows it; Pulsing orb is an extra Debug send-icon choice (ported from mdo91/AI-Animation-Demo, not SPM). Captures: `notes/captures/hud-inflight-shimmer-a.png`, `notes/captures/hud-inflight-shimmer-b.png` (4696 changed prompt pixels), `notes/captures/hud-pulsing-orb-a.png`, `notes/captures/hud-pulsing-orb-b.png`.
+
+- ThinkingOrbs froze because the package pauses TimelineView when SwiftUI `scenePhase` is background, and the nonactivating HUD panel stays there. `AnimatedThinkingOrb` forces `.active` and an unpaused TimelineView. Dual frames differ: `notes/captures/hud-orb-anim-a.png`, `notes/captures/hud-orb-anim-b.png` (650 changed pixels in the send crop). Debug adds nine glow twins (Working glow through Shaping glow) that colorize the dots with the intelligence conic palette. Production waits stay plain Composing.
+
+- Waiting with no reply text no longer opens a reply band or expand chevron (`HistoryChromePolicy`). Idle and pre-token waiting stay 560x108. Chevron and growth return for nonempty reply, failure, or already-expanded history. Capture: same waiting pair above (compact height).
+
+- Reasoning effort lives in UserDefaults `chat.reasoningEffort` (default Off). Settings Models has a picker; the HUD logo menu adds a Reasoning submenu that writes the same key. OpenAI-compatible always sends `reasoning_effort` (`off` / `minimal` / `low` / `medium` / `high`). ChatGPT Responses always sends `reasoning.effort` the same way. Anthropic omits `thinking` when Off; otherwise sends `thinking.budget_tokens` (1024/2048/8192/16384) and raises `max_tokens`.
+
+- Request timeout is UserDefaults `chat.requestTimeoutSeconds` (default 45, clamp 10 to 600). Settings Models edits it; `ChatClient.makeSession` uses it for `timeoutIntervalForRequest` and 2x for the resource timeout.
+
+- Settings Models provider table columns are Name and Host only. The concrete model id stays on the Chat/Vision pickers and the edit sheet.
+
+- Waiting no longer draws Thinking text. The send control shows a Composing ThinkingOrb (SPM `haplollc/ThinkingOrbs`) at `HUDMetrics.controlSize` while phase is waiting with an empty answer, then restores the arrow or stop icon. Debug has a Thinking orb picker for all nine designs. Captures: `notes/captures/hud-composing-orb.png`, `notes/captures/settings-models-no-model-column.png`, `notes/captures/settings-reasoning-timeout.png`.
+
+- Settings Base URL shows a hint for the API base (`https://host/v1`) and warns when the field looks like a full chat path (`/chat/completions`, `/completions`, or `/messages`). Model refresh still strips those suffixes only for the models request so `/v1/models` works; the stored URL is left alone. A failed refresh shows `Could not list models. Tried /v1/models.` plus the same warning when the saved URL looks wrong. No keys in that copy.
+
+## 2026-09-28
+
+- HUD panel fades in and out in 160ms (`HUDPanelFade.duration`, same as the overlay scroller). Show uses `reveal()`, and every dismiss path that calls `userDismiss` (hotkey toggle, click outside, ESC, empty wake hide) runs `fadeOut` then `orderOut` only after the animation. A show during fade-out cancels and fades back in; a hide during fade-in reverses out. Screen-grab hide stays instant so the card is not in the shot. Capture optional: still frames cannot show the fade.
+
+- Capture glow flashes on every screenshot send (removed once-per-session gate). Screen uses `CGDisplayBounds` and both screen/window Quartz frames convert to AppKit before the panel is placed, so the stroke tracks the target instead of sitting low. Listening opacity/line scale are 0.3; capture opacity is 0.6 and line width scale is 0.5. Capture dismiss is opacity-only (`animationBehavior = .none`, no scale/inset); a still cannot prove the old inward pull is gone. Captures: `notes/captures/hud-listening-preset-opacity.png`, `notes/captures/hud-capture-preset-opacity.png`.
+
+- Listening and capture glow presets are absolute (no extra 0.3 multiply on top of the preset). Debug loads the active context preset; Reset restores Listening vs Capture factory values. Older captures: `notes/captures/hud-listening-preset.png`, `notes/captures/hud-capture-preset.png`.
+
+- Dictation glows the whole glass card with continuous 24pt corners. Capture highlight uses its own stronger preset; unknown windows use a 14pt continuous corner. Debug exposes Intelligence Glow Overlay, Sweep, Background, Glass Background, and Sweep + Glow, plus padding/blur/opacity/sweep knobs (session memory). Older captures: `notes/captures/hud-dictate-card-glow.png`, `notes/captures/hud-capture-card-glow.png`.
+
+- Capture highlight and dictation use an Apple Intelligence-style animated glow (ported from Livsy90/IntelligenceGlow; the package is iOS-only so it is not an SPM dependency). Debug has Flash capture glow (`flash-highlight`). Older captures: `notes/captures/hud-dictate-glow.png`, `notes/captures/hud-capture-glow.png`, `notes/captures/hud-capture-glow-panel.png`.
+
+- History is one conversation per HUD session (upsert by `historyID`); Settings History shows Time + Title, double-click opens a scrollable detail sheet with every turn and saved screenshots; Accessibility sits beside mic/speech and Screen Recording; Settings opens at 760×640.
+- The app is Axiom, bundle id `com.stevenjohns.Axiom`.
+- Debug signs with Manual `CODE_SIGN_IDENTITY` `Apple Development: steven@sjohns.net (6V6MHJBVWL)` and `DEVELOPMENT_TEAM` `S7D8Q56TGV` in `project.yml` (Release stays ad-hoc `-`). Stable signing keeps the cdhash across rebuilds so Microphone / Screen Recording TCC entries should stick; allow those once for `com.stevenjohns.Axiom` in System Settings → Privacy & Security if prompted. Do not edit the TCC database. Screen capture no longer calls `CGRequestScreenCaptureAccess` on send; the mic button only reads status, and Wake on Axiom only requests when status is `.notDetermined`. Settings → General → Permissions has buttons that request mic/speech or Screen Recording when undecided, or open the matching Privacy pane when denied.
+
+- Expand chevron stays in the send/mic trailing column outside the reply text so "Thinking…" cannot push or overlap it. Capture: `notes/captures/hud-chevron-thinking.png`.
+
+- Screenshot sends no longer collapse ChatGPT `response.failed` (and nested `response.error`) or auth/timeout throws into generic "The request failed."; image routing again forwards vision credentials, and capture/permission copy stays distinct.
+- Expanded history caps at the same 30-line reply budget (15 down, then 15 up) and clamps inside `visibleFrame`, so a long thread scrolls instead of pushing the panel off screen. Capture: `notes/captures/hud-history-capped.png`.
+
+- Settings History (off by default) stores completed chats under Application Support `com.stevenjohns.Axiom/History`; when history is on the HUD toolbar swaps the hotkey badge for an ephemeral toggle (`ghost` when available, otherwise `theatermasks`). Capture: `notes/captures/hud-history-ghost.png`.
+
+- Escape dismisses the card whenever it is key, including when the reply is first responder. Right-click on the card offers Settings, plus Debug when `--debug` or the status-item Debug gate is on.
+
+- Overlay scroller fades 160ms in and out after a 350ms rest, and the 24pt expand chevron sits on the send/mic trailing edge, hidden while the bar is on screen. Capture: `notes/captures/hud-chevron-fade.png`.
+
+- Overflow reply chrome: the expand chevron sits in the 20pt trailing inset outside the scroll view, the overlay scroller is hidden at rest, and the text fades at the top when the tail is showing. Capture: `notes/captures/hud-scroll-chrome.png`.
+- Reply height caps at 15 wrapped lines down, then 15 up, then the body scrolls; capture: `notes/captures/hud-reply-max-height.png`.
+- Debug Phase can force streaming one line (`stream-line`), a wrapping stream (`stream-multi`), a 15-line lower extension (`lower-extension`), a 30-line upper extension (`upper-extension`), overflow scroll (`reply-overflow`), and expanded conversation (`expanded-conversation`); overflow and expanded history share one 20pt-inset scroll track. Captures: `notes/captures/hud-debug-upper-extension.png`, `notes/captures/hud-debug-scroll-align.png`, `notes/captures/hud-debug-history-scroll.png`.
+- Restored 20pt side inset on the prompt row and the Agent/Window/Add context row. The reply still sits between the prompt and that toolbar. Capture: `notes/captures/hud-row-margins.png`.
+- A wrapped second-turn reply no longer shears the idle bottom gap; the Agent row stays inset from the glass. Capture: `notes/captures/hud-long-reply-margins.png`.
+- Streaming wraps now grow the card instead of freezing height, so the Agent row keeps its inset while tokens arrive. Capture: `notes/captures/hud-stream-margins.png`.
+
 ## 2026-09-27
 
 - Scaffolded the repo. The visual spec is `notes/references/launcher-hud.jpg`.
@@ -7,7 +63,7 @@
 - Wake and dictation use SpeechAnalyzer. Wake on Axiom and Pause to send default off. Microphone and speech permission are requested from Settings, not the card. Capture: `notes/captures/hud-mic-button.png`.
 - Voice capture consumes the microphone with analyzeSequence, and a spoken comma after Axiom stays out of the draft. Synthesized "axiom what is the total mass of the sun" opened the card and filled the question. The live microphone also wrote recognized speech into the prompt. Axiom focuses the card immediately, partial words land as they are recognized, and the sparkle and mic become an animated waveform while dictating. An empty draft shows "Listening...". Captures: `notes/captures/hud-voice-sim.png`, `notes/captures/hud-mic-live.png`, `notes/captures/hud-listening.png`.
 - The client is OpenAI Chat Completions. The dev file only supplies the model id, URL, and key.
-- `AIHUD.app/Contents/MacOS/AIHUD --show` opens the card without the hotkey, for a visual check.
+- `Axiom.app/Contents/MacOS/Axiom --show` opens the card without the hotkey, for a visual check.
 - The idle card is 560 by 108. A reply grows it downward and the top stays put. Captures: `notes/captures/hud-reply-desktop-d1.png` and `notes/captures/hud-reply.png`.
 - Matte skips the window shadow. Regular glass is opaque, so that shadow drew a black box around the card while it was focused. Clear glass still uses the shadow. Capture: `notes/captures/hud-matte-focused.png`.
 - Checked on this Mac: glass shows the window behind it, Cursor keeps the menu bar, Control-Option-K toggles once, a follow-up includes the earlier turn, a click outside leaves a finished reply up and dismisses a stream, and dismissing a stream puts that prompt back in the field.
@@ -16,7 +72,7 @@
 - Settings Chat has an On-device model toggle (`chat.onDevice`) that streams Apple Intelligence on this Mac and leaves the endpoint fields in place.
 - Command-A, cut, copy, paste, undo, and redo reach the prompt while the card is up. An Edit menu covers the same commands in Settings.
 - Settings is a fixed sidebar, not a collapsing split view. General, Appearance, Chat, Vision, and About. Appearance Glass is clear glass. Matte is regular glass. The amount slider is a veil. Ask is a toggle that keeps Agent's width. Unfocused pills use regular glass, not a black fill. About links to github.com/duoi/axiom. Spacing, corner radius, and row height live in `HUDMetrics`. The Agent pill and an armed Screen control use the same glass as the card, and go matte when the card is not key, Reduce Transparency is on, or Settings asks for matte. Highlighted pills use `HUDMetrics.pillInset` (8) on every side and hug their content. Opening Settings leaves the card up. Captures: `notes/captures/hud-toolbar.png`, `notes/captures/hud-toolbar-desktop-d1-d1.png`, `notes/captures/settings-general.png`, `notes/captures/settings-appearance.png`, `notes/captures/settings-about.png`, `notes/captures/hud-with-settings-d1.png`, `notes/captures/hud-pills-armed.png`, `notes/captures/hud-pills-unfocused.png`, `notes/captures/hud-pills-unfocused-desktop-d1.png`.
-- Debug is off unless you open it from the status-item Debug item or `open AIHUD.app --args --debug`. `--debug-state=failed` and `--debug-state=dictate-on` drive the live card. Enabling it does not clear the endpoint or turn on the microphone. Captures: `notes/captures/debug-panel.png`, `notes/captures/debug-card-failed.png`, `notes/captures/debug-card-listening.png`, `notes/captures/debug-card-idle.png`.
+- Debug is off unless you open it from the status-item Debug item or `open Axiom.app --args --debug`. `--debug-state=failed` and `--debug-state=dictate-on` drive the live card. Enabling it does not clear the endpoint or turn on the microphone. Captures: `notes/captures/debug-panel.png`, `notes/captures/debug-card-failed.png`, `notes/captures/debug-card-listening.png`, `notes/captures/debug-card-idle.png`.
 - The Axiom mark is the white A with a diagonal beam and 8-point starburst. Source is `AIHUD/Assets/AxiomLogo.png` (alpha already clear; 43 leftover near-black specks were knocked out). The glass SVG is gone from the repo and the bundle. App icon, HUD idle slot, Settings About, and the status item use this silhouette. The status item is a template. Captures: `notes/captures/hud-logo.png`, `notes/captures/settings-about-logo.png`. The prompt row stayed 18pt / 52pt.
 - Screen and Window share one reserved width (hidden sizing stack of icon, label, and chevron, plus pill padding), so Add context does not jump. The mic sits after the spacer, right of the shortcut badge. Captures: `notes/captures/hud-capture-screen.png`, `notes/captures/hud-capture-window.png`. Compared with `notes/references/launcher-hud.jpg`: 560 card, 52pt rows, left cluster then trailing hint.
 - App icon comes from `AIHUD/Assets.xcassets/AppIcon.appiconset` (`ASSETCATALOG_COMPILER_APPICON_NAME` / `CFBundleIconName` AppIcon). Xcode emits `Contents/Resources/AppIcon.icns`; launch sets `NSApp.applicationIconImage` from that file so the Dock shows the white A mark while Settings is open. Voice permission lines on the card open Privacy & Security (Microphone or Speech Recognition), not in-app Settings. The microphone sentence appears only after a voice attempt; idle `--show` does not show it. Capture: `notes/captures/hud-idle-no-mic-warning.png`.
@@ -38,4 +94,4 @@
 - Debug can force each catalog provider mark as a display-only 18pt override (`--debug-state=logo-anthropic`, `logo-openai`, and the other preset slugs), a finished reply plus follow-up draft (`--debug-state=second-turn`), Screen vs Window armed labels, multiline, and the current error-line copies, without clearing keys or opening the mic. Capture: `notes/captures/hud-debug-providers.png`.
 - A follow-up draft no longer resizes the card on each key: 1pt fittingSize flicker is ignored and single-line typing skips the layout pass, so the finished reply stays pinned. Capture: `notes/captures/hud-second-turn-type.png`.
 - On-device idle mark is the system `apple.intelligence` SF Symbol, template-tinted `#FFFFFF`; custom hosts keep the Axiom A. Capture: `notes/captures/hud-on-device-logo.png`.
-- Error and status copy sit on a dark rose lip that peeks 28pt under the plate, 24pt in from each side, without climbing the card corner. Capture: `notes/captures/hud-error-lip.png`.
+- Error and status copy sit on a dark rose bar that peeks 28pt under the plate, 24pt in from each side, no wings. Capture: `notes/captures/hud-error-lip.png`.

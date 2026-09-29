@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>AI HUD</string>
+	<string>Axiom</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIconName</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>AI HUD</string>
+	<string>Axiom</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -27,9 +27,9 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>AI HUD uses the microphone for Axiom and for dictation into the prompt card.</string>
+	<string>Axiom uses the microphone for wake-word listening and for dictation into the prompt card.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>AI HUD turns speech into text for Axiom and for the prompt card.</string>
+	<string>Axiom turns speech into text for wake-word listening and for the prompt card.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

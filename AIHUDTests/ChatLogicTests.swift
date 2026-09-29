@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 import Testing
-@testable import AIHUD
+@testable import Axiom
 
 @Test func parserSkipsCommentsBlanksAndNonData() {
     #expect(SSEParser.parse(line: ": keep-alive") == .skip)
@@ -63,7 +63,7 @@ import Testing
         Issue.record("expected a request")
         return
     }
-    #expect(session.draft.isEmpty)
+    #expect(session.draft == "  Hello  ")
     #expect(session.phase == .waiting)
     #expect(first[0].role == "system")
     #expect(first[0].text == prompt)
@@ -74,6 +74,7 @@ import Testing
     #expect(session.phase == .finished)
     #expect(session.displayAnswer == "Yo")
     #expect(session.showsStop == false)
+    #expect(session.draft.isEmpty)
 
     session.draft = "shorter"
     session.preset = .ask
@@ -1067,6 +1068,86 @@ import Testing
         EndpointResolver.responsesURL(configured: "https://chatgpt.com/backend-api/codex")
             == .success(URL(string: "https://chatgpt.com/backend-api/codex/responses")!)
     )
+    #expect(
+        EndpointResolver.modelsURL(
+            configured: "http://100.93.227.31:8080/v1/chat/completions",
+            allowedCleartextHosts: ["100.93.227.31"]
+        )
+            == .success(URL(string: "http://100.93.227.31:8080/v1/models")!)
+    )
+    #expect(
+        EndpointResolver.modelsURL(configured: "https://api.anthropic.com/v1")
+            == .success(URL(string: "https://api.anthropic.com/v1/models")!)
+    )
+    #expect(
+        EndpointResolver.modelsURL(configured: "https://api.anthropic.com/v1/messages")
+            == .success(URL(string: "https://api.anthropic.com/v1/models")!)
+    )
+    #expect(
+        EndpointResolver.modelsURL(configured: "https://api.anthropic.com/v1/messages/")
+            == .success(URL(string: "https://api.anthropic.com/v1/models")!)
+    )
+    #expect(
+        EndpointResolver.completionsURL(
+            configured: "http://100.93.227.31:8080/v1/chat/completions",
+            allowedCleartextHosts: ["100.93.227.31"]
+        )
+            == .success(URL(string: "http://100.93.227.31:8080/v1/chat/completions")!)
+    )
+    #expect(
+        EndpointResolver.messagesURL(configured: "https://api.anthropic.com/v1/messages")
+            == .success(URL(string: "https://api.anthropic.com/v1/messages")!)
+    )
+}
+
+@Test func endpointURLWarnsOnChatEndpointPathsNotOnAPIBase() {
+    let warning = EndpointURLWarning.message
+    #expect(
+        EndpointURLWarning.message(for: "http://100.93.227.31:8080/v1/chat/completions") == warning
+    )
+    #expect(
+        EndpointURLWarning.message(for: "https://api.openai.com/v1/chat/completions/") == warning
+    )
+    #expect(EndpointURLWarning.message(for: "HTTPS://HOST/V1/COMPLETIONS") == warning)
+    #expect(
+        EndpointURLWarning.message(for: "http://host:8080/v1/chat/completions?api_key=secret") == warning
+    )
+    #expect(EndpointURLWarning.message(for: "https://api.anthropic.com/v1/messages") == warning)
+    #expect(EndpointURLWarning.message(for: "https://api.anthropic.com/v1/messages/") == warning)
+    #expect(EndpointURLWarning.message(for: "HTTPS://HOST/V1/MESSAGES") == warning)
+    #expect(EndpointURLWarning.message(for: "http://100.93.227.31:8080") == nil)
+    #expect(EndpointURLWarning.message(for: "http://100.93.227.31:8080/v1") == nil)
+    #expect(EndpointURLWarning.message(for: "http://100.93.227.31:8080/v1/") == nil)
+    #expect(EndpointURLWarning.message(for: "https://api.openai.com/v1/models") == nil)
+    #expect(EndpointURLWarning.message(for: "https://api.openai.com/v1/models/") == nil)
+    #expect(EndpointURLWarning.hint(for: .openaiCompatible, presetID: "openai")
+        == "Base URL only, for example https://host/v1.")
+    #expect(EndpointURLWarning.hint(for: .anthropic, presetID: "anthropic")
+        == "Base URL only, for example https://host/v1.")
+    #expect(EndpointURLWarning.hint(for: .openaiCompatible, presetID: nil)
+        == EndpointURLWarning.customHint)
+}
+
+@Test func modelListFailureMessageIncludesTriedPathGuidanceWithoutSecrets() {
+    #expect(ModelList.failureMessage(triedPath: nil) == "Could not list models.")
+    #expect(ModelList.failureMessage(triedPath: "") == "Could not list models.")
+    #expect(
+        ModelList.failureMessage(triedPath: "/v1/models", guidance: EndpointURLWarning.message)
+            == "Could not list models. Tried /v1/models. This looks like a chat URL. Use the API base https://host/v1."
+    )
+    let withQuery = "http://100.93.227.31:8080/v1/models?api_key=sk-secret&token=bearer-xyz"
+    let copy = ModelList.failureMessage(triedPath: withQuery, guidance: EndpointURLWarning.message)
+    #expect(copy.hasPrefix("Could not list models. Tried /v1/models."))
+    #expect(copy.contains(EndpointURLWarning.message))
+    #expect(!copy.contains("sk-secret"))
+    #expect(!copy.contains("bearer-xyz"))
+    #expect(!copy.contains("api_key"))
+    #expect(!copy.lowercased().contains("x-api-key"))
+    let withUser = "https://user:token-value@api.example/v1/models"
+    let userCopy = ModelList.failureMessage(triedPath: withUser)
+    #expect(userCopy == "Could not list models. Tried /v1/models.")
+    #expect(!userCopy.contains("token-value"))
+    #expect(!userCopy.contains("user:"))
 }
 
 @Test func modelListParsingKeepsSavedIdAndTreatsEmptyAsFailure() {
@@ -1339,6 +1420,103 @@ import Testing
     #expect(firstUser[0]["type"] as? String == "input_text")
     #expect(assistant[0]["type"] as? String == "output_text")
     #expect(secondUser[0]["type"] as? String == "input_text")
+}
+
+@Test func imageAttachmentBodiesMatchEachProvider() throws {
+    let jpeg = Data([0xFF, 0xD8, 0xFF, 0xD9])
+    let messages = [
+        OutboundMessage(role: "system", text: "Be brief", imageJPEGs: []),
+        OutboundMessage(role: "user", text: "Screen", imageJPEGs: [jpeg]),
+        OutboundMessage(role: "assistant", text: "Looks like a dock", imageJPEGs: []),
+    ]
+    let request = ChatRequest(
+        url: URL(string: "https://example.com/v1")!,
+        model: "vision",
+        apiKey: "",
+        messages: messages
+    )
+
+    let completions = try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(ChatBody(request: request))
+    ) as? [String: Any]
+    let completionMessages = try #require(completions?["messages"] as? [[String: Any]])
+    let userParts = try #require(completionMessages[1]["content"] as? [[String: Any]])
+    #expect(userParts[0]["type"] as? String == "text")
+    #expect(userParts[0]["text"] as? String == "Screen")
+    #expect(userParts[1]["type"] as? String == "image_url")
+    let imageURL = try #require(userParts[1]["image_url"] as? [String: Any])
+    #expect(imageURL["url"] as? String == "data:image/jpeg;base64,\(jpeg.base64EncodedString())")
+    #expect(userParts[1]["text"] == nil)
+
+    let responses = try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(ResponsesBody(request: request))
+    ) as? [String: Any]
+    let input = try #require(responses?["input"] as? [[String: Any]])
+    let responseUser = try #require(input[1]["content"] as? [[String: Any]])
+    let responseAssistant = try #require(input[2]["content"] as? [[String: Any]])
+    #expect(responseUser[0]["type"] as? String == "input_text")
+    #expect(responseUser[1]["type"] as? String == "input_image")
+    #expect(responseUser[1]["image_url"] as? String == "data:image/jpeg;base64,\(jpeg.base64EncodedString())")
+    #expect(responseUser[1]["text"] == nil)
+    #expect(responseAssistant[0]["type"] as? String == "output_text")
+
+    let anthropic = try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(AnthropicBody(request: request))
+    ) as? [String: Any]
+    let anthropicMessages = try #require(anthropic?["messages"] as? [[String: Any]])
+    let anthropicUser = try #require(anthropicMessages[0]["content"] as? [[String: Any]])
+    #expect(anthropicUser[0]["type"] as? String == "text")
+    #expect(anthropicUser[1]["type"] as? String == "image")
+    let source = try #require(anthropicUser[1]["source"] as? [String: Any])
+    #expect(source["type"] as? String == "base64")
+    #expect(source["media_type"] as? String == "image/jpeg")
+    #expect(source["data"] as? String == jpeg.base64EncodedString())
+}
+
+@Test func responsesFailedSurfacesNestedErrorMessage() {
+    let line = #"data: {"type":"response.failed","response":{"error":{"message":"Image inputs are not supported"}}}"#
+    #expect(ResponsesParser.parse(line: line) == .failure("Image inputs are not supported"))
+    #expect(
+        SSEParser.errorMessage(
+            from: Data(#"{"response":{"error":{"message":"vision model required"}}}"#.utf8)
+        ) == "vision model required"
+    )
+}
+
+@Test func screenFailureCopyStaysDistinctFromRequestFailed() {
+    #expect(HUDErrorLip.screenPermission == "Allow Screen Recording in System Settings")
+    #expect(HUDErrorLip.screenFailed == "The screen capture failed.")
+    #expect(HUDErrorLip.screenPermission != DebugRouting.requestFailed)
+    #expect(HUDErrorLip.screenFailed != DebugRouting.requestFailed)
+    #expect(SendFailureCopy.message(for: ScreenGrabError.permission) == HUDErrorLip.screenPermission)
+    #expect(SendFailureCopy.message(for: ScreenGrabError.failed) == HUDErrorLip.screenFailed)
+    #expect(
+        SendFailureCopy.message(for: ChatGPTAuthError.message("Sign in to ChatGPT in Settings"))
+            == "Sign in to ChatGPT in Settings"
+    )
+    #expect(SendFailureCopy.message(for: URLError(.timedOut)) == "The request timed out.")
+}
+
+@Test func incompleteVisionBlocksImageSendInsteadOfChatFallback() {
+    let chat = ChatEndpoint(
+        id: UUID(),
+        name: "Chat",
+        completionsURL: "https://api.openai.com/v1",
+        model: "gpt-4o",
+        systemPrompt: ""
+    )
+    let blocked = ChatEndpointCatalog.target(
+        endpoint: chat,
+        apiKey: "sk-chat",
+        vision: ServiceCredentials(
+            url: "https://vision.example/v1",
+            model: "gpt-4o",
+            apiKey: ""
+        ),
+        hasImage: true,
+        allowedCleartextHosts: ["vision.example"]
+    )
+    #expect(blocked == .blocked("Finish the vision model in Settings"))
 }
 
 @Test func responsesSingleTurnUserKeepsInputText() throws {
@@ -2620,6 +2798,212 @@ import Testing
     )
 }
 
+@Test func hostingFitUsesCardWidthAndDoesNotClampATallReply() {
+    #expect(HUDLayout.hostingFitSize.width == HUDMetrics.cardWidth)
+    #expect(HUDLayout.hostingFitSize.height > HUDMetrics.minCardHeight)
+    #expect(HUDLayout.cardHeight(fittingHeight: 80) == HUDMetrics.minCardHeight)
+    let wrapped = HUDMetrics.minCardHeight + HUDMetrics.rowHeight * 3
+    #expect(HUDLayout.cardHeight(fittingHeight: wrapped) == wrapped)
+    #expect(HUDLayout.cardBottomSlack == HUDMetrics.minCardHeight - HUDMetrics.rowHeight * 2)
+    #expect(HUDLayout.cardBottomSlack > 0)
+    #expect(
+        HUDLayout.settledHeight(
+            proposed: wrapped,
+            previous: HUDMetrics.minCardHeight,
+            lineCount: 1,
+            multiline: false
+        ) == wrapped
+    )
+}
+
+@Test func streamingWrapsGrowSettledHeight() {
+    let line = PromptLayout.lineHeight(for: PromptLayout.font())
+    let wrap = max(HUDLayout.heightFlicker + 2, floor(line * 0.6))
+    #expect(wrap < line)
+
+    // After the first streamed line, each wrap is smaller than the prompt-line threshold.
+    var previous = HUDMetrics.minCardHeight + HUDMetrics.rowHeight
+    var lastWindow = HUDLayout.windowHeight(card: previous, hasLip: false)
+    for _ in 1...4 {
+        let proposed = previous + wrap
+        let next = HUDLayout.settledHeight(
+            proposed: proposed,
+            previous: previous,
+            lineCount: 1,
+            multiline: false
+        )
+        #expect(next == proposed)
+        #expect(next > previous)
+        let window = HUDLayout.windowHeight(card: next, hasLip: false)
+        #expect(window > lastWindow)
+        previous = next
+        lastWindow = window
+    }
+    #expect(
+        HUDLayout.settledHeight(
+            proposed: previous,
+            previous: previous,
+            lineCount: 1,
+            multiline: false
+        ) == previous
+    )
+}
+
+@Test func replyGrowsDownThenUpThenStops() {
+    let line = HUDLayout.replyLineHeight
+    let chrome = HUDMetrics.minCardHeight
+    let idle = NSRect(x: 80, y: 200, width: HUDMetrics.cardWidth, height: chrome)
+    #expect(line > 0)
+    #expect(HUDLayout.replyDownLines == 15)
+    #expect(HUDLayout.replyMaxLines == 30)
+
+    let at15 = HUDLayout.frameForReplyGrowth(
+        base: idle,
+        chromeHeight: chrome,
+        replyLines: 15,
+        lineHeight: line
+    )
+    #expect(at15.maxY == idle.maxY)
+    #expect(at15.height == chrome + line * 15)
+    #expect(at15.origin.y == idle.origin.y - line * 15)
+    #expect(at15.origin.x == idle.origin.x)
+
+    let at16 = HUDLayout.frameForReplyGrowth(
+        base: idle,
+        chromeHeight: chrome,
+        replyLines: 16,
+        lineHeight: line
+    )
+    #expect(at16.origin.y == at15.origin.y)
+    #expect(at16.height == at15.height + line)
+    #expect(at16.maxY == at15.maxY + line)
+
+    let at30 = HUDLayout.frameForReplyGrowth(
+        base: idle,
+        chromeHeight: chrome,
+        replyLines: 30,
+        lineHeight: line
+    )
+    #expect(at30.origin.y == at15.origin.y)
+    #expect(at30.height == chrome + line * 30)
+    #expect(at30.maxY == at15.maxY + line * 15)
+
+    let at40 = HUDLayout.frameForReplyGrowth(
+        base: idle,
+        chromeHeight: chrome,
+        replyLines: 40,
+        lineHeight: line
+    )
+    #expect(at40.height == at30.height)
+    #expect(at40.origin.y == at30.origin.y)
+    #expect(at40.maxY == at30.maxY)
+
+    let at1 = HUDLayout.frameForReplyGrowth(
+        base: idle,
+        chromeHeight: chrome,
+        replyLines: 1,
+        lineHeight: line
+    )
+    #expect(at1.maxY == idle.maxY)
+    #expect(at1.origin.y == idle.origin.y - line)
+}
+
+@Test func expandedHistoryDoesNotGrowPastThirtyLineCap() {
+    let line = HUDLayout.replyLineHeight
+    let chrome = HUDMetrics.minCardHeight
+    let proposed = chrome + line * 80 + 400
+    let capped = HUDLayout.cappedCardHeight(
+        proposed: proposed,
+        chromeHeight: chrome,
+        lineHeight: line
+    )
+    let maxHeight = HUDLayout.cardHeight(
+        chromeHeight: chrome,
+        replyLines: HUDLayout.replyMaxLines,
+        lineHeight: line
+    )
+    #expect(capped == maxHeight)
+    #expect(capped < proposed)
+    #expect(capped == chrome + line * 30)
+
+    let pinTop = chrome + 240
+    let frame = HUDLayout.frameForReplyGrowth(
+        x: 40,
+        pinTopMaxY: pinTop,
+        height: proposed,
+        replyLines: 80,
+        lineHeight: line
+    )
+    #expect(frame.height == maxHeight)
+    #expect(frame.height == chrome + line * 30)
+}
+
+@Test func replyGrowthFrameStaysInsideVisibleFrame() {
+    let line = HUDLayout.replyLineHeight
+    let chrome = HUDMetrics.minCardHeight
+    let visible = NSRect(x: 0, y: 100, width: 900, height: 300)
+    let pinTop = visible.minY + chrome + line * 10
+    let height = chrome + line * 30
+    let raw = HUDLayout.frameForReplyGrowth(
+        x: 80,
+        pinTopMaxY: pinTop,
+        height: height,
+        replyLines: 30,
+        lineHeight: line
+    )
+    #expect(raw.maxY > visible.maxY || raw.minY < visible.minY)
+
+    let clamped = HUDLayout.clampFrame(raw, to: visible)
+    #expect(clamped.minY >= visible.minY)
+    #expect(clamped.maxY <= visible.maxY)
+    #expect(clamped.minX >= visible.minX)
+    #expect(clamped.maxX <= visible.maxX)
+    #expect(clamped.height <= visible.height)
+    #expect(clamped.width <= visible.width)
+
+    let withVisible = HUDLayout.frameForReplyGrowth(
+        x: 80,
+        pinTopMaxY: pinTop,
+        height: height,
+        replyLines: 30,
+        lineHeight: line,
+        visibleFrame: visible
+    )
+    #expect(withVisible.minY >= visible.minY)
+    #expect(withVisible.maxY <= visible.maxY)
+}
+
+@Test func replyScrollFadesOnlyWhenContentOverflows() {
+    let fit = HUDLayout.scrollFadeEdges(offset: 0, contentHeight: 100, viewport: 200)
+    #expect(fit.top == false)
+    #expect(fit.bottom == false)
+
+    let exact = HUDLayout.scrollFadeEdges(offset: 0, contentHeight: 200, viewport: 200)
+    #expect(exact.top == false)
+    #expect(exact.bottom == false)
+
+    let atTop = HUDLayout.scrollFadeEdges(offset: 0, contentHeight: 400, viewport: 200)
+    #expect(atTop.top == false)
+    #expect(atTop.bottom == true)
+
+    let mid = HUDLayout.scrollFadeEdges(offset: 80, contentHeight: 400, viewport: 200)
+    #expect(mid.top == true)
+    #expect(mid.bottom == true)
+
+    let atBottom = HUDLayout.scrollFadeEdges(offset: 200, contentHeight: 400, viewport: 200)
+    #expect(atBottom.top == true)
+    #expect(atBottom.bottom == false)
+
+    let pinFit = HUDLayout.scrollPin(offset: 0, contentHeight: 100, viewport: 200)
+    #expect(pinFit.fits)
+    let pinTop = HUDLayout.scrollPin(offset: 0, contentHeight: 400, viewport: 200)
+    #expect(!pinTop.fits)
+    #expect(!pinTop.atBottom)
+    let pinBottom = HUDLayout.scrollPin(offset: 200, contentHeight: 400, viewport: 200)
+    #expect(!pinBottom.fits)
+    #expect(pinBottom.atBottom)
+}
+
 @Test func pinningKeepsTheTopEdgeFixedWhenHeightGrows() {
     let current = NSRect(x: 80, y: 120, width: HUDMetrics.cardWidth, height: 108)
     let next = HUDLayout.framePinnedTop(current: current, height: 200)
@@ -2641,6 +3025,140 @@ import Testing
     #expect(shrunk.maxY == grown.maxY)
     #expect(shrunk.height == idle.height)
     #expect(shrunk.origin.y == idle.origin.y)
+}
+
+@Test func liveStreamChunksAppendThroughReceiveToken() {
+    var session = Session()
+    session.draft = DebugRouting.draft
+    _ = session.send(systemPrompt: "")
+    let chunks = DebugRouting.streamChunks(DebugRouting.liveStreamReply)
+    #expect(chunks.count > 3)
+    #expect(chunks.joined() == DebugRouting.liveStreamReply)
+    for chunk in chunks {
+        session.receiveToken(chunk)
+        #expect(session.phase == .streaming)
+    }
+    session.finish()
+    #expect(session.displayAnswer == DebugRouting.liveStreamReply)
+    #expect(session.phase == .finished)
+}
+
+@Test @MainActor func simulateIncomingStreamReplaysTokensAndLayouts() {
+    let model = HUDModel(store: EndpointStore())
+    var layouts = 0
+    model.onLayout = { layouts += 1 }
+    model.simulateIncomingStream(DebugRouting.liveStreamReply)
+    #expect(model.session.displayAnswer == DebugRouting.liveStreamReply)
+    #expect(model.session.phase == .finished)
+    #expect(layouts > 3)
+}
+
+@Test func overlayScrollerFadeHidesTheExpandChevron() {
+    #expect(HUDMetrics.controlSize == 24)
+    #expect(HUDLayout.expandChevronSize == 24)
+    #expect(HUDLayout.expandChevronTrailingInset == HUDMetrics.inset)
+    #expect(HUDLayout.scrollerFadeDuration >= 0.15)
+    #expect(HUDLayout.scrollerFadeDuration <= 0.20)
+    #expect(HUDLayout.scrollerHideDelay == 0.35)
+    #expect(HUDLayout.expandChevronOpacity(scrollerVisible: false) == 1)
+    #expect(HUDLayout.expandChevronOpacity(scrollerVisible: true) == 0)
+}
+
+@Test func panelFadeMatchesScrollerDurationAndDelaysOrderOut() {
+    #expect(HUDPanelFade.duration == HUDLayout.scrollerFadeDuration)
+    #expect(HUDPanelFade.duration == 0.16)
+    #expect(HUDPanelFade.animationDuration(reduceMotion: false) == 0.16)
+    #expect(HUDPanelFade.animationDuration(reduceMotion: true) == 0)
+    #expect(HUDPanelFade.shouldOrderOut(elapsed: 0, duration: 0.16) == false)
+    #expect(HUDPanelFade.shouldOrderOut(elapsed: 0.15, duration: 0.16) == false)
+    #expect(HUDPanelFade.shouldOrderOut(elapsed: 0.16, duration: 0.16) == true)
+    #expect(HUDPanelFade.shouldOrderOut(elapsed: 0, duration: 0) == true)
+}
+
+@Test func devCredentialLoaderReadsEnvWithoutKeychain() {
+    #expect(DevCredentials.suppressesKeychain)
+    #expect(DevCredentials.envName(for: KeychainStore.chatAccount) == "AXIOM_API_KEY")
+    let env = ["AXIOM_API_KEY": "sk-test-from-env"]
+    #expect(
+        DevCredentials.secret(account: KeychainStore.chatAccount, environment: env, fileValues: [:])
+            == "sk-test-from-env"
+    )
+    #expect(DevCredentials.secret(account: KeychainStore.chatAccount, environment: [:], fileValues: [:]) == nil)
+    #expect(DevCredentials.secret(account: KeychainStore.visionAccount, environment: [:], fileValues: [:]) == nil)
+
+    let id = UUID(uuidString: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE")!
+    let account = KeychainStore.chatAccount(for: id)
+    #expect(account == "api-key.AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE")
+    #expect(DevCredentials.envName(for: account) == "AXIOM_API_KEY_AAAAAAAA_BBBB_4CCC_8DDD_EEEEEEEEEEEE")
+    let row = ["AXIOM_API_KEY_AAAAAAAA_BBBB_4CCC_8DDD_EEEEEEEEEEEE": "sk-row-test"]
+    #expect(DevCredentials.secret(account: account, environment: row, fileValues: [:]) == "sk-row-test")
+    #expect(DevCredentials.secret(account: account, environment: env, fileValues: [:]) == "sk-test-from-env")
+
+    let parsed = DevCredentials.parseEnvFile("AXIOM_API_KEY=sk-file-test\n# comment\n\n")
+    #expect(parsed["AXIOM_API_KEY"] == "sk-file-test")
+    let fromFile = DevCredentials.secret(
+        account: KeychainStore.chatAccount,
+        environment: [:],
+        fileValues: parsed
+    )
+    #expect(fromFile == "sk-file-test")
+}
+
+@Test func escapeDismissesWhenThePanelIsKeyRegardlessOfFirstResponder() {
+    #expect(
+        HUDEscape.shouldDismiss(
+            keyCode: HUDEscape.keyCode,
+            panelIsKey: true,
+            menuTracking: false,
+            hasAttachedSheet: false,
+            isComposing: false
+        )
+    )
+    #expect(
+        HUDEscape.shouldDismiss(
+            keyCode: HUDEscape.keyCode,
+            panelIsKey: false,
+            menuTracking: false,
+            hasAttachedSheet: false,
+            isComposing: false
+        ) == false
+    )
+    #expect(
+        HUDEscape.shouldDismiss(
+            keyCode: 0,
+            panelIsKey: true,
+            menuTracking: false,
+            hasAttachedSheet: false,
+            isComposing: false
+        ) == false
+    )
+    #expect(
+        HUDEscape.shouldDismiss(
+            keyCode: HUDEscape.keyCode,
+            panelIsKey: true,
+            menuTracking: true,
+            hasAttachedSheet: false,
+            isComposing: false
+        ) == false
+    )
+    #expect(
+        HUDEscape.shouldDismiss(
+            keyCode: HUDEscape.keyCode,
+            panelIsKey: true,
+            menuTracking: false,
+            hasAttachedSheet: true,
+            isComposing: false
+        ) == false
+    )
+    #expect(
+        HUDEscape.shouldDismiss(
+            keyCode: HUDEscape.keyCode,
+            panelIsKey: true,
+            menuTracking: false,
+            hasAttachedSheet: false,
+            isComposing: true
+        ) == false
+    )
 }
 
 private extension Result where Failure == EndpointError {

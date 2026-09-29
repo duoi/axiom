@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 import Testing
-@testable import AIHUD
+@testable import Axiom
 
 @Test func wakeReadsRemainderAfterAxiom() {
     let wake = VoiceParser.wake(in: "axiom what is the total mass of the sun")

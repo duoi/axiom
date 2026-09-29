@@ -70,6 +70,7 @@ struct PromptField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
     var multiline: Bool
+    var isEditable: Bool = true
     var onSubmit: () -> Void
     var onReady: (any PromptEditing) -> Void
     var onHeight: (CGFloat) -> Void = { _ in }
@@ -90,9 +91,11 @@ struct PromptField: NSViewRepresentable {
         context.coordinator.text = $text
         context.coordinator.onSubmit = onSubmit
         context.coordinator.onHeight = onHeight
+        context.coordinator.isEditable = isEditable
         nsView.delegate = context.coordinator
         nsView.placeholder = placeholder
         nsView.isMultiline = multiline
+        nsView.isPromptEditable = isEditable
         nsView.applyPrompt(text)
         context.coordinator.publishHeight()
     }
@@ -107,6 +110,7 @@ struct PromptField: NSViewRepresentable {
         var text: Binding<String>
         var onSubmit: () -> Void
         var onHeight: (CGFloat) -> Void
+        var isEditable = true
         weak var host: PromptHostView?
 
         init(text: Binding<String>, onSubmit: @escaping () -> Void, onHeight: @escaping (CGFloat) -> Void) {
@@ -116,6 +120,7 @@ struct PromptField: NSViewRepresentable {
         }
 
         func promptHostTextDidChange(_ string: String) {
+            guard isEditable else { return }
             if text.wrappedValue != string {
                 text.wrappedValue = string
             }
@@ -123,6 +128,7 @@ struct PromptField: NSViewRepresentable {
         }
 
         func promptHostDidSubmit() {
+            guard isEditable else { return }
             onSubmit()
         }
 
@@ -159,11 +165,19 @@ final class PromptHostView: NSView, PromptEditing {
         }
     }
 
+    var isPromptEditable = true {
+        didSet {
+            guard oldValue != isPromptEditable else { return }
+            applyEditableState()
+        }
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         configureField()
         configureMultiline()
         mountEditor()
+        applyEditableState()
     }
 
     required init?(coder: NSCoder) { return nil }
@@ -290,7 +304,18 @@ final class PromptHostView: NSView, PromptEditing {
         field.isHidden = isMultiline
         scroll.isHidden = !isMultiline
         applyPlaceholder()
+        applyEditableState()
         needsLayout = true
+    }
+
+    private func applyEditableState() {
+        field.isEditable = isPromptEditable
+        field.isSelectable = isPromptEditable
+        textView.isEditable = isPromptEditable
+        textView.isSelectable = isPromptEditable
+        if !isPromptEditable {
+            window?.makeFirstResponder(nil)
+        }
     }
 
     private func syncEditorText(from wasMultiline: Bool) {

@@ -3,5 +3,6 @@ build/
 DerivedData/
 xcuserdata/
 *.xcuserstate
+.env
 Config/dev-endpoint.json
 notes/captures/

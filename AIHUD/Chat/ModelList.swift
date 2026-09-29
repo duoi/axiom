@@ -3,6 +3,43 @@ import Foundation
 enum ModelList {
     static let failureMessage = "Could not list models."
 
+    static func failureMessage(triedPath: String?, guidance: String? = nil) -> String {
+        var parts: [String] = [failureMessage]
+        if let raw = triedPath?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            let path = sanitizedTriedPath(raw)
+            if !path.isEmpty {
+                parts.append("Tried \(path).")
+            }
+        }
+        if let guidance = guidance?.trimmingCharacters(in: .whitespacesAndNewlines), !guidance.isEmpty {
+            parts.append(guidance)
+        }
+        return parts.joined(separator: " ")
+    }
+
+    /// Path only. Drops query, fragment, user, and password.
+    static func sanitizedTriedPath(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: trimmed), url.scheme != nil, url.host != nil {
+            var path = url.path
+            while path.count > 1 && path.hasSuffix("/") {
+                path.removeLast()
+            }
+            return path.isEmpty ? "/" : path
+        }
+        var path = trimmed
+        if let hash = path.firstIndex(of: "#") {
+            path = String(path[..<hash])
+        }
+        if let query = path.firstIndex(of: "?") {
+            path = String(path[..<query])
+        }
+        while path.count > 1 && path.hasSuffix("/") {
+            path.removeLast()
+        }
+        return path
+    }
+
     static func parseOpenAI(_ data: Data) -> [String] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let rows = object["data"] as? [[String: Any]]
@@ -225,6 +262,16 @@ enum ModelList {
     }
 }
 
+struct ModelListResult: Equatable, Sendable {
+    var models: [String]
+    var triedURL: URL?
+
+    var triedPath: String? {
+        guard let triedURL else { return nil }
+        return ModelList.sanitizedTriedPath(triedURL.absoluteString)
+    }
+}
+
 struct ModelListClient: Sendable {
     var session: URLSession
 
@@ -232,10 +279,10 @@ struct ModelListClient: Sendable {
         self.session = session
     }
 
-    func list(endpoint: ChatEndpoint, secret: String, allowedCleartextHosts: Set<String>) async -> [String] {
+    func list(endpoint: ChatEndpoint, secret: String, allowedCleartextHosts: Set<String>) async -> ModelListResult {
         switch endpoint.kind {
         case .onDevice:
-            return []
+            return ModelListResult(models: [], triedURL: nil)
         case .anthropic:
             return await listAnthropic(endpoint: endpoint, apiKey: secret, allowedCleartextHosts: allowedCleartextHosts)
         case .chatgptSubscription:
@@ -249,12 +296,12 @@ struct ModelListClient: Sendable {
         endpoint: ChatEndpoint,
         apiKey: String,
         allowedCleartextHosts: Set<String>
-    ) async -> [String] {
+    ) async -> ModelListResult {
         guard case .success(let url) = EndpointResolver.modelsURL(
             configured: endpoint.completionsURL,
             allowedCleartextHosts: allowedCleartextHosts
         ) else {
-            return []
+            return ModelListResult(models: [], triedURL: nil)
         }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -268,12 +315,12 @@ struct ModelListClient: Sendable {
         endpoint: ChatEndpoint,
         apiKey: String,
         allowedCleartextHosts: Set<String>
-    ) async -> [String] {
+    ) async -> ModelListResult {
         guard case .success(let url) = EndpointResolver.modelsURL(
             configured: endpoint.completionsURL,
             allowedCleartextHosts: allowedCleartextHosts
         ) else {
-            return []
+            return ModelListResult(models: [], triedURL: nil)
         }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -286,34 +333,37 @@ struct ModelListClient: Sendable {
         endpoint: ChatEndpoint,
         secret: String,
         allowedCleartextHosts: Set<String>
-    ) async -> [String] {
+    ) async -> ModelListResult {
         guard let credential = ChatGPTAuth.parse(secret), !credential.access.isEmpty else {
-            return []
+            return ModelListResult(models: [], triedURL: nil)
         }
         guard case .success(let base) = EndpointResolver.modelsURL(
             configured: endpoint.completionsURL.isEmpty ? ChatGPTAuth.apiBase : endpoint.completionsURL,
             allowedCleartextHosts: allowedCleartextHosts
         ) else {
-            return []
+            return ModelListResult(models: [], triedURL: nil)
         }
         var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "client_version", value: ChatGPTAuth.clientVersion)]
-        guard let url = components?.url else { return [] }
+        guard let url = components?.url else {
+            return ModelListResult(models: [], triedURL: nil)
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         ChatGPTAuth.applyCodexHeaders(&request, accessToken: credential.access, accountId: credential.accountId)
         return await fetch(request, parse: ModelList.parseChatGPT)
     }
 
-    private func fetch(_ request: URLRequest, parse: @escaping (Data) -> [String]) async -> [String] {
+    private func fetch(_ request: URLRequest, parse: @escaping (Data) -> [String]) async -> ModelListResult {
+        let tried = request.url
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                return []
+                return ModelListResult(models: [], triedURL: tried)
             }
-            return parse(data)
+            return ModelListResult(models: parse(data), triedURL: tried)
         } catch {
-            return []
+            return ModelListResult(models: [], triedURL: tried)
         }
     }
 }

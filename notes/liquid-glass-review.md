@@ -1,4 +1,4 @@
-# Liquid Glass review (AI HUD)
+# Liquid Glass review (Axiom)
 
 Installed skill (load this in later sessions): `/Users/stevenjohns/.agents/skills/ios-liquid-glass/SKILL.md`
 

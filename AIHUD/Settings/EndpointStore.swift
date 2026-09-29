@@ -102,9 +102,39 @@ final class EndpointStore {
     var pauseToSend: Bool {
         didSet { VoiceSettings.savePauseToSend(pauseToSend, to: .standard) }
     }
+    var savesHistory: Bool {
+        didSet {
+            HistorySettings.saveEnabled(savesHistory, to: .standard)
+            if !savesHistory, savesHistoryScreenshots {
+                savesHistoryScreenshots = false
+            }
+        }
+    }
+    var savesHistoryScreenshots: Bool {
+        didSet {
+            HistorySettings.saveSaveScreenshots(savesHistoryScreenshots, to: .standard)
+        }
+    }
+    var reasoningEffort: ReasoningEffort {
+        didSet { ReasoningEffort.save(reasoningEffort, to: .standard) }
+    }
+    var requestTimeoutSeconds: TimeInterval {
+        didSet {
+            let clamped = ChatTimeoutSettings.clamp(requestTimeoutSeconds)
+            if clamped != requestTimeoutSeconds {
+                requestTimeoutSeconds = clamped
+                return
+            }
+            ChatTimeoutSettings.save(clamped, to: .standard)
+        }
+    }
+    let historyStore: HistoryStore
     var onAppearanceChange: () -> Void = {}
 
     init() {
+        if DevCredentials.suppressesKeychain {
+            DevCredentials.seedEnvFileIfMissing()
+        }
         let defaults = UserDefaults.standard
         let dev = DevEndpointFile.bundled()
         devCleartextHost = dev.flatMap { URL(string: $0.completionsURL)?.host }
@@ -249,6 +279,17 @@ final class EndpointStore {
         defaultSystemPrompt = SystemPrompt.loadGlobal(from: defaults)
         wakeOnAxiom = VoiceSettings.loadWakeOnAxiom(from: defaults)
         pauseToSend = VoiceSettings.loadPauseToSend(from: defaults)
+        let historyOn = HistorySettings.loadEnabled(from: defaults)
+        savesHistory = historyOn
+        savesHistoryScreenshots = historyOn
+            ? HistorySettings.loadSaveScreenshots(from: defaults)
+            : false
+        if !historyOn {
+            HistorySettings.saveSaveScreenshots(false, to: defaults)
+        }
+        reasoningEffort = ReasoningEffort.load(from: defaults)
+        requestTimeoutSeconds = ChatTimeoutSettings.load(from: defaults)
+        historyStore = HistoryStore(root: HistoryStore.defaultRoot())
         if ChatSettings.loadOnDevice(from: defaults) {
             ChatSettings.saveOnDevice(false, to: defaults)
         }
@@ -317,29 +358,32 @@ final class EndpointStore {
     func route(for messages: [OutboundMessage]) -> ChatRoute {
         let hasImage = messages.contains { !$0.imageJPEGs.isEmpty }
         let selection = sendSelection(hasImage: hasImage)
-        let usingOnDevice = selection.usesOnDevice
+        let vision = visionCredentials()
         return ChatRouting.decide(
-            onDevice: usingOnDevice,
+            onDevice: selection.usesOnDevice,
             availability: OnDeviceChat.availability,
-            cloud: cloudTarget(for: selection),
+            cloud: cloudTarget(for: selection, hasImage: hasImage),
             hasImage: hasImage,
-            visionConfigured: false,
+            visionConfigured: vision.isComplete,
             supportsOnDeviceImage: OnDeviceChat.supportsImages
         )
     }
 
     func target(for messages: [OutboundMessage]) -> SendTarget {
         let hasImage = messages.contains { !$0.imageJPEGs.isEmpty }
-        return cloudTarget(for: sendSelection(hasImage: hasImage))
+        return cloudTarget(for: sendSelection(hasImage: hasImage), hasImage: hasImage)
     }
 
-    private func cloudTarget(for selection: ChatEndpointCatalog.SendSelection) -> SendTarget {
+    private func cloudTarget(
+        for selection: ChatEndpointCatalog.SendSelection,
+        hasImage: Bool
+    ) -> SendTarget {
         if selection.usesOnDevice {
             return ChatEndpointCatalog.target(
                 endpoint: nil,
                 apiKey: "",
-                vision: ServiceCredentials(url: "", model: "", apiKey: ""),
-                hasImage: false,
+                vision: visionCredentials(),
+                hasImage: hasImage,
                 allowedCleartextHosts: allowedCleartextHosts
             )
         }
@@ -348,8 +392,8 @@ final class EndpointStore {
         return ChatEndpointCatalog.target(
             endpoint: endpoint,
             apiKey: key,
-            vision: ServiceCredentials(url: "", model: "", apiKey: ""),
-            hasImage: false,
+            vision: visionCredentials(),
+            hasImage: hasImage,
             allowedCleartextHosts: allowedCleartextHosts,
             modelID: selection.modelID
         )
@@ -488,10 +532,17 @@ final class EndpointStore {
         KeychainStore.delete(account: KeychainStore.chatAccount(for: id))
     }
 
-    func applyListedModels(_ models: [String], to id: UUID) {
+    func applyListedModels(
+        _ models: [String],
+        to id: UUID,
+        triedPath: String? = nil,
+        configuredURL: String? = nil
+    ) {
         guard let index = endpoints.firstIndex(where: { $0.id == id }) else { return }
         if ModelList.isFailed(models: models) {
-            modelListErrors[id] = ModelList.failureMessage
+            let url = configuredURL ?? endpoints[index].completionsURL
+            let guidance = EndpointURLWarning.message(for: url)
+            modelListErrors[id] = ModelList.failureMessage(triedPath: triedPath, guidance: guidance)
             return
         }
         modelListErrors[id] = nil
@@ -507,12 +558,17 @@ final class EndpointStore {
 
     func refreshModels(for id: UUID) async {
         guard let endpoint = endpoints.first(where: { $0.id == id }) else { return }
-        let models = await ModelListClient().list(
+        let result = await ModelListClient().list(
             endpoint: endpoint,
             secret: apiKeys[id] ?? "",
             allowedCleartextHosts: allowedCleartextHosts
         )
-        applyListedModels(models, to: id)
+        applyListedModels(
+            result.models,
+            to: id,
+            triedPath: result.triedPath,
+            configuredURL: endpoint.completionsURL
+        )
     }
 
     func deleteEndpoint(_ id: UUID) {

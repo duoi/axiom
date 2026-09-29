@@ -20,6 +20,63 @@ enum CloudSendKind: String, Equatable, Sendable {
     case chatgptResponses
 }
 
+enum EndpointURLWarning {
+    static let message =
+        "This looks like a chat URL. Use the API base https://host/v1."
+    static let openaiHint =
+        "Base URL only, for example https://host/v1."
+    static let anthropicHint =
+        "Base URL only, for example https://host/v1."
+    static let customHint =
+        "Base URL only, for example https://host/v1. OpenAI chat is /v1/chat/completions; Anthropic messages are /v1/messages."
+
+    static func message(for configured: String) -> String? {
+        looksLikeChatEndpointURL(configured) ? message : nil
+    }
+
+    static func hint(for kind: EndpointKind, presetID: String?) -> String? {
+        switch kind {
+        case .onDevice, .chatgptSubscription:
+            return nil
+        case .anthropic:
+            return anthropicHint
+        case .openaiCompatible:
+            return presetID == nil ? customHint : openaiHint
+        }
+    }
+
+    /// True when the field looks like a chat/messages endpoint instead of an API base.
+    static func looksLikeChatEndpointURL(_ configured: String) -> Bool {
+        let trimmed = configured.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        var beforeQuery = trimmed
+        if let hash = beforeQuery.firstIndex(of: "#") {
+            beforeQuery = String(beforeQuery[..<hash])
+        }
+        if let query = beforeQuery.firstIndex(of: "?") {
+            beforeQuery = String(beforeQuery[..<query])
+        }
+        while beforeQuery.count > 1 && beforeQuery.hasSuffix("/") {
+            beforeQuery.removeLast()
+        }
+
+        if beforeQuery.range(of: #"(?i)/models$"#, options: .regularExpression) != nil {
+            return false
+        }
+        if beforeQuery.range(of: #"(?i)/chat/completions"#, options: .regularExpression) != nil {
+            return true
+        }
+        if beforeQuery.range(of: #"(?i)/completions$"#, options: .regularExpression) != nil {
+            return true
+        }
+        if beforeQuery.range(of: #"(?i)/messages$"#, options: .regularExpression) != nil {
+            return true
+        }
+        return false
+    }
+}
+
 enum EndpointResolver {
     static let loopbackHosts: Set<String> = ["localhost", "127.0.0.1", "::1"]
 
@@ -36,11 +93,18 @@ enum EndpointResolver {
         )
     }
 
+    /// Models list URL. Strips a trailing chat/messages path so a pasted
+    /// `/v1/chat/completions` or `/v1/messages` still lists `/v1/models`.
+    /// Does not rewrite the stored Settings string.
     static func modelsURL(
         configured: String,
         allowedCleartextHosts: Set<String> = []
     ) -> Result<URL, EndpointError> {
-        join(configured: configured, suffix: ["models"], allowedCleartextHosts: allowedCleartextHosts)
+        join(
+            configured: apiBaseForModels(configured),
+            suffix: ["models"],
+            allowedCleartextHosts: allowedCleartextHosts
+        )
     }
 
     static func messagesURL(
@@ -55,6 +119,33 @@ enum EndpointResolver {
         allowedCleartextHosts: Set<String> = []
     ) -> Result<URL, EndpointError> {
         join(configured: configured, suffix: ["responses"], allowedCleartextHosts: allowedCleartextHosts)
+    }
+
+    /// Drop a trailing chat or messages path before joining `/models`.
+    static func apiBaseForModels(_ configured: String) -> String {
+        let trimmed = configured.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+        guard var components = URLComponents(string: trimmed) else { return trimmed }
+
+        var path = components.path
+        while path.count > 1 && path.hasSuffix("/") {
+            path.removeLast()
+        }
+        if path.range(of: #"(?i)/models$"#, options: .regularExpression) != nil {
+            return trimmed
+        }
+        if let range = path.range(of: #"(?i)/chat/completions$"#, options: .regularExpression) {
+            path = String(path[..<range.lowerBound])
+        } else if let range = path.range(of: #"(?i)/completions$"#, options: .regularExpression) {
+            path = String(path[..<range.lowerBound])
+        } else if let range = path.range(of: #"(?i)/messages$"#, options: .regularExpression) {
+            path = String(path[..<range.lowerBound])
+        }
+        if path.isEmpty {
+            path = "/"
+        }
+        components.path = path
+        return components.string ?? trimmed
     }
 
     static func join(

@@ -169,6 +169,8 @@ struct Session: Equatable, Sendable {
     var displayAnswer: String = ""
     var errorMessage: String?
     var startedAt: Date?
+    /// Stable id for one HUD conversation (show until dismiss). History upserts on this.
+    var historyID: UUID?
     private var sentDraft = ""
     private var sentChips: [Chip] = []
     private var activeSystemPrompt = ""
@@ -198,6 +200,10 @@ struct Session: Equatable, Sendable {
         systemPrompt: String = ""
     ) -> SendOutcome {
         guard !showsStop else { return .ignored }
+        // If a prior reply only lives in displayAnswer (finish never ran), keep it in the thread.
+        if !displayAnswer.isEmpty, turns.last?.role == .user {
+            turns.append(Turn(role: .assistant, text: displayAnswer, chips: []))
+        }
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         var turnChips = chips
         if let attachedJPEG, !attachedJPEG.isEmpty {
@@ -210,8 +216,11 @@ struct Session: Equatable, Sendable {
         if startedAt == nil {
             startedAt = Date()
         }
+        if historyID == nil {
+            historyID = UUID()
+        }
         turns.append(Turn(role: .user, text: trimmed, chips: turnChips))
-        draft = ""
+        draft = PromptInFlightPolicy.promptDraft(whileSending: sentDraft)
         chips = []
         displayAnswer = ""
         errorMessage = nil
@@ -229,15 +238,18 @@ struct Session: Equatable, Sendable {
     mutating func finish() {
         guard phase == .waiting || phase == .streaming else { return }
         turns.append(Turn(role: .assistant, text: displayAnswer, chips: []))
+        draft = PromptInFlightPolicy.promptDraftAfterSuccess()
         phase = .finished
     }
 
     mutating func stop() {
         guard phase == .waiting || phase == .streaming else { return }
         if displayAnswer.isEmpty {
+            draft = PromptInFlightPolicy.promptDraft(whileSending: sentDraft)
             phase = .composing
         } else {
             turns.append(Turn(role: .assistant, text: displayAnswer, chips: []))
+            draft = PromptInFlightPolicy.promptDraftAfterSuccess()
             phase = .finished
         }
     }
@@ -247,7 +259,7 @@ struct Session: Equatable, Sendable {
         if turns.last?.role == .user {
             turns.removeLast()
         }
-        draft = sentDraft
+        draft = PromptInFlightPolicy.promptDraftAfterFailure(submitted: sentDraft)
         chips = sentChips
         displayAnswer = ""
         errorMessage = message
@@ -267,6 +279,7 @@ struct Session: Equatable, Sendable {
         displayAnswer = ""
         errorMessage = nil
         startedAt = nil
+        historyID = nil
         phase = .composing
         return true
     }

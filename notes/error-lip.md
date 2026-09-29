@@ -113,7 +113,7 @@ Cover:
 - Dismiss does not clear a saved URL, model id, or API key in a UserDefaults suite / secret slot used by the test.
 - `VoiceStatusCopy.systemSettingsURL` still returns Microphone and Speech Recognition panes for those two sentences, and nil for capture-failed and model copy.
 
-Run `xcodebuild test -scheme AIHUD -destination 'platform=macOS'`.
+Run `xcodebuild test -scheme Axiom -destination 'platform=macOS'`.
 
 ## 7. Out of scope
 

@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    static let service = "com.stevenjohns.AIHUD"
+    static let service = "com.stevenjohns.Axiom"
     static let chatAccount = "api-key"
     static let visionAccount = "vision-api-key"
 
@@ -11,6 +11,9 @@ enum KeychainStore {
     }
 
     static func read(account: String = chatAccount) -> String? {
+        if DevCredentials.suppressesKeychain {
+            return DevCredentials.secret(account: account)
+        }
         if let value = read(account: account, dataProtection: true), !value.isEmpty {
             return value
         }
@@ -35,6 +38,9 @@ enum KeychainStore {
     }
 
     static func write(_ value: String, account: String = chatAccount) throws {
+        if DevCredentials.suppressesKeychain {
+            return
+        }
         let data = Data(value.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -63,6 +69,9 @@ enum KeychainStore {
     }
 
     static func delete(account: String = chatAccount) {
+        if DevCredentials.suppressesKeychain {
+            return
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

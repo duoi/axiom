@@ -3,6 +3,7 @@ import SwiftUI
 struct DebugView: View {
     var model: HUDModel
     var onCommand: (String) -> Void
+    @Bindable private var preview = DebugPreviewStore.shared
 
     var body: some View {
         ScrollView {
@@ -12,6 +13,12 @@ struct DebugView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Button("Reset to idle") { send(.reset) }
+                    Button("Open transcript") {
+                        onCommand("open-transcript")
+                    }
+                    Text("Opens a second window that streams redacted raw HTTP request and response lines for chat sends.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
 
                 labeled("Chat and vision") {
@@ -75,6 +82,25 @@ struct DebugView: View {
                             Button("Failed") { send(.failed) }
                             Button("Markdown reply") { send(.markdownReply) }
                         }
+                        HStack {
+                            Button("10 lines") { send(.reply10) }
+                            Button("20 lines") { send(.reply20) }
+                        }
+                        HStack {
+                            Button("Streaming single line") { send(.streamLine) }
+                            Button("Streaming multi line") { send(.streamMulti) }
+                        }
+                        HStack {
+                            Button("Full lower extension") { send(.lowerExtension) }
+                            Button("Full upper extension") { send(.upperExtension) }
+                        }
+                        HStack {
+                            Button("Overflow scroll") { send(.replyOverflow) }
+                            Button("Expanded conversation") { send(.expandedConversation) }
+                        }
+                        HStack {
+                            Button("Stream sun") { send(.streamSun) }
+                        }
                     }
                 }
 
@@ -105,6 +131,7 @@ struct DebugView: View {
                             Button("Listening") { send(.dictateOn) }
                             Button("Stop listening") { send(.dictateOff) }
                         }
+                        Button("Flash capture glow") { send(.flashHighlight) }
                         HStack {
                             Button("Multiline on") { send(.multilineOn) }
                             Button("Multiline off") { send(.multilineOff) }
@@ -114,10 +141,18 @@ struct DebugView: View {
                             Button("Collapse history") { send(.historyOff) }
                         }
                         Button("Add context chip") { send(.addChip) }
-                        Text("Listening only flips the waveform and placeholder. It does not open the microphone.")
+                        Text("Listening glows the whole card with the Listening preset. Flash capture glow uses the Capture preset for one second.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
+                }
+
+                labeled("Intelligence Glow") {
+                    intelligenceGlowDebug
+                }
+
+                labeled("Thinking orb") {
+                    thinkingOrbDebug
                 }
 
                 labeled("Status") {
@@ -184,6 +219,145 @@ struct DebugView: View {
             secret: { model.store.apiKey(for: $0) },
             onDeviceReady: OnDeviceChat.availability == .available
         )
+    }
+
+    private var thinkingOrbDebug: some View {
+        debugCard {
+            Text("Session-only. Real waits use Composing unless Debug is on. Glow choices tint the dots with the intelligence conic palette. Pulsing orb is from AI-Animation-Demo.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Picker("Orb", selection: $preview.orbChoice) {
+                ForEach(ThinkingOrbChoice.allCases) { choice in
+                    Text(choice.title).tag(choice)
+                }
+            }
+            HStack(spacing: 12) {
+                AnimatedThinkingOrb(choice: preview.orbChoice)
+                Text(preview.orbChoice.summary)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Button("Force Waiting") { send(.waiting) }
+            Button("In-flight prompt") {
+                preview.orbChoice = .pulsingOrb
+                onCommand(DebugCommand.inFlightPrompt.rawValue)
+            }
+            Text("In-flight prompt keeps the draft visible with shimmer and uses the Pulsing orb on send.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            Text("Text shimmers from AI-Animation-Demo. Default send uses ChatGPT style unless Debug picks another.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Picker("Shimmer", selection: $preview.shimmerStyle) {
+                ForEach(InFlightShimmerStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                InFlightPromptShimmer(
+                    text: "Locked draft while the reply streams in.",
+                    style: preview.shimmerStyle
+                )
+                Text(preview.shimmerStyle.summary)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Button("Preview shimmer") {
+                preview.orbChoice = .pulsingOrb
+                onCommand(preview.shimmerStyle.debugCommand)
+            }
+        }
+    }
+
+    private var intelligenceGlowDebug: some View {
+        debugCard {
+            Text("Session-only. Listening loads the Listening preset; Flash capture glow loads Capture. Sliders edit the active context.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Picker("Context", selection: $preview.activeContext) {
+                ForEach(IntelligenceGlowContext.allCases) { context in
+                    Text(context.title).tag(context)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: preview.activeContext) { _, _ in
+                preview.notify()
+            }
+
+            Picker("Variation", selection: $preview.activePreset.variation) {
+                ForEach(IntelligenceGlowVariation.allCases) { variation in
+                    Text(variation.title).tag(variation)
+                }
+            }
+            .onChange(of: preview.activePreset.variation) { _, _ in
+                preview.notify()
+            }
+
+            sliderRow("Padding", value: $preview.activePreset.padding, range: 2...40)
+            sliderRow("Line width scale", value: $preview.activePreset.lineWidthScale, range: 0.2...2)
+            sliderRow("Blur scale", value: $preview.activePreset.blurScale, range: 0.2...2.5)
+            sliderRow("Opacity", value: $preview.activePreset.opacity, range: 0.1...1)
+            sliderRow("Update interval", value: $preview.activePreset.updateInterval, range: 0.15...1.2)
+            sliderRow("Animation speed", value: $preview.activePreset.animationSpeed, range: 0.25...3)
+
+            Text("Sweep")
+                .font(.subheadline.weight(.semibold))
+            sliderRow("blurRadius", value: $preview.activePreset.blurRadius, range: 2...60)
+            sliderRow("lineWidth", value: $preview.activePreset.sweepLineWidth, range: 0.3...4)
+            sliderRow("sweepSpan", value: $preview.activePreset.sweepSpan, range: 20...220)
+            sliderRow("sweepOffset", value: $preview.activePreset.sweepOffset, range: 0...320)
+
+            HStack {
+                Button("Reset active preset") { preview.resetActivePreset() }
+                Button("Reset both presets") { preview.resetBothPresets() }
+            }
+        }
+    }
+
+    private func sliderRow(
+        _ title: String,
+        value: Binding<CGFloat>,
+        range: ClosedRange<CGFloat>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(value.wrappedValue, format: .number.precision(.fractionLength(2)))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .font(.callout)
+            Slider(value: value, in: range)
+                .onChange(of: value.wrappedValue) { _, _ in
+                    preview.notify()
+                }
+        }
+    }
+
+    private func sliderRow(
+        _ title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(value.wrappedValue, format: .number.precision(.fractionLength(2)))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .font(.callout)
+            Slider(value: value, in: range)
+                .onChange(of: value.wrappedValue) { _, _ in
+                    preview.notify()
+                }
+        }
     }
 
     private func applyReadyChat(_ item: HUDModelMenu.Item) {

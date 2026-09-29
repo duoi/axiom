@@ -6,6 +6,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     case general
     case appearance
     case chat
+    case history
     case about
 
     var id: String { rawValue }
@@ -15,6 +16,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .general: "General"
         case .appearance: "Appearance"
         case .chat: "Models"
+        case .history: "History"
         case .about: "About"
         }
     }
@@ -41,6 +43,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .general: "gearshape"
         case .appearance: "paintbrush"
         case .chat: "text.bubble"
+        case .history: "clock"
         case .about: "info.circle"
         }
     }
@@ -52,6 +55,9 @@ struct SettingsView: View {
     @State private var page: SettingsPage = SettingsPage.launchPage()
     @State private var endpointSelection: ChatEndpoint.ID?
     @State private var editingEndpoint: ChatEndpoint?
+    @State private var historySelection: HistoryEntry.ID?
+    @State private var historyDetail: HistoryEntry?
+    @State private var permissionRefresh = 0
 
     var body: some View {
         HStack(spacing: 0) {
@@ -74,6 +80,8 @@ struct SettingsView: View {
                     appearancePane
                 case .chat:
                     chatPane
+                case .history:
+                    historyPane
                 case .about:
                     aboutPane
                 }
@@ -114,6 +122,30 @@ struct SettingsView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+            SettingsCard {
+                Text("Permissions")
+                    .font(.headline)
+                ForEach(SettingsPermissionRows.make(model: model)) { row in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.title)
+                            Text(row.status)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(row.buttonTitle) {
+                            row.prompt()
+                            permissionRefresh += 1
+                        }
+                        .disabled(row.isGranted)
+                    }
+                }
+                Text("Ask macOS for access from here. If you already denied a prompt, the button opens System Settings. Window capture needs Accessibility.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .id(permissionRefresh)
             SettingsCard {
                 KeyboardShortcuts.Recorder("Hotkey", name: .toggleHUD)
             }
@@ -170,11 +202,6 @@ struct SettingsView: View {
                     }
                     TableColumn("Host") { endpoint in
                         Text(endpoint.hostLabel.isEmpty ? "—" : endpoint.hostLabel)
-                            .foregroundStyle(.secondary)
-                    }
-                    TableColumn("Model") { endpoint in
-                        let label = endpoint.modelLabel
-                        Text(label.isEmpty ? "—" : label)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -261,6 +288,38 @@ struct SettingsView: View {
                 )
             }
             SettingsCard {
+                Text("Reasoning effort")
+                    .font(.headline)
+                Picker("Reasoning effort", selection: $store.reasoningEffort) {
+                    ForEach(ReasoningEffort.allCases) { effort in
+                        Text(effort.title).tag(effort)
+                    }
+                }
+                .labelsHidden()
+                Text("OpenAI-compatible sends reasoning_effort (including off). ChatGPT Responses sends reasoning.effort (including off). Anthropic enables thinking.budget_tokens only when effort is not Off.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            SettingsCard {
+                Text("Request timeout")
+                    .font(.headline)
+                HStack {
+                    TextField(
+                        "Seconds",
+                        value: $store.requestTimeoutSeconds,
+                        format: .number.precision(.fractionLength(0))
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 88)
+                    Text("seconds")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                Text("\(Int(ChatTimeoutSettings.minimumSeconds)) to \(Int(ChatTimeoutSettings.maximumSeconds)) seconds. Default \(Int(ChatTimeoutSettings.defaultSeconds)).")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            SettingsCard {
                 Text("Default prompt")
                     .font(.headline)
                 Text("Used when an endpoint leaves its system prompt blank. %datetime% is replaced with the current local date and time when you send.")
@@ -301,6 +360,83 @@ struct SettingsView: View {
         }
     }
 
+    private var historyPane: some View {
+        settingsPane {
+            SettingsCard {
+                Toggle("Save chat history", isOn: $store.savesHistory)
+                Text("When on, completed chats are stored on this Mac. Nothing is uploaded.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Toggle("Also save screenshots", isOn: $store.savesHistoryScreenshots)
+                    .disabled(!store.savesHistory)
+                Text("Stores the Screen/Window JPEG with that chat. Off by default. Does not save your original files.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            SettingsCard {
+                Table(store.historyStore.entries, selection: $historySelection) {
+                    TableColumn("Time") { entry in
+                        Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened))
+                            .foregroundStyle(.secondary)
+                    }
+                    .width(min: 120, ideal: 140)
+                    TableColumn("Title") { entry in
+                        Text(entry.title.isEmpty ? "—" : entry.title)
+                            .lineLimit(1)
+                            .onTapGesture(count: 2) {
+                                historyDetail = entry
+                            }
+                    }
+                }
+                .frame(minHeight: 240)
+                .contextMenu(forSelectionType: HistoryEntry.ID.self) { ids in
+                    if let id = ids.first {
+                        Button("Open") {
+                            historyDetail = store.historyStore.entries.first { $0.id == id }
+                        }
+                        Button("Delete", role: .destructive) {
+                            store.historyStore.delete(id: id)
+                            if historySelection == id {
+                                historySelection = nil
+                            }
+                            if historyDetail?.id == id {
+                                historyDetail = nil
+                            }
+                        }
+                    }
+                }
+                HStack {
+                    Button("Open") {
+                        if let id = historySelection {
+                            historyDetail = store.historyStore.entries.first { $0.id == id }
+                        }
+                    }
+                    .disabled(historySelection == nil)
+                    Button("Delete", role: .destructive) {
+                        if let id = historySelection {
+                            store.historyStore.delete(id: id)
+                            historySelection = nil
+                            if historyDetail?.id == id {
+                                historyDetail = nil
+                            }
+                        }
+                    }
+                    .disabled(historySelection == nil)
+                    Spacer()
+                }
+                Text("One row is one conversation. Double-click to read the full thread. Delete removes that chat and its stored screenshot. Your original files are not touched.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .onAppear {
+            store.historyStore.reload()
+        }
+        .sheet(item: $historyDetail) { entry in
+            HistoryDetailView(entry: entry, store: store.historyStore)
+        }
+    }
+
     private var selectedRow: ChatEndpoint? {
         if let endpointSelection {
             return store.endpoints.first(where: { $0.id == endpointSelection })
@@ -334,7 +470,7 @@ struct SettingsView: View {
             VStack(spacing: HUDMetrics.controlSpacing) {
                 AxiomLogo()
                     .frame(width: 88, height: 64)
-                Text("AI HUD")
+                Text("Axiom")
                     .font(.title2.weight(.semibold))
                 Text("Version \(appVersion)")
                     .foregroundStyle(.secondary)
@@ -361,378 +497,5 @@ struct SettingsView: View {
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
-    }
-}
-
-private struct EndpointEditorView: View {
-    @Bindable var store: EndpointStore
-    let endpoint: ChatEndpoint
-    @Environment(\.dismiss) private var dismiss
-    @State private var name: String
-    @State private var completionsURL: String
-    @State private var apiKey: String
-    @State private var systemPrompt: String
-    @State private var saveError: String?
-    @State private var listError: String?
-    @State private var isListing = false
-    @State private var isConnecting = false
-    @State private var pasteURL = ""
-    @State private var connectSession: ChatGPTAuth.ConnectSession?
-    @State private var callbackServer: OAuthCallbackServer?
-
-    init(store: EndpointStore, endpoint: ChatEndpoint) {
-        self.store = store
-        self.endpoint = endpoint
-        _name = State(initialValue: endpoint.name)
-        _completionsURL = State(initialValue: endpoint.completionsURL)
-        _apiKey = State(initialValue: endpoint.usesChatGPTAuth ? "" : store.apiKey(for: endpoint.id))
-        _systemPrompt = State(initialValue: endpoint.systemPrompt)
-        _listError = State(initialValue: store.modelListErrors[endpoint.id])
-    }
-
-    private var isOnDevice: Bool {
-        ChatEndpointCatalog.isOnDevice(endpoint)
-    }
-
-    private var isChatGPT: Bool {
-        endpoint.kind == .chatgptSubscription
-    }
-
-    private var isNew: Bool {
-        !store.endpoints.contains(where: { $0.id == endpoint.id })
-    }
-
-    private var chatgptConnected: Bool {
-        ChatGPTAuth.parse(store.apiKey(for: endpoint.id)) != nil
-    }
-
-    private var availableModels: [String] {
-        store.endpoints.first(where: { $0.id == endpoint.id })?.availableModels ?? endpoint.availableModels
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
-                    Text("Endpoint")
-                        .font(.headline)
-                    TextField("Name", text: $name)
-                        .textFieldStyle(.roundedBorder)
-                    if !isOnDevice && !endpoint.urlIsFixed {
-                        TextField("Base URL", text: $completionsURL)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                    if isOnDevice {
-                        Text("Apple Intelligence on this Mac.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        if isChatGPT {
-                            chatgptAuth
-                        } else {
-                            SecureField("API key", text: $apiKey)
-                                .textFieldStyle(.roundedBorder)
-                            Text(endpoint.kind == .anthropic
-                                 ? "Anthropic Messages."
-                                 : "OpenAI-compatible Chat Completions.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                        Button("Refresh") {
-                            Task { await refreshModels() }
-                        }
-                        .disabled(isListing || isNew)
-                    }
-                    if let saveError, !saveError.isEmpty {
-                        Text(saveError)
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                    }
-                    if let listError, !listError.isEmpty {
-                        Text(listError)
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                    }
-                    if !isOnDevice {
-                        Text("System prompt")
-                            .font(.headline)
-                        Text("Leave blank to use the default prompt in Settings. %datetime% is replaced with the current local date and time when you send.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        ZStack(alignment: .topLeading) {
-                            if systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Text("Blank uses the default prompt.")
-                                    .foregroundStyle(.tertiary)
-                                    .padding(.top, 8)
-                                    .padding(.leading, 5)
-                            }
-                            TextEditor(text: $systemPrompt)
-                                .font(.body)
-                                .scrollContentBackground(.hidden)
-                                .frame(minHeight: 140)
-                        }
-                        .padding(8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                        )
-                        DisclosureGroup("Default prompt") {
-                            Text(store.defaultSystemPrompt)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                }
-            }
-            HStack {
-                Button("Delete", role: .destructive) {
-                    store.deleteEndpoint(endpoint.id)
-                    dismiss()
-                }
-                .disabled(isOnDevice || isNew)
-                Spacer()
-                Button("Cancel") { dismiss() }
-                if !isOnDevice {
-                    Button("Save") {
-                        save()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
-        }
-        .padding(HUDMetrics.inset)
-        .frame(width: 520, height: 560)
-    }
-
-    @ViewBuilder
-    private var chatgptAuth: some View {
-        HStack {
-            Text(chatgptConnected ? "Connected" : "Not connected")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Spacer()
-            if chatgptConnected {
-                Button("Disconnect") {
-                    store.clearChatSecret(id: endpoint.id)
-                }
-            } else {
-                Button(isConnecting ? "Connecting…" : "Connect") {
-                    Task { await connectChatGPT() }
-                }
-                .disabled(isConnecting)
-            }
-        }
-        if !chatgptConnected {
-            TextField("Or paste the redirect URL", text: $pasteURL)
-                .textFieldStyle(.roundedBorder)
-            Button("Finish with pasted URL") {
-                Task { await finishPastedURL() }
-            }
-            .disabled(pasteURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-        Text("ChatGPT subscription uses Codex OAuth. Tokens stay in the Keychain.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-    }
-
-    private func drafted() -> ChatEndpoint {
-        ChatEndpoint(
-            id: endpoint.id,
-            name: name,
-            completionsURL: endpoint.urlIsFixed ? endpoint.completionsURL : completionsURL,
-            model: endpoint.model,
-            systemPrompt: systemPrompt,
-            kind: endpoint.kind,
-            presetID: endpoint.presetID,
-            availableModels: availableModels
-        )
-    }
-
-    private func save(listing: Bool = true) {
-        let secret = isChatGPT ? store.apiKey(for: endpoint.id) : apiKey
-        if let rejection = store.saveEndpoint(drafted(), apiKey: secret) {
-            saveError = rejection
-            return
-        }
-        saveError = nil
-        if listing {
-            Task { await refreshModels() }
-        }
-        dismiss()
-    }
-
-    private func refreshModels() async {
-        isListing = true
-        defer { isListing = false }
-        guard !isNew else { return }
-        await store.refreshModels(for: endpoint.id)
-        if let error = store.modelListErrors[endpoint.id] {
-            listError = error
-        } else {
-            listError = nil
-        }
-    }
-
-    private func connectChatGPT() async {
-        isConnecting = true
-        defer { isConnecting = false }
-        let session = ChatGPTAuth.startConnect()
-        connectSession = session
-        NSWorkspace.shared.open(session.url)
-        let server = OAuthCallbackServer()
-        callbackServer = server
-        do {
-            let url = try await server.listen()
-            try await finish(url: url, session: session)
-        } catch is CancellationError {
-            saveError = "Could not listen for ChatGPT sign-in. Paste the redirect URL."
-        } catch let error as ChatGPTAuthError {
-            if case .message(let message) = error {
-                saveError = message
-            }
-        } catch {
-            saveError = "Could not connect ChatGPT subscription."
-        }
-        callbackServer = nil
-    }
-
-    private func finishPastedURL() async {
-        guard let session = connectSession else {
-            saveError = "Press Connect first, then paste the redirect URL."
-            return
-        }
-        do {
-            let parsed = try ChatGPTAuth.parseAuthorizationInput(pasteURL)
-            try ChatGPTAuth.assertState(session: session, parsedState: parsed.state)
-            let credential = try await ChatGPTAuth.exchangeCode(code: parsed.code, verifier: session.verifier)
-            try await storeConnected(credential)
-        } catch let error as ChatGPTAuthError {
-            if case .message(let message) = error {
-                saveError = message
-            }
-        } catch {
-            saveError = "Could not connect ChatGPT subscription."
-        }
-    }
-
-    private func finish(url: URL, session: ChatGPTAuth.ConnectSession) async throws {
-        let parsed = try ChatGPTAuth.parseAuthorizationInput(url.absoluteString)
-        try ChatGPTAuth.assertState(session: session, parsedState: parsed.state)
-        let credential = try await ChatGPTAuth.exchangeCode(code: parsed.code, verifier: session.verifier)
-        try await storeConnected(credential)
-    }
-
-    private func storeConnected(_ credential: ChatGPTAuth.Credential) async throws {
-        let secret = ChatGPTAuth.serialize(credential)
-        if let rejection = store.saveEndpoint(drafted(), apiKey: secret) {
-            saveError = rejection
-            return
-        }
-        saveError = nil
-        await refreshModels()
-    }
-}
-
-private struct ModelRoleSection: View {
-    let title: String
-    let detail: String
-    @Bindable var store: EndpointStore
-    @Binding var providerID: UUID?
-    @Binding var modelID: String
-    var allowsUnset: Bool
-    @State private var isListing = false
-
-    private var provider: ChatEndpoint? {
-        guard let providerID else { return nil }
-        return store.endpoints.first(where: { $0.id == providerID })
-    }
-
-    private var isOnDevice: Bool {
-        provider.map(ChatEndpointCatalog.isOnDevice) ?? false
-    }
-
-    private var availableModels: [String] {
-        provider?.availableModels ?? []
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.headline)
-            Text(detail)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Picker("Provider", selection: $providerID) {
-                if allowsUnset {
-                    Text("Same as chat").tag(Optional<UUID>.none)
-                }
-                ForEach(store.endpoints) { endpoint in
-                    Text(endpoint.name).tag(Optional(endpoint.id))
-                }
-            }
-            if providerID == nil && allowsUnset {
-                Text("Images use the chat model.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } else if isOnDevice {
-                Text("Apple Intelligence")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
-            } else if availableModels.isEmpty {
-                TextField("Model id", text: $modelID)
-                    .textFieldStyle(.roundedBorder)
-            } else {
-                Picker("Model", selection: $modelID) {
-                    ForEach(availableModels, id: \.self) { id in
-                        Text(id).tag(id)
-                    }
-                    if !availableModels.contains(modelID) && !modelID.isEmpty {
-                        Text(modelID).tag(modelID)
-                    }
-                    if modelID.isEmpty {
-                        Text("Choose a model").tag("")
-                    }
-                }
-            }
-            if let provider, !isOnDevice {
-                HStack {
-                    Button("Refresh") {
-                        Task { await refresh() }
-                    }
-                    .disabled(isListing)
-                    if let error = store.modelListErrors[provider.id], !error.isEmpty {
-                        Text(error)
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                    }
-                }
-            }
-        }
-    }
-
-    private func refresh() async {
-        guard let id = providerID else { return }
-        isListing = true
-        defer { isListing = false }
-        await store.refreshModels(for: id)
-    }
-}
-
-private struct SettingsCard<Content: View>: View {
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
-            content()
-        }
-        .padding(HUDMetrics.inset)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: HUDMetrics.cornerRadius, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
     }
 }

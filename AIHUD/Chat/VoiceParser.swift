@@ -30,20 +30,15 @@ enum VoiceStatusCopy {
     static let downloading = "The speech model is still downloading."
     static let captureFailed = "The microphone capture failed."
 
-    private static let privacySecurityBase =
-        "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
-
     static func systemSettingsURL(for status: String) -> URL? {
-        let pane: String
         switch status {
         case micDenied:
-            pane = "Privacy_Microphone"
+            return PrivacyPromptURL.microphone
         case speechDenied:
-            pane = "Privacy_SpeechRecognition"
+            return PrivacyPromptURL.speechRecognition
         default:
             return nil
         }
-        return URL(string: "\(privacySecurityBase)?\(pane)")
     }
 }
 

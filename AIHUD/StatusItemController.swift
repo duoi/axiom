@@ -10,7 +10,7 @@ final class StatusItemController: NSObject {
     func start() {
         item.button?.image = Self.statusImage()
         item.button?.image?.isTemplate = true
-        item.button?.setAccessibilityLabel("AI HUD")
+        item.button?.setAccessibilityLabel("Axiom")
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Show", action: #selector(show), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Settings", action: #selector(settings), keyEquivalent: ","))
@@ -39,13 +39,13 @@ final class StatusItemController: NSObject {
         let main = NSMenu()
         let appItem = NSMenuItem()
         main.addItem(appItem)
-        let appMenu = NSMenu(title: "AI HUD")
+        let appMenu = NSMenu(title: "Axiom")
         appItem.submenu = appMenu
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(settings), keyEquivalent: "")
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(settings), keyEquivalent: ",")
         settingsItem.target = self
         appMenu.addItem(settingsItem)
         appMenu.addItem(.separator())
-        let quitItem = NSMenuItem(title: "Quit AI HUD", action: #selector(quit), keyEquivalent: "")
+        let quitItem = NSMenuItem(title: "Quit Axiom", action: #selector(quit), keyEquivalent: "")
         quitItem.target = self
         appMenu.addItem(quitItem)
 
@@ -57,6 +57,11 @@ final class StatusItemController: NSObject {
 
     func showFromLaunch() {
         show()
+        if let command = DebugRouting.initialCommand(from: CommandLine.arguments),
+           let parsed = DebugRouting.parse(command),
+           DebugRouting.liveStreamText(for: parsed) != nil {
+            hud.applyDebugCommand(command)
+        }
     }
 
     func openSettingsFromLaunch() {

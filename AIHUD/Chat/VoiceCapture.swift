@@ -41,29 +41,61 @@ enum VoicePermission {
         return nil
     }
 
-    static func requestMicrophone() async -> Bool {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized:
-            return true
+    /// System dialog only when undecided. Authorized/denied/restricted never prompt again.
+    static func shouldRequestAccess(for status: AVAuthorizationStatus) -> Bool {
+        status == .notDetermined
+    }
+
+    static func shouldRequestSpeech(for status: SFSpeechRecognizerAuthorizationStatus) -> Bool {
+        status == .notDetermined
+    }
+
+    /// Settings control: request only while undecided; open Privacy pane when denied.
+    static func settingsDecision(for status: AVAuthorizationStatus) -> PrivacyPromptDecision {
+        switch status {
         case .notDetermined:
-            return await AVCaptureDevice.requestAccess(for: .audio)
-        default:
-            return false
+            return .request
+        case .denied, .restricted:
+            return .openSettings
+        case .authorized:
+            return .none
+        @unknown default:
+            return .openSettings
         }
     }
 
-    static func requestSpeech() async -> Bool {
-        switch SFSpeechRecognizer.authorizationStatus() {
-        case .authorized:
-            return true
+    static func settingsDecision(
+        forSpeech status: SFSpeechRecognizerAuthorizationStatus
+    ) -> PrivacyPromptDecision {
+        switch status {
         case .notDetermined:
-            return await withCheckedContinuation { continuation in
-                SFSpeechRecognizer.requestAuthorization { status in
-                    continuation.resume(returning: status == .authorized)
-                }
+            return .request
+        case .denied, .restricted:
+            return .openSettings
+        case .authorized:
+            return .none
+        @unknown default:
+            return .openSettings
+        }
+    }
+
+    static func requestMicrophone() async -> Bool {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        guard shouldRequestAccess(for: status) else {
+            return status == .authorized
+        }
+        return await AVCaptureDevice.requestAccess(for: .audio)
+    }
+
+    static func requestSpeech() async -> Bool {
+        let status = SFSpeechRecognizer.authorizationStatus()
+        guard shouldRequestSpeech(for: status) else {
+            return status == .authorized
+        }
+        return await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status == .authorized)
             }
-        default:
-            return false
         }
     }
 }

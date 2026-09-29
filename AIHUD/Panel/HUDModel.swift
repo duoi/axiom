@@ -1,5 +1,8 @@
 import AppKit
+import AVFoundation
+import CoreGraphics
 import Observation
+import Speech
 
 @MainActor
 @Observable
@@ -14,6 +17,7 @@ final class HUDModel {
     var onCaptureScreen: () -> Void = {}
     var onLayout: () -> Void = {}
     var historyExpanded = false
+    var historyExcluded = false
     var screenNotice: String? {
         didSet {
             if screenNotice != oldValue {
@@ -83,6 +87,29 @@ final class HUDModel {
         self.store = store
     }
 
+    func simulateIncomingStream(_ text: String, finish: Bool = true) {
+        cancelForQuit()
+        debugDriven = true
+        lipDismissed = false
+        historyExpanded = false
+        stickToBottom = true
+        session = DebugRouting.apply("waiting", to: Session())
+        pushDraftToField("")
+        onLayout()
+        for chunk in DebugRouting.streamChunks(text) {
+            var streaming = session
+            streaming.receiveToken(chunk)
+            session = streaming
+            onLayout()
+        }
+        guard finish else { return }
+        var done = session
+        done.finish()
+        session = done
+        persistHistoryIfNeeded()
+        onLayout()
+    }
+
     func debugSnapshot() -> DebugSnapshot {
         DebugSnapshot(
             session: session,
@@ -139,6 +166,7 @@ final class HUDModel {
     }
 
     func setDraft(_ text: String) {
+        guard PromptInFlightPolicy.isEditable(phase: session.phase) else { return }
         session.draft = text
         pushDraftToField(text)
         if displayedMultiline {
@@ -205,7 +233,7 @@ final class HUDModel {
         beginSend(jpeg: nil, name: "")
     }
 
-    func beginSend(jpeg: Data?, name: String) {
+    func beginSend(jpeg: Data?, name: String, highlightFrame: CGRect? = nil) {
         let prompt = SystemPrompt.composed(
             override: store.sendEndpoint(hasImage: jpeg != nil || session.chips.contains { chip in
                 if case .jpeg = chip.payload { return true }
@@ -219,6 +247,14 @@ final class HUDModel {
         guard case .request(let messages) = outcome else {
             onLayout()
             return
+        }
+        if CaptureHighlight.shouldFlashOnSend(hasJPEG: jpeg != nil) {
+            CaptureHighlight.flash(
+                frame: highlightFrame,
+                cornerRadius: IntelligenceGlowPolicy.cornerRadius(isHUD: false),
+                context: .capture,
+                space: .captureQuartz
+            )
         }
         switch store.route(for: messages) {
         case .blocked(let message):
@@ -250,7 +286,10 @@ final class HUDModel {
     }
 
     func stop() {
-        session.stop()
+        applySession { $0.stop() }
+        if session.phase == .finished {
+            persistHistoryIfNeeded()
+        }
         task?.cancel()
         task = nil
         onLayout()
@@ -263,9 +302,18 @@ final class HUDModel {
 
     @discardableResult
     func dismiss(clickOutside: Bool) -> Bool {
+        let snapshot = session
+        let excluded = historyExcluded
         let hide = session.dismiss(clickOutside: clickOutside)
         if hide {
+            store.historyStore.record(
+                session: snapshot,
+                excludeFromHistory: excluded,
+                historyEnabled: store.savesHistory,
+                saveScreenshots: store.savesHistoryScreenshots
+            )
             historyExpanded = false
+            historyExcluded = false
             screenNotice = nil
             voiceStatus = nil
             lipDismissed = false
@@ -276,6 +324,20 @@ final class HUDModel {
         }
         onLayout()
         return hide
+    }
+
+    func persistHistoryIfNeeded() {
+        store.historyStore.record(
+            session: session,
+            excludeFromHistory: historyExcluded,
+            historyEnabled: store.savesHistory,
+            saveScreenshots: store.savesHistoryScreenshots
+        )
+    }
+
+    func toggleHistoryExclusion() {
+        historyExcluded.toggle()
+        onLayout()
     }
 
     func dismissLip() {
@@ -338,9 +400,12 @@ final class HUDModel {
     }
 
     func openScreenSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else {
-            return
-        }
+        guard let url = PrivacyPromptURL.screenRecording else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    func openAccessibilitySettings() {
+        guard let url = PrivacyPromptURL.accessibility else { return }
         NSWorkspace.shared.open(url)
     }
 
@@ -353,15 +418,68 @@ final class HUDModel {
         NSWorkspace.shared.open(url)
     }
 
+    /// Settings General: force the mic/speech system prompts or open Privacy panes.
+    func promptVoicePrivacyFromSettings() {
+        Task { @MainActor in
+            let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+            switch VoicePermission.settingsDecision(for: micStatus) {
+            case .request:
+                _ = await VoicePermission.requestMicrophone()
+            case .openSettings:
+                if let url = PrivacyPromptURL.microphone {
+                    NSWorkspace.shared.open(url)
+                }
+            case .none, .requestAndOpenSettings:
+                break
+            }
+
+            let speechStatus = SFSpeechRecognizer.authorizationStatus()
+            switch VoicePermission.settingsDecision(forSpeech: speechStatus) {
+            case .request:
+                _ = await VoicePermission.requestSpeech()
+            case .openSettings:
+                if let url = PrivacyPromptURL.speechRecognition {
+                    NSWorkspace.shared.open(url)
+                }
+            case .none, .requestAndOpenSettings:
+                break
+            }
+
+            voiceStatus = VoicePermission.deniedSentence()
+        }
+    }
+
+    /// Settings General: force Screen Recording prompt and/or open its Privacy pane.
+    func promptScreenPrivacyFromSettings() {
+        switch ScreenGrab.settingsDecision(preflightGranted: CGPreflightScreenCaptureAccess()) {
+        case .none:
+            return
+        case .request, .openSettings, .requestAndOpenSettings:
+            _ = ScreenGrab.requestAccessFromSettings()
+            openScreenSettings()
+        }
+    }
+
+    /// Settings General: prompt Accessibility once when not trusted; open the pane as a fallback.
+    func promptAccessibilityPrivacyFromSettings() {
+        switch AccessibilityPermission.settingsDecision(trusted: AccessibilityPermission.isTrusted) {
+        case .none:
+            return
+        case .request, .openSettings, .requestAndOpenSettings:
+            let trusted = AccessibilityPermission.promptFromSettingsIfNeeded()
+            if !trusted {
+                openAccessibilitySettings()
+            }
+        }
+    }
+
     func toggleHistory() {
         historyExpanded.toggle()
         onLayout()
     }
 
-    func reportScreenFailure(permission: Bool) {
-        screenNotice = permission
-            ? HUDErrorLip.screenPermission
-            : HUDErrorLip.screenFailed
+    func reportScreenFailure(_ error: ScreenGrabError) {
+        screenNotice = SendFailureCopy.message(for: error)
         onLayout()
     }
 
@@ -375,33 +493,10 @@ final class HUDModel {
         task?.cancel()
         clientSession = nil
         redirectGuard = nil
-        task = Task { [weak self] in
-            guard let self else { return }
-            do {
-                for try await event in OnDeviceChat.stream(messages: messages) {
-                    if Task.isCancelled { return }
-                    switch event {
-                    case .token(let token):
-                        self.session.receiveToken(token)
-                        self.onLayout()
-                    case .done:
-                        self.session.finish()
-                        self.onLayout()
-                        return
-                    case .failure(let message):
-                        self.lipDismissed = false
-                        self.session.fail(message)
-                        self.onLayout()
-                        return
-                    }
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                self.lipDismissed = false
-                self.session.fail("The on-device model failed.")
-                self.onLayout()
-            }
+        consume(ignoreCancelledURLError: false, failureText: { _ in
+            "The on-device model failed."
+        }) {
+            OnDeviceChat.stream(messages: messages)
         }
     }
 
@@ -414,64 +509,98 @@ final class HUDModel {
     ) {
         task?.cancel()
         let host = url.host ?? ""
-        let (session, guardDelegate) = ChatClient.makeSession(host: host)
+        let (session, guardDelegate) = ChatClient.makeSession(
+            host: host,
+            requestTimeout: store.requestTimeoutSeconds
+        )
         clientSession = session
         redirectGuard = guardDelegate
+        let effort = store.reasoningEffort
         let request = ChatRequest(
             url: url,
             model: model,
             apiKey: apiKey,
-            messages: messages
+            messages: messages,
+            reasoningEffort: effort
         )
+        consume(ignoreCancelledURLError: true, failureText: { error in
+            SendFailureCopy.message(for: error)
+        }) { [weak self] in
+            switch kind {
+            case .openaiCompletions:
+                return ChatClient(session: session).stream(request)
+            case .anthropicMessages:
+                return AnthropicClient(session: session).stream(request)
+            case .chatgptResponses:
+                let credential = try await ChatGPTAuth.freshCredential(apiKey)
+                let secret = ChatGPTAuth.serialize(credential)
+                if let id = self?.store.endpoints.first(where: { self?.store.apiKey(for: $0.id) == apiKey })?.id {
+                    self?.store.replaceChatSecret(secret, id: id)
+                }
+                return ChatGPTClient(session: session).stream(
+                    ChatRequest(
+                        url: url,
+                        model: model,
+                        apiKey: secret,
+                        messages: messages,
+                        reasoningEffort: effort
+                    )
+                )
+            }
+        }
+    }
+
+    private func consume(
+        ignoreCancelledURLError: Bool,
+        failureText: @escaping (Error) -> String,
+        makeEvents: @escaping () async throws -> AsyncThrowingStream<ChatStreamEvent, Error>
+    ) {
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                let events: AsyncThrowingStream<ChatStreamEvent, Error>
-                switch kind {
-                case .openaiCompletions:
-                    events = ChatClient(session: session).stream(request)
-                case .anthropicMessages:
-                    events = AnthropicClient(session: session).stream(request)
-                case .chatgptResponses:
-                    let credential = try await ChatGPTAuth.freshCredential(apiKey)
-                    let secret = ChatGPTAuth.serialize(credential)
-                    if let id = self.store.endpoints.first(where: { self.store.apiKey(for: $0.id) == apiKey })?.id {
-                        self.store.replaceChatSecret(secret, id: id)
-                    }
-                    events = ChatGPTClient(session: session).stream(
-                        ChatRequest(url: url, model: model, apiKey: secret, messages: messages)
-                    )
-                }
+                let events = try await makeEvents()
                 for try await event in events {
                     if Task.isCancelled { return }
                     switch event {
                     case .token(let token):
-                        self.session.receiveToken(token)
+                        self.applySession { $0.receiveToken(token) }
                         self.onLayout()
                     case .done:
-                        self.session.finish()
+                        self.applySession { $0.finish() }
+                        self.persistHistoryIfNeeded()
                         self.onLayout()
                         return
                     case .failure(let message):
                         self.lipDismissed = false
-                        self.session.fail(message)
+                        self.applySession { $0.fail(message) }
                         self.onLayout()
                         return
                     }
                 }
+                self.commitStreamIfNeeded()
             } catch is CancellationError {
                 return
-            } catch let error as URLError where error.code == .cancelled {
+            } catch let error as URLError where ignoreCancelledURLError && error.code == .cancelled {
                 return
-            } catch let error as URLError where error.code == .timedOut {
-                self.lipDismissed = false
-                self.session.fail("The request timed out.")
-                self.onLayout()
             } catch {
                 self.lipDismissed = false
-                self.session.fail("The request failed.")
+                self.applySession { $0.fail(failureText(error)) }
                 self.onLayout()
             }
         }
+    }
+
+    private func applySession(_ mutate: (inout Session) -> Void) {
+        var next = session
+        mutate(&next)
+        session = next
+    }
+
+    /// If the stream ends without an explicit `.done` after tokens arrived, commit the live reply.
+    private func commitStreamIfNeeded() {
+        guard session.showsStop, !session.displayAnswer.isEmpty else { return }
+        applySession { $0.finish() }
+        persistHistoryIfNeeded()
+        onLayout()
     }
 }

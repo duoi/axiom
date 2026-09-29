@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import AIHUD
+@testable import Axiom
 
 @Test func debugCommandsMapStringsToPhases() {
     #expect(DebugRouting.phase(for: "composing-empty") == .composing)
@@ -42,7 +42,15 @@ import Testing
     #expect(session.displayAnswer.isEmpty)
     #expect(session.showsStop)
     #expect(session.showsAnswer)
+    #expect(session.draft == DebugRouting.draft)
     #expect(session.turns.contains { $0.role == .user })
+}
+
+@Test func debugInFlightPromptKeepsDraftForShimmer() {
+    let session = DebugRouting.apply("in-flight-prompt", to: Session())
+    #expect(session.phase == .waiting)
+    #expect(session.draft == DebugRouting.draft)
+    #expect(!PromptInFlightPolicy.isEditable(phase: session.phase))
 }
 
 @Test func debugStreamingKeepsAPartialAnswer() {
@@ -176,21 +184,55 @@ import Testing
     #expect(snapshot.session.phase == .finished)
 }
 
+@Test func cardMenuShowsDebugOnlyWhenDevModeIsOn() {
+    #expect(HUDCardMenu.items(debugEnabled: false) == [.settings])
+    #expect(HUDCardMenu.items(debugEnabled: true) == [.settings, .debug])
+    #expect(HUDCardMenu.title(for: .settings) == "Settings")
+    #expect(HUDCardMenu.title(for: .debug) == "Debug")
+}
+
+@Test func cardMenuDebugFollowsTheExistingDevGate() {
+    let suite = "aihud.tests.card-menu-debug"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom"], defaults: defaults) == false)
+    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom", "--show"], defaults: defaults) == false)
+    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom", "--debug-state=reply-overflow"], defaults: defaults) == false)
+    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom", "--debug"], defaults: defaults))
+    DebugSettings.saveEnabled(true, to: defaults)
+    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom"], defaults: defaults))
+    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom", "--show"], defaults: defaults))
+    DebugSettings.saveEnabled(false, to: defaults)
+    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom"], defaults: defaults) == false)
+    defaults.removePersistentDomain(forName: suite)
+}
+
 @Test func debugLaunchFlagIsOffUnlessRequested() {
-    #expect(!DebugRouting.enabled(by: ["AIHUD"]))
-    #expect(!DebugRouting.enabled(by: ["AIHUD", "--show"]))
-    #expect(DebugRouting.enabled(by: ["AIHUD", "--debug"]))
+    #expect(!DebugRouting.enabled(by: ["Axiom"]))
+    #expect(!DebugRouting.enabled(by: ["Axiom", "--show"]))
+    #expect(DebugRouting.enabled(by: ["Axiom", "--debug"]))
     #expect(DebugRouting.initialCommand(from: ["--debug-state=failed"]) == "failed")
     #expect(DebugRouting.initialCommand(from: ["--debug-state", "dictate-on"]) == "dictate-on")
     #expect(DebugRouting.initialCommand(from: ["--debug-state="]) == nil)
     #expect(DebugRouting.initialCommand(from: ["--debug-state", ""]) == nil)
-    #expect(DebugRouting.initialCommand(from: ["AIHUD"]) == nil)
+    #expect(DebugRouting.initialCommand(from: ["Axiom"]) == nil)
     #expect(DebugRouting.phase(for: DebugRouting.initialCommand(from: ["--debug-state=streaming"]) ?? "") == .streaming)
     #expect(DebugRouting.initialCommand(from: ["--debug-state=logo-anthropic"]) == "logo-anthropic")
     #expect(DebugRouting.initialCommand(from: ["--debug-state=logo-openai"]) == "logo-openai")
     #expect(DebugRouting.initialCommand(from: ["--debug-state=second-turn"]) == "second-turn")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=stream-sun"]) == "stream-sun")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=reply-overflow"]) == "reply-overflow")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=stream-line"]) == "stream-line")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=upper-extension"]) == "upper-extension")
     #expect(DebugRouting.phase(for: "logo-anthropic") == nil)
     #expect(DebugRouting.phase(for: "second-turn") == .finished)
+    #expect(DebugRouting.phase(for: "stream-sun") == .finished)
+    #expect(DebugRouting.parse("stream-sun") == .streamSun)
+    #expect(DebugRouting.phase(for: "reply-10") == .finished)
+    #expect(DebugRouting.phase(for: "reply-20") == .finished)
+    #expect(DebugRouting.phase(for: "reply-overflow") == .finished)
+    #expect(DebugRouting.parse("reply-overflow") == .replyOverflow)
+    #expect(DebugRouting.liveStreamText(for: .replyOverflow) == DebugRouting.numberedReply(lines: 40))
     #expect(DebugRouting.phase(for: "arm-window") == nil)
     #expect(DebugRouting.parse("not-a-command") == nil)
     #expect(DebugRouting.logoKind(from: "logo-nope") == nil)
@@ -284,10 +326,96 @@ import Testing
 @Test func debugSecondTurnKeepsTheFinishedReply() {
     let snapshot = DebugRouting.apply("second-turn", to: DebugSnapshot())
     #expect(snapshot.session.phase == .finished)
-    #expect(snapshot.session.displayAnswer == DebugRouting.reply)
+    #expect(snapshot.session.displayAnswer == DebugRouting.longReply)
+    #expect(snapshot.session.displayAnswer != DebugRouting.reply)
     #expect(snapshot.session.draft == DebugRouting.followUp)
-    #expect(snapshot.session.turns.contains { $0.role == .assistant })
+    #expect(snapshot.session.turns.contains { $0.role == .assistant && $0.text == DebugRouting.longReply })
     #expect(snapshot.session.canSend)
+}
+
+@Test func debugStreamSunReplaysTokensOntoTheWaitingTurn() {
+    let snapshot = DebugRouting.apply("stream-sun", to: DebugSnapshot())
+    #expect(snapshot.session.phase == .finished)
+    #expect(snapshot.session.displayAnswer == DebugRouting.liveStreamReply)
+    #expect(snapshot.session.turns.contains { $0.role == .user })
+    #expect(snapshot.session.turns.contains { $0.role == .assistant && $0.text == DebugRouting.liveStreamReply })
+}
+
+@Test func debugNumberedRepliesKeepWrappedLineCounts() {
+    let ten = DebugRouting.apply("reply-10", to: DebugSnapshot())
+    #expect(ten.session.phase == .finished)
+    #expect(ten.session.displayAnswer == DebugRouting.numberedReply(lines: 10))
+    #expect(HUDLayout.wrappedReplyLines(ten.session.displayAnswer) == 10)
+
+    let twenty = DebugRouting.apply("reply-20", to: DebugSnapshot())
+    #expect(HUDLayout.wrappedReplyLines(twenty.session.displayAnswer) == 20)
+
+    let overflow = DebugRouting.apply("reply-overflow", to: DebugSnapshot())
+    #expect(overflow.session.phase == .finished)
+    #expect(overflow.session.displayAnswer == DebugRouting.numberedReply(lines: 40))
+    #expect(HUDLayout.wrappedReplyLines(overflow.session.displayAnswer) == 40)
+    #expect(HUDLayout.replyVisibleLines(40) == 30)
+}
+
+@Test func debugCardLayoutStatesMapSnapshotsAndIgnoreUnknownValues() {
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=stream-line"]) == "stream-line")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=stream-multi"]) == "stream-multi")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=lower-extension"]) == "lower-extension")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=upper-extension"]) == "upper-extension")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=reply-overflow"]) == "reply-overflow")
+    #expect(DebugRouting.initialCommand(from: ["--debug-state=expanded-conversation"]) == "expanded-conversation")
+    #expect(DebugRouting.parse("not-a-real-debug-state") == nil)
+    #expect(DebugRouting.phase(for: "not-a-real-debug-state") == nil)
+
+    var leftover = DebugSnapshot()
+    leftover.session.draft = "keep me"
+    leftover = DebugRouting.apply("totally-unknown", to: leftover)
+    #expect(leftover.session.draft == "keep me")
+    #expect(leftover.session.phase == .composing)
+
+    let streamLine = DebugRouting.apply("stream-line", to: DebugSnapshot())
+    #expect(DebugRouting.parse("stream-line") == .streamLine)
+    #expect(streamLine.session.phase == .streaming)
+    #expect(streamLine.session.displayAnswer == DebugRouting.streamLineReply)
+    #expect(HUDLayout.wrappedReplyLines(streamLine.session.displayAnswer) == 1)
+    #expect(streamLine.historyExpanded == false)
+    #expect(DebugRouting.liveStreamText(for: .streamLine) == DebugRouting.streamLineReply)
+    #expect(DebugRouting.liveStreamFinishes(.streamLine) == false)
+
+    let streamMulti = DebugRouting.apply("stream-multi", to: DebugSnapshot())
+    #expect(streamMulti.session.phase == .streaming)
+    #expect(streamMulti.session.displayAnswer == DebugRouting.streamMultiReply)
+    let multiLines = HUDLayout.wrappedReplyLines(streamMulti.session.displayAnswer)
+    #expect(multiLines > 1)
+    #expect(multiLines < 15)
+    #expect(streamMulti.historyExpanded == false)
+    #expect(DebugRouting.liveStreamText(for: .streamMulti) == DebugRouting.streamMultiReply)
+    #expect(DebugRouting.liveStreamFinishes(.streamMulti) == false)
+
+    let lower = DebugRouting.apply("lower-extension", to: DebugSnapshot())
+    #expect(lower.session.phase == .finished)
+    #expect(HUDLayout.wrappedReplyLines(lower.session.displayAnswer) == 15)
+    #expect(lower.historyExpanded == false)
+
+    let upper = DebugRouting.apply("upper-extension", to: DebugSnapshot())
+    #expect(upper.session.phase == .finished)
+    #expect(HUDLayout.wrappedReplyLines(upper.session.displayAnswer) == 30)
+    #expect(upper.historyExpanded == false)
+
+    let overflow = DebugRouting.apply("reply-overflow", to: DebugSnapshot())
+    #expect(overflow.session.phase == .finished)
+    #expect(HUDLayout.wrappedReplyLines(overflow.session.displayAnswer) == 40)
+    #expect(overflow.historyExpanded == false)
+
+    let expanded = DebugRouting.apply("expanded-conversation", to: DebugSnapshot())
+    #expect(expanded.historyExpanded)
+    #expect(expanded.session.phase == .finished)
+    #expect(!expanded.session.displayAnswer.isEmpty)
+    #expect(expanded.session.turns.contains { $0.role == .user })
+    #expect(expanded.session.turns.contains { $0.role == .assistant })
+    #expect(expanded.session.turns.filter { $0.role == .user }.count >= 3)
+    let transcript = expanded.session.turns.map(\.text).joined(separator: "\n")
+    #expect(transcript.split(separator: "\n").count > HUDLayout.replyMaxLines)
 }
 
 @Test func debugArmWindowAndMultilineDoNotClearTheSession() {
@@ -398,4 +526,52 @@ import Testing
     #expect(defaults.string(forKey: ChatEndpointCatalog.defaultIDKey) == provider.uuidString)
     #expect(defaults.string(forKey: ChatEndpointCatalog.chatModelIDKey) == "gpt-4o")
     defaults.removePersistentDomain(forName: suite)
+}
+
+@Test func debugPlanClassifiesCommandsWithoutMutatingStoredEndpoints() {
+    var snapshot = DebugSnapshot()
+    snapshot.session.draft = "keep me"
+    let unknown = DebugRouting.plan(command: "not-a-command", snapshot: snapshot)
+    if case .apply(let next) = unknown.kind {
+        #expect(next.session.draft == "keep me")
+    } else {
+        Issue.record("unknown commands should apply the current snapshot")
+    }
+    #expect(unknown.shimmer == nil)
+    #expect(!unknown.usePulsingOrb)
+
+    let transcript = DebugRouting.plan(command: "open-transcript", snapshot: snapshot)
+    #expect(transcript.kind == .openTranscript)
+
+    let shimmer = DebugRouting.plan(command: "shimmer-grok", snapshot: snapshot)
+    #expect(shimmer.shimmer == .grokStyle)
+    #expect(shimmer.usePulsingOrb)
+    if case .apply(let next) = shimmer.kind {
+        #expect(next.session.phase == .waiting)
+    } else {
+        Issue.record("shimmer commands should apply the in-flight snapshot")
+    }
+
+    let bogusShimmer = DebugRouting.plan(command: "shimmer-nope", snapshot: snapshot)
+    #expect(bogusShimmer.shimmer == nil)
+    if case .apply(let next) = bogusShimmer.kind {
+        #expect(next.session.draft == "keep me")
+    } else {
+        Issue.record("unknown shimmer names should leave the snapshot alone")
+    }
+
+    let flash = DebugRouting.plan(command: "flash-highlight", snapshot: snapshot)
+    #expect(flash.kind == .flashHighlight)
+
+    let inflight = DebugRouting.plan(command: "in-flight-prompt", snapshot: snapshot)
+    #expect(inflight.usePulsingOrb)
+    #expect(inflight.shimmer == nil)
+
+    let stream = DebugRouting.plan(command: "stream-line", snapshot: snapshot)
+    if case .liveStream(let text, let finish) = stream.kind {
+        #expect(text == DebugRouting.streamLineReply)
+        #expect(!finish)
+    } else {
+        Issue.record("stream-line should be a live stream")
+    }
 }

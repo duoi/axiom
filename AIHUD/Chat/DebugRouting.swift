@@ -33,6 +33,17 @@ enum DebugCommand: String, Equatable, Sendable, CaseIterable {
     case missingModel = "missing-model"
     case signIn = "sign-in"
     case requestFailed = "request-failed"
+    case streamSun = "stream-sun"
+    case reply10 = "reply-10"
+    case reply20 = "reply-20"
+    case replyOverflow = "reply-overflow"
+    case streamLine = "stream-line"
+    case streamMulti = "stream-multi"
+    case lowerExtension = "lower-extension"
+    case upperExtension = "upper-extension"
+    case expandedConversation = "expanded-conversation"
+    case flashHighlight = "flash-highlight"
+    case inFlightPrompt = "in-flight-prompt"
 }
 
 struct DebugLogoChoice: Equatable, Sendable, Identifiable {
@@ -68,10 +79,55 @@ enum DebugSettings {
     }
 }
 
+enum HUDCardMenu {
+    enum Item: Equatable, Sendable {
+        case settings
+        case debug
+    }
+
+    static func items(debugEnabled: Bool) -> [Item] {
+        if debugEnabled {
+            return [.settings, .debug]
+        }
+        return [.settings]
+    }
+
+    static func title(for item: Item) -> String {
+        switch item {
+        case .settings: return "Settings"
+        case .debug: return "Debug"
+        }
+    }
+
+    static func debugEnabled(arguments: [String], defaults: UserDefaults) -> Bool {
+        DebugRouting.enabled(by: arguments) || DebugSettings.loadEnabled(from: defaults)
+    }
+}
+
+struct DebugCommandPlan: Equatable, Sendable {
+    var shimmer: InFlightShimmerStyle?
+    var usePulsingOrb: Bool
+    var kind: Kind
+
+    enum Kind: Equatable, Sendable {
+        case openTranscript
+        case flashHighlight
+        case liveStream(text: String, finish: Bool)
+        case apply(DebugSnapshot)
+    }
+}
+
 enum DebugRouting {
     static let draft = "What is the total mass of the sun?"
     static let partial = "The Sun's mass is about"
     static let reply = "The Sun's mass is about 1.989e30 kilograms."
+    static let longReply = """
+    Sure — here it is again.
+
+    The Sun's total mass is about 1.989 × 10^30 kilograms. That's roughly 333,000 times Earth's mass, and about 99.86% of all the mass in the Solar System.
+
+    In other units: about 2 × 10^30 kg, or roughly 2 octillion tonnes.
+    """
     static let markdownReply = #"""
 Here is a short plan:
 
@@ -88,10 +144,71 @@ func greet() {
     static let genericFailure = "The screen capture failed."
     static let chipName = "notes.txt"
     static let followUp = "And the Earth?"
+    static let liveStreamReply =
+        "back to the sun, huh? okay okay, here's the number: about 1.989 × 10^30 kilograms — roughly 333,000 earths, or 99.86% of everything in the solar system. same answer as last time, papi. it's not gonna change on us. what are you really digging at?"
+    static let streamLineReply = "The Sun's mass is about 1.989e30 kilograms."
+    static let streamMultiReply =
+        "The Sun's total mass is about 1.989 × 10^30 kilograms. That's roughly 333,000 times Earth's mass, and about 99.86% of all the mass in the Solar System. In other units: about 2 × 10^30 kg, or roughly 2 octillion tonnes. Same number as last time; it is not going to change."
     static let missingKey = "Add an API key in Settings"
     static let missingModel = "Add a model id in Settings"
     static let signIn = "Sign in to ChatGPT in Settings"
     static let requestFailed = "The request failed."
+
+    static func numberedReply(lines: Int) -> String {
+        guard lines > 0 else { return "" }
+        return (1...lines).map { "This is assistant reply line \($0)." }.joined(separator: "\n")
+    }
+
+    static func liveStreamText(for command: DebugCommand) -> String? {
+        switch command {
+        case .streamSun:
+            return liveStreamReply
+        case .replyOverflow:
+            return numberedReply(lines: 40)
+        case .streamLine:
+            return streamLineReply
+        case .streamMulti:
+            return streamMultiReply
+        default:
+            return nil
+        }
+    }
+
+    static func liveStreamFinishes(_ command: DebugCommand) -> Bool {
+        switch command {
+        case .streamLine, .streamMulti:
+            return false
+        default:
+            return true
+        }
+    }
+
+    /// One classification for a debug command. Unknown strings apply the current snapshot unchanged.
+    static func plan(command: String, snapshot: DebugSnapshot) -> DebugCommandPlan {
+        if command == "open-transcript" {
+            return DebugCommandPlan(shimmer: nil, usePulsingOrb: false, kind: .openTranscript)
+        }
+        if let style = InFlightShimmerStyle.fromDebugCommand(command) {
+            let next = apply(DebugCommand.inFlightPrompt.rawValue, to: snapshot)
+            return DebugCommandPlan(shimmer: style, usePulsingOrb: true, kind: .apply(next))
+        }
+        let parsed = parse(command)
+        if parsed == .flashHighlight {
+            return DebugCommandPlan(shimmer: nil, usePulsingOrb: false, kind: .flashHighlight)
+        }
+        if let parsed, let text = liveStreamText(for: parsed) {
+            return DebugCommandPlan(
+                shimmer: nil,
+                usePulsingOrb: false,
+                kind: .liveStream(text: text, finish: liveStreamFinishes(parsed))
+            )
+        }
+        return DebugCommandPlan(
+            shimmer: nil,
+            usePulsingOrb: parsed == .inFlightPrompt,
+            kind: .apply(apply(command, to: snapshot))
+        )
+    }
 
     static let logoChoices: [DebugLogoChoice] = {
         var rows = [
@@ -156,11 +273,12 @@ func greet() {
         switch parse(command) {
         case .composingEmpty, .composingDraft, .reset:
             return .composing
-        case .waiting:
+        case .waiting, .inFlightPrompt:
             return .waiting
-        case .streaming:
+        case .streaming, .streamLine, .streamMulti:
             return .streaming
-        case .finished, .markdownReply, .secondTurn:
+        case .finished, .markdownReply, .secondTurn, .streamSun, .reply10, .reply20, .replyOverflow,
+             .lowerExtension, .upperExtension, .expandedConversation:
             return .finished
         case .failed:
             return .failed(timedOut)
@@ -176,7 +294,7 @@ func greet() {
             return .failed(requestFailed)
         case .none, .ask, .agent, .armScreen, .disarmScreen, .dictateOn, .dictateOff,
              .addChip, .micDenied, .speechDenied, .genericFailure, .clearStatus, .makeKey, .resignKey,
-             .armWindow, .multilineOn, .multilineOff, .historyOn, .historyOff:
+             .armWindow, .multilineOn, .multilineOff, .historyOn, .historyOff, .flashHighlight:
             return nil
         }
     }
@@ -207,6 +325,9 @@ func greet() {
             next.session = composing(draft: draft)
             clearStatus(&next)
         case .waiting:
+            next.session = waiting()
+            clearStatus(&next)
+        case .inFlightPrompt:
             next.session = waiting()
             clearStatus(&next)
         case .streaming:
@@ -286,8 +407,50 @@ func greet() {
         case .requestFailed:
             next.session = failed(requestFailed)
             clearStatus(&next)
+        case .streamSun:
+            next.session = replayed(text: liveStreamReply, finish: true)
+            clearStatus(&next)
+        case .reply10:
+            next.session = numberedFinished(lines: 10)
+            clearStatus(&next)
+        case .reply20:
+            next.session = numberedFinished(lines: 20)
+            clearStatus(&next)
+        case .replyOverflow:
+            next.session = replayed(text: numberedReply(lines: 40), finish: true)
+            clearStatus(&next)
+        case .streamLine:
+            next.session = replayed(text: streamLineReply, finish: false)
+            clearStatus(&next)
+        case .streamMulti:
+            next.session = replayed(text: streamMultiReply, finish: false)
+            clearStatus(&next)
+        case .lowerExtension:
+            next.session = numberedFinished(lines: 15)
+            clearStatus(&next)
+        case .upperExtension:
+            next.session = numberedFinished(lines: 30)
+            clearStatus(&next)
+        case .expandedConversation:
+            next.session = longExpandedConversation()
+            next.historyExpanded = true
+            clearStatus(&next)
+        case .flashHighlight:
+            break
         }
         return next
+    }
+
+    static func streamChunks(_ text: String, size: Int = 28) -> [String] {
+        guard size > 0, !text.isEmpty else { return text.isEmpty ? [] : [text] }
+        var chunks: [String] = []
+        var index = text.startIndex
+        while index < text.endIndex {
+            let end = text.index(index, offsetBy: size, limitedBy: text.endIndex) ?? text.endIndex
+            chunks.append(String(text[index..<end]))
+            index = end
+        }
+        return chunks
     }
 
     private static func clearStatus(_ snapshot: inout DebugSnapshot) {
@@ -305,6 +468,7 @@ func greet() {
     private static func waiting() -> Session {
         var session = Session()
         session.startedAt = Date()
+        session.draft = draft
         session.turns = [Turn(role: .user, text: draft, chips: [])]
         session.phase = .waiting
         return session
@@ -321,6 +485,7 @@ func greet() {
         var session = streaming()
         session.displayAnswer = reply
         session.turns.append(Turn(role: .assistant, text: reply, chips: []))
+        session.draft = ""
         session.phase = .finished
         return session
     }
@@ -329,12 +494,71 @@ func greet() {
         var session = waiting()
         session.displayAnswer = markdownReply
         session.turns.append(Turn(role: .assistant, text: markdownReply, chips: []))
+        session.draft = ""
         session.phase = .finished
         return session
     }
 
+    private static func numberedFinished(lines: Int) -> Session {
+        var session = waiting()
+        let text = numberedReply(lines: lines)
+        session.displayAnswer = text
+        session.turns.append(Turn(role: .assistant, text: text, chips: []))
+        session.draft = ""
+        session.phase = .finished
+        return session
+    }
+
+    /// Several turns that unroll past the 30-line height cap when history is expanded.
+    private static func longExpandedConversation() -> Session {
+        var session = Session()
+        session.startedAt = Date()
+        let exchanges: [(String, String)] = [
+            (
+                "What is the mass of the Sun?",
+                numberedReply(lines: 12)
+            ),
+            (
+                "And how does that compare to Earth?",
+                numberedReply(lines: 12)
+            ),
+            (
+                "Walk me through the Solar System mass budget.",
+                numberedReply(lines: 16)
+            ),
+            (
+                "Give me a longer wrap-up I can scroll through.",
+                numberedReply(lines: 20)
+            )
+        ]
+        var turns: [Turn] = []
+        for (user, assistant) in exchanges {
+            turns.append(Turn(role: .user, text: user, chips: []))
+            turns.append(Turn(role: .assistant, text: assistant, chips: []))
+        }
+        session.turns = turns
+        session.displayAnswer = exchanges.last?.1 ?? ""
+        session.draft = ""
+        session.phase = .finished
+        return session
+    }
+
+    private static func replayed(text: String, finish: Bool) -> Session {
+        var session = waiting()
+        for chunk in streamChunks(text) {
+            session.receiveToken(chunk)
+        }
+        if finish {
+            session.finish()
+        }
+        return session
+    }
+
     private static func secondTurnSession() -> Session {
-        var session = finished()
+        var session = waiting()
+        session.displayAnswer = longReply
+        session.turns.append(Turn(role: .assistant, text: longReply, chips: []))
+        session.phase = .finished
         session.draft = followUp
         return session
     }

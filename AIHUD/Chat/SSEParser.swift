@@ -49,6 +49,9 @@ enum SSEParser {
         if let error = object["error"] as? String, !error.isEmpty {
             return error
         }
+        if let response = object["response"] as? [String: Any] {
+            return errorMessage(in: response)
+        }
         return nil
     }
 

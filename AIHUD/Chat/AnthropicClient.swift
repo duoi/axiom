@@ -54,10 +54,13 @@ struct AnthropicClient: Sendable {
                     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     urlRequest.httpBody = try JSONEncoder().encode(AnthropicBody(request: request))
+                    DebugHTTPTranscript.recordRequest(urlRequest)
 
                     let (bytes, response) = try await session.bytes(for: urlRequest)
+                    DebugHTTPTranscript.recordStatus(response)
                     guard let http = response as? HTTPURLResponse else {
                         continuation.yield(.failure("The request failed."))
+                        DebugHTTPTranscript.recordFailure("The request failed.")
                         continuation.finish()
                         return
                     }
@@ -67,40 +70,58 @@ struct AnthropicClient: Sendable {
                             data.append(byte)
                             if data.count > 64 * 1024 { break }
                         }
+                        DebugHTTPTranscript.recordErrorBody(data)
                         let message = SSEParser.errorMessage(from: data) ?? "The request failed (\(http.statusCode))."
                         continuation.yield(.failure(message))
+                        DebugHTTPTranscript.recordFailure(message)
                         continuation.finish()
                         return
                     }
 
                     var sawDone = false
+                    var sawToken = false
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
+                        DebugHTTPTranscript.recordLine(line)
                         switch AnthropicParser.parse(line: line) {
                         case .skip:
                             continue
                         case .token(let token):
+                            sawToken = true
                             continuation.yield(.token(token))
                         case .done:
                             sawDone = true
                             continuation.yield(.done)
+                            DebugHTTPTranscript.recordFinished()
                             continuation.finish()
                             return
                         case .failure(let message):
                             continuation.yield(.failure(message))
+                            DebugHTTPTranscript.recordFailure(message)
                             continuation.finish()
                             return
                         }
                     }
                     if !sawDone {
-                        continuation.yield(.failure("The response ended early."))
+                        if sawToken {
+                            continuation.yield(.done)
+                        } else {
+                            continuation.yield(.failure("The response ended early."))
+                            DebugHTTPTranscript.recordFailure("The response ended early.")
+                            continuation.finish()
+                            return
+                        }
                     }
+                    DebugHTTPTranscript.recordFinished()
                     continuation.finish()
                 } catch is CancellationError {
+                    DebugHTTPTranscript.recordFinished()
                     continuation.finish()
                 } catch let error as URLError where error.code == .cancelled {
+                    DebugHTTPTranscript.recordFinished()
                     continuation.finish()
                 } catch {
+                    DebugHTTPTranscript.recordFailure(error.localizedDescription)
                     continuation.finish(throwing: error)
                 }
             }
@@ -111,7 +132,7 @@ struct AnthropicClient: Sendable {
     }
 }
 
-private struct AnthropicBody: Encodable {
+struct AnthropicBody: Encodable {
     struct Source: Encodable {
         var type = "base64"
         var mediaType = "image/jpeg"
@@ -135,11 +156,22 @@ private struct AnthropicBody: Encodable {
         var content: [Part]
     }
 
+    struct Thinking: Encodable {
+        var type: String
+        var budgetTokens: Int
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case budgetTokens = "budget_tokens"
+        }
+    }
+
     var model: String
     var stream: Bool
     var maxTokens: Int
     var system: String?
     var messages: [Message]
+    var thinking: Thinking?
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -147,12 +179,19 @@ private struct AnthropicBody: Encodable {
         case maxTokens = "max_tokens"
         case system
         case messages
+        case thinking
     }
 
     init(request: ChatRequest) {
         model = request.model
         stream = true
-        maxTokens = 4096
+        if let budget = request.reasoningEffort.anthropicBudgetTokens {
+            thinking = Thinking(type: "enabled", budgetTokens: budget)
+            maxTokens = max(4_096, budget + 4_096)
+        } else {
+            thinking = nil
+            maxTokens = 4_096
+        }
         var systemText = ""
         var outbound: [Message] = []
         for message in request.messages {
@@ -184,5 +223,15 @@ private struct AnthropicBody: Encodable {
         }
         system = systemText.isEmpty ? nil : systemText
         messages = outbound
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(model, forKey: .model)
+        try container.encode(stream, forKey: .stream)
+        try container.encode(maxTokens, forKey: .maxTokens)
+        try container.encodeIfPresent(system, forKey: .system)
+        try container.encode(messages, forKey: .messages)
+        try container.encodeIfPresent(thinking, forKey: .thinking)
     }
 }

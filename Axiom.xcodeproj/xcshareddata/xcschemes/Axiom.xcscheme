@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "DB0C2AC38983EC5D83414BDF"
-               BuildableName = "AIHUD.app"
-               BlueprintName = "AIHUD"
-               ReferencedContainer = "container:AIHUD.xcodeproj">
+               BlueprintIdentifier = "42DA805BF58037847D732F96"
+               BuildableName = "Axiom.app"
+               BlueprintName = "Axiom"
+               ReferencedContainer = "container:Axiom.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -29,10 +29,10 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "7910EFA20BC910E09D81CD6D"
-               BuildableName = "AIHUDTests.xctest"
-               BlueprintName = "AIHUDTests"
-               ReferencedContainer = "container:AIHUD.xcodeproj">
+               BlueprintIdentifier = "872EBA97AA84D7D2863A357B"
+               BuildableName = "AxiomTests.xctest"
+               BlueprintName = "AxiomTests"
+               ReferencedContainer = "container:Axiom.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -46,10 +46,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "DB0C2AC38983EC5D83414BDF"
-            BuildableName = "AIHUD.app"
-            BlueprintName = "AIHUD"
-            ReferencedContainer = "container:AIHUD.xcodeproj">
+            BlueprintIdentifier = "42DA805BF58037847D732F96"
+            BuildableName = "Axiom.app"
+            BlueprintName = "Axiom"
+            ReferencedContainer = "container:Axiom.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -58,10 +58,10 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "7910EFA20BC910E09D81CD6D"
-               BuildableName = "AIHUDTests.xctest"
-               BlueprintName = "AIHUDTests"
-               ReferencedContainer = "container:AIHUD.xcodeproj">
+               BlueprintIdentifier = "872EBA97AA84D7D2863A357B"
+               BuildableName = "AxiomTests.xctest"
+               BlueprintName = "AxiomTests"
+               ReferencedContainer = "container:Axiom.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -82,10 +82,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "DB0C2AC38983EC5D83414BDF"
-            BuildableName = "AIHUD.app"
-            BlueprintName = "AIHUD"
-            ReferencedContainer = "container:AIHUD.xcodeproj">
+            BlueprintIdentifier = "42DA805BF58037847D732F96"
+            BuildableName = "Axiom.app"
+            BlueprintName = "Axiom"
+            ReferencedContainer = "container:Axiom.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -99,10 +99,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "DB0C2AC38983EC5D83414BDF"
-            BuildableName = "AIHUD.app"
-            BlueprintName = "AIHUD"
-            ReferencedContainer = "container:AIHUD.xcodeproj">
+            BlueprintIdentifier = "42DA805BF58037847D732F96"
+            BuildableName = "Axiom.app"
+            BlueprintName = "Axiom"
+            ReferencedContainer = "container:Axiom.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

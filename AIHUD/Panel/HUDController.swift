@@ -11,7 +11,7 @@ final class HUDController: NSObject, NSWindowDelegate {
     private var glass: NSGlassEffectView?
     private var glassContainer: NSGlassEffectContainerView?
     private var solid: SolidCardView?
-    private var chrome: HUDChromeWrapper?
+    var chrome: HUDChromeWrapper?
     private var lip: ErrorLipBand?
     private var settledCardHeight: CGFloat = HUDMetrics.minCardHeight
     private var globalMonitor: Any?
@@ -19,16 +19,17 @@ final class HUDController: NSObject, NSWindowDelegate {
     private var menuBegin: NSObjectProtocol?
     private var menuEnd: NSObjectProtocol?
     private var accessibilityObserver: NSObjectProtocol?
-    private var settingsWindow: NSWindow?
-    private var debugWindow: NSWindow?
+    var settingsWindow: NSWindow?
+    var debugWindow: NSWindow?
+    var transcriptWindow: NSWindow?
     private var reduceTransparency = false
-    private var capture: VoiceCapture?
-    private var lastWake: Date?
-    private var dictationBase = ""
-    private var openedFromWake = false
-    private var openedAt: Date?
-    private var silentSince: Date?
-    private var voicePoll: Task<Void, Never>?
+    var capture: VoiceCapture?
+    var lastWake: Date?
+    var dictationBase = ""
+    var openedFromWake = false
+    var openedAt: Date?
+    var silentSince: Date?
+    var voicePoll: Task<Void, Never>?
 
     init(store: EndpointStore) {
         self.store = store
@@ -42,6 +43,12 @@ final class HUDController: NSObject, NSWindowDelegate {
         model.onSetWake = { [weak self] on in self?.setWake(on) }
         model.onSendBegan = { [weak self] in self?.handleSendBegan() }
         store.onAppearanceChange = { [weak self] in self?.applyAppearance() }
+        DebugPreviewStore.shared.setDebugEnabled(
+            HUDCardMenu.debugEnabled(arguments: CommandLine.arguments, defaults: .standard)
+        )
+        DebugPreviewStore.shared.onChange = { [weak self] in
+            self?.refreshActiveGlow()
+        }
         panel.onCancel = { [weak self] in self?.userDismiss(clickOutside: false) }
         panel.delegate = self
         installChrome()
@@ -50,7 +57,7 @@ final class HUDController: NSObject, NSWindowDelegate {
     }
 
     func toggle() {
-        if panel.isVisible {
+        if panel.isVisible && !panel.isFadingOut {
             userDismiss(clickOutside: false)
         } else {
             show()
@@ -58,7 +65,7 @@ final class HUDController: NSObject, NSWindowDelegate {
     }
 
     func show() {
-        if panel.isVisible {
+        if panel.isVisible && !panel.isFadingOut {
             panel.orderFrontRegardless()
             panel.makeKey()
             DispatchQueue.main.async { [weak self] in
@@ -66,18 +73,20 @@ final class HUDController: NSObject, NSWindowDelegate {
             }
             return
         }
-        rebuildChromeIfNeeded()
-        let card = HUDLayout.settledHeight(
-            proposed: measuredHeight(),
-            previous: settledCardHeight,
-            lineCount: model.promptLineCount,
-            multiline: model.displayedMultiline
-        )
-        settledCardHeight = card
-        panel.centerOnMouseScreen(
-            height: HUDLayout.windowHeight(card: card, hasLip: model.lipMessage != nil)
-        )
-        syncFrame(animated: false)
+        if !panel.isVisible {
+            rebuildChromeIfNeeded()
+            let card = HUDLayout.settledHeight(
+                proposed: measuredHeight(),
+                previous: settledCardHeight,
+                lineCount: model.promptLineCount,
+                multiline: model.displayedMultiline
+            )
+            settledCardHeight = card
+            panel.centerOnMouseScreen(
+                height: HUDLayout.windowHeight(card: card, hasLip: model.lipMessage != nil)
+            )
+            syncFrame(animated: false)
+        }
         panel.reveal()
         model.cardIsKey = true
         DispatchQueue.main.async { [weak self] in
@@ -90,6 +99,7 @@ final class HUDController: NSObject, NSWindowDelegate {
         voicePoll = nil
         capture?.stop()
         capture = nil
+        model.persistHistoryIfNeeded()
         model.cancelForQuit()
     }
 
@@ -98,9 +108,10 @@ final class HUDController: NSObject, NSWindowDelegate {
         Task { await startWakeCapture(prompt: false) }
     }
 
-    private func userDismiss(clickOutside: Bool) {
+    func userDismiss(clickOutside: Bool) {
         guard model.dismiss(clickOutside: clickOutside) else { return }
         endDictation(keepWakeCapture: true)
+        CaptureHighlight.hidePersistent()
         guard panel.isVisible else { return }
         panel.fadeOut { }
     }
@@ -216,15 +227,58 @@ final class HUDController: NSObject, NSWindowDelegate {
     }
 
     private func measuredHeight() -> CGFloat {
-        let floor = HUDLayout.cardHeight()
-        guard let hosting else { return floor }
+        guard let hosting else { return HUDLayout.cardHeight() }
+        hosting.rootView = HUDView(model: model, store: store)
+        hosting.setFrameSize(HUDLayout.hostingFitSize)
+        hosting.invalidateIntrinsicContentSize()
         hosting.layoutSubtreeIfNeeded()
-        return max(floor, hosting.fittingSize.height)
+        let fitted = hosting.fittingSize.height
+        let chromeHeight = estimatedChromeHeight(fitted: fitted)
+        let baseCap = HUDLayout.cappedCardHeight(proposed: fitted, chromeHeight: chromeHeight)
+        let showsReply = HistoryChromePolicy.showsReplyRegion(
+            answer: model.session.displayAnswer,
+            phase: model.session.phase,
+            historyExpanded: model.historyExpanded
+        )
+        let paddedCap = showsReply
+            ? baseCap + HUDLayout.replyScrollVerticalPadding
+            : baseCap
+        let capped = min(max(HUDMetrics.minCardHeight, fitted), paddedCap)
+        return HUDLayout.cardHeight(fittingHeight: capped)
+    }
+
+    /// Prompt/toolbar/chips floor. Expanded history must not treat the unrolled thread as chrome.
+    private func estimatedChromeHeight(fitted: CGFloat) -> CGFloat {
+        if model.historyExpanded {
+            var chromeHeight = HUDMetrics.minCardHeight
+            if model.displayedMultiline, model.promptLineCount > 1 {
+                let line = PromptLayout.lineHeight(for: PromptLayout.font())
+                chromeHeight += CGFloat(model.promptLineCount - 1) * line
+            }
+            if !model.session.chips.isEmpty {
+                chromeHeight += HUDMetrics.rowHeight / 2
+            }
+            return chromeHeight
+        }
+        let answerLines = HUDLayout.wrappedReplyLines(model.session.displayAnswer)
+        let visible = HUDLayout.replyVisibleLines(answerLines)
+        let showsReply = HistoryChromePolicy.showsReplyRegion(
+            answer: model.session.displayAnswer,
+            phase: model.session.phase,
+            historyExpanded: model.historyExpanded
+        )
+        if showsReply, visible > 0 {
+            let region = HUDLayout.replyBodyHeight(lines: visible) + HUDLayout.replyScrollVerticalPadding
+            return max(HUDMetrics.minCardHeight, fitted - region)
+        }
+        return max(HUDMetrics.minCardHeight, fitted)
     }
 
     private func syncFrame(animated: Bool = false) {
+        let fitted = measuredHeight()
+        let chromeHeight = estimatedChromeHeight(fitted: fitted)
         let card = HUDLayout.settledHeight(
-            proposed: measuredHeight(),
+            proposed: fitted,
             previous: settledCardHeight,
             lineCount: model.promptLineCount,
             multiline: model.displayedMultiline
@@ -233,8 +287,30 @@ final class HUDController: NSObject, NSWindowDelegate {
         let message = model.lipMessage
         let hasLip = message != nil
         let height = HUDLayout.windowHeight(card: card, hasLip: hasLip)
+        let answerLines = HUDLayout.wrappedReplyLines(model.session.displayAnswer)
+        let growthLines = HUDLayout.replyGrowthLines(
+            answerLines: answerLines,
+            historyExpanded: model.historyExpanded
+        )
+        var growthChrome = chromeHeight
+        if hasLip {
+            growthChrome += HUDLayout.lipVisible
+        }
+        let showsReply = HistoryChromePolicy.showsReplyRegion(
+            answer: model.session.displayAnswer,
+            phase: model.session.phase,
+            historyExpanded: model.historyExpanded
+        )
+        if showsReply {
+            growthChrome += HUDLayout.replyScrollVerticalPadding
+        }
         _ = animated
-        panel.resizePinnedTop(to: height, animated: false)
+        panel.resizeForReply(
+            to: height,
+            replyLines: growthLines,
+            chromeHeight: growthChrome,
+            animated: false
+        )
         let windowBounds = NSRect(
             origin: .zero,
             size: NSSize(width: HUDMetrics.cardWidth, height: panel.frame.height)
@@ -258,10 +334,9 @@ final class HUDController: NSObject, NSWindowDelegate {
             size: NSSize(width: HUDMetrics.cardWidth, height: card)
         )
         hosting?.frame = cardBounds
-        if let plate = chrome?.plate {
-            hosting?.frame = plate.bounds
-        }
+        syncDictationGlow()
     }
+
 
     private func handleLipTap(_ action: HUDErrorLip.Action) {
         switch action {
@@ -269,6 +344,8 @@ final class HUDController: NSObject, NSWindowDelegate {
             model.openVoiceSettings()
         case .screen:
             model.openScreenSettings()
+        case .accessibility:
+            model.openAccessibilitySettings()
         case .none:
             break
         }
@@ -280,11 +357,39 @@ final class HUDController: NSObject, NSWindowDelegate {
                 self?.clickOutside(event)
             }
         }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            MainActor.assumeIsolated {
-                self?.clickOutside(event)
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
+            guard let self else { return event }
+            switch event.type {
+            case .leftMouseDown:
+                MainActor.assumeIsolated {
+                    self.clickOutside(event)
+                }
+                return event
+            case .rightMouseDown:
+                var consume = false
+                var location = NSPoint.zero
+                MainActor.assumeIsolated {
+                    consume = event.window === self.panel
+                        && self.panel.isVisible
+                        && !self.panel.menuTracking
+                    if consume {
+                        location = event.locationInWindow
+                    }
+                }
+                guard consume else { return event }
+                DispatchQueue.main.async { [weak self] in
+                    self?.popCardMenu(at: location)
+                }
+                return nil
+            case .keyDown:
+                var handled = false
+                MainActor.assumeIsolated {
+                    handled = self.panel.handleEscapeEvent(event)
+                }
+                return handled ? nil : event
+            default:
+                return event
             }
-            return event
         }
         menuBegin = NotificationCenter.default.addObserver(
             forName: NSMenu.didBeginTrackingNotification,
@@ -302,6 +407,37 @@ final class HUDController: NSObject, NSWindowDelegate {
         }
     }
 
+    private func popCardMenu(at locationInWindow: NSPoint) {
+        guard panel.isVisible, !panel.menuTracking else { return }
+        let debugOn = HUDCardMenu.debugEnabled(
+            arguments: CommandLine.arguments,
+            defaults: .standard
+        )
+        let proxy = CardMenuProxy(
+            onSettings: { [weak self] in self?.openSettings() },
+            onDebug: { [weak self] in self?.openDebug() }
+        )
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for item in HUDCardMenu.items(debugEnabled: debugOn) {
+            let row = NSMenuItem(
+                title: HUDCardMenu.title(for: item),
+                action: item == .settings
+                    ? #selector(CardMenuProxy.openSettings)
+                    : #selector(CardMenuProxy.openDebug),
+                keyEquivalent: ""
+            )
+            row.target = proxy
+            row.isEnabled = true
+            menu.addItem(row)
+        }
+        guard let view = panel.contentView else { return }
+        let point = view.convert(locationInWindow, from: nil)
+        withExtendedLifetime(proxy) {
+            menu.popUp(positioning: nil, at: point, in: view)
+        }
+    }
+
     private func clickOutside(_ event: NSEvent) {
         guard panel.isVisible else { return }
         if model.voicePermissionPrompt { return }
@@ -309,7 +445,9 @@ final class HUDController: NSObject, NSWindowDelegate {
         if panel.menuTracking || menuWindowIsOpen || panel.attachedSheet != nil { return }
         if settingsWindow?.isVisible == true { return }
         if let window = event.window {
-            if window === panel || window === settingsWindow || window === debugWindow { return }
+            if window === panel || window === settingsWindow || window === debugWindow || window === transcriptWindow {
+                return
+            }
             let name = String(describing: type(of: window))
             if name.contains("Menu") { return }
         }
@@ -318,6 +456,7 @@ final class HUDController: NSObject, NSWindowDelegate {
         if let statusFrame = statusItemFrame, statusFrame.contains(point) { return }
         if let settings = settingsWindow, settings.isVisible, settings.frame.contains(point) { return }
         if let debug = debugWindow, debug.isVisible, debug.frame.contains(point) { return }
+        if let transcript = transcriptWindow, transcript.isVisible, transcript.frame.contains(point) { return }
         userDismiss(clickOutside: true)
     }
 
@@ -347,25 +486,29 @@ final class HUDController: NSObject, NSWindowDelegate {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(90))
             do {
-                let image = try await ScreenGrab.capture(
+                let result = try await ScreenGrab.capture(
                     excluding: windowID,
                     displayID: displayID,
                     frontPID: frontPID,
                     target: target
                 )
-                let jpeg = ScreenImage.jpeg(from: image)
+                let jpeg = ScreenImage.jpeg(from: result.image)
                 restorePanel()
                 guard !jpeg.isEmpty else {
-                    model.reportScreenFailure(permission: false)
+                    model.reportScreenFailure(.failed)
                     return
                 }
-                model.beginSend(jpeg: jpeg, name: target.title)
+                model.beginSend(
+                    jpeg: jpeg,
+                    name: target.title,
+                    highlightFrame: result.highlightFrame
+                )
             } catch let error as ScreenGrabError {
                 restorePanel()
-                model.reportScreenFailure(permission: error == .permission)
+                model.reportScreenFailure(error)
             } catch {
                 restorePanel()
-                model.reportScreenFailure(permission: false)
+                model.reportScreenFailure(.failed)
             }
         }
     }
@@ -416,341 +559,49 @@ final class HUDController: NSObject, NSWindowDelegate {
         }
     }
 
-    func openSettings() {
-        present(window: settingsWindow ?? makeSettingsWindow(), remembering: { settingsWindow = $0 })
-    }
-
-    func openDebug() {
-        DebugSettings.saveEnabled(true, to: .standard)
-        model.debugDriven = true
-        stopCapture()
-        show()
-        let window = debugWindow ?? makeDebugWindow()
-        debugWindow = window
-        placeDebugWindow(window)
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
-    }
 
     func applyDebugCommand(_ command: String) {
-        let next = DebugRouting.apply(command, to: model.debugSnapshot())
-        model.apply(next)
-        hosting?.rootView = HUDView(model: model, store: store)
-        if !panel.isVisible {
-            show()
+        let plan = DebugRouting.plan(command: command, snapshot: model.debugSnapshot())
+        let preview = DebugPreviewStore.shared
+        if let shimmer = plan.shimmer {
+            preview.shimmerStyle = shimmer
         }
-        if next.wantsCardKey == true {
-            panel.makeKey()
-            DispatchQueue.main.async { [weak self] in
-                self?.model.focusField()
+        if plan.usePulsingOrb {
+            preview.orbChoice = .pulsingOrb
+        }
+        switch plan.kind {
+        case .openTranscript:
+            openTranscript()
+        case .flashHighlight:
+            if !panel.isVisible {
+                show()
             }
-        } else if next.wantsCardKey == false {
-            debugWindow?.makeKey()
-        }
-    }
-
-    private func present(window: NSWindow, remembering: (NSWindow) -> Void) {
-        remembering(window)
-        if let screen = NSScreen.screens.first(where: { screen in
-            if let frame = statusItemFrame, screen.frame.intersects(frame) { return true }
-            return false
-        }) ?? NSScreen.main {
-            let visible = screen.visibleFrame
-            let size = window.frame.size
-            window.setFrameOrigin(NSPoint(
-                x: visible.midX - size.width / 2,
-                y: visible.midY - size.height / 2
-            ))
-        }
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
-    }
-
-    private func placeDebugWindow(_ window: NSWindow) {
-        let visible = (panel.screen ?? NSScreen.main)?.visibleFrame
-            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        var origin = NSPoint(
-            x: panel.frame.maxX + 24,
-            y: panel.frame.maxY - window.frame.height
-        )
-        if origin.x + window.frame.width > visible.maxX - 16 {
-            origin.x = panel.frame.minX - window.frame.width - 24
-        }
-        origin.x = min(max(origin.x, visible.minX + 16), visible.maxX - window.frame.width - 16)
-        origin.y = min(max(origin.y, visible.minY + 16), visible.maxY - window.frame.height - 16)
-        window.setFrameOrigin(origin)
-    }
-
-    private func makeSettingsWindow() -> NSWindow {
-        let host = NSHostingView(rootView: SettingsView(store: store, model: model))
-        host.safeAreaRegions = []
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: HUDMetrics.settingsSize.width, height: HUDMetrics.settingsSize.height),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "Settings"
-        window.contentView = host
-        window.contentMinSize = NSSize(width: 680, height: 500)
-        window.isReleasedWhenClosed = false
-        window.delegate = self
-        return window
-    }
-
-    private func makeDebugWindow() -> NSWindow {
-        let host = NSHostingView(rootView: DebugView(model: model, onCommand: { [weak self] command in
-            self?.applyDebugCommand(command)
-        }))
-        host.safeAreaRegions = []
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: HUDMetrics.debugSize.width, height: HUDMetrics.debugSize.height),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "Debug"
-        window.contentView = host
-        window.contentMinSize = HUDMetrics.debugSize
-        window.isReleasedWhenClosed = false
-        window.delegate = self
-        return window
-    }
-
-    private func setWake(_ on: Bool) {
-        if on {
-            Task { await startWakeCapture(prompt: true) }
-            return
-        }
-        store.wakeOnAxiom = false
-        if !model.dictating {
-            stopCapture()
-        }
-    }
-
-    private func toggleDictation() {
-        if store.wakeOnAxiom {
-            if let denied = VoicePermission.deniedSentence() {
-                model.voiceStatus = denied
-                return
+            flashHUDGlow()
+        case .liveStream(let text, let finish):
+            if !panel.isVisible {
+                show()
             }
-            if capture == nil {
-                Task { await startWakeCapture(prompt: false) }
+            model.simulateIncomingStream(text, finish: finish)
+            syncFrame(animated: false)
+        case .apply(let next):
+            model.apply(next)
+            hosting?.rootView = HUDView(model: model, store: store)
+            if !panel.isVisible {
+                show()
             }
-            if model.dictating {
-                setDictating(false)
-            } else {
-                dictationBase = model.session.draft
-                setDictating(true)
-            }
-            return
-        }
-        if model.dictating {
-            setDictating(false)
-            stopCapture()
-            return
-        }
-        if let denied = VoicePermission.deniedSentence() {
-            model.voiceStatus = denied
-            return
-        }
-        Task { await startDictationCapture() }
-    }
-
-    private func startWakeCapture(prompt: Bool) async {
-        if model.debugDriven { return }
-        if prompt {
-            let allowed = await requestVoicePermission()
-            if model.debugDriven { return }
-            if !allowed {
-                store.wakeOnAxiom = false
-                model.voiceStatus = VoicePermission.deniedSentence() ?? VoiceStatusCopy.micDenied
-                return
-            }
-            let asset = await VoiceCapture.ensureInstalled()
-            if model.debugDriven { return }
-            guard asset == .installed else {
-                store.wakeOnAxiom = false
-                model.voiceStatus = asset.statusSentence
-                return
-            }
-            store.wakeOnAxiom = true
-            model.voiceStatus = nil
-            beginCapture()
-            return
-        }
-        if VoicePermission.deniedSentence() != nil {
-            return
-        }
-        let asset = await VoiceCapture.ensureInstalled()
-        if model.debugDriven { return }
-        guard asset == .installed else {
-            return
-        }
-        beginCapture()
-    }
-
-    private func startDictationCapture() async {
-        if model.debugDriven { return }
-        if let denied = VoicePermission.deniedSentence() {
-            model.voiceStatus = denied
-            return
-        }
-        let asset = await VoiceCapture.ensureInstalled()
-        if model.debugDriven { return }
-        guard asset == .installed else {
-            model.voiceStatus = asset.statusSentence
-            return
-        }
-        model.voiceStatus = nil
-        dictationBase = model.session.draft
-        setDictating(true)
-        beginCapture()
-    }
-
-    private func requestVoicePermission() async -> Bool {
-        model.voicePermissionPrompt = true
-        defer { model.voicePermissionPrompt = false }
-        let mic = await VoicePermission.requestMicrophone()
-        let speech = await VoicePermission.requestSpeech()
-        return mic && speech
-    }
-
-    private func beginCapture() {
-        if model.debugDriven { return }
-        if let capture, capture.isRunning { return }
-        capture?.stop()
-        let session = VoiceCapture()
-        session.onTranscript = { [weak self] text, isFinal in
-            self?.handleTranscript(text, isFinal: isFinal)
-        }
-        session.onSpeechDetected = { [weak self] detected in
-            self?.handleSpeechDetected(detected)
-        }
-        session.onFailure = { [weak self] message in
-            self?.handleCaptureFailure(message)
-        }
-        capture = session
-        session.start()
-    }
-
-    private func stopCapture() {
-        capture?.stop()
-        capture = nil
-    }
-
-    private func handleCaptureFailure(_ message: String) {
-        if model.debugDriven { return }
-        if model.dictating || model.voicePermissionPrompt {
-            model.voiceStatus = message
-        }
-        setDictating(false)
-        stopCapture()
-    }
-
-    private func handleTranscript(_ text: String, isFinal: Bool) {
-        if model.debugDriven { return }
-        let recognized = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !recognized.isEmpty else { return }
-        silentSince = Date()
-        if model.dictating {
-            applyDictation(recognized, isFinal: isFinal)
-            return
-        }
-        guard store.wakeOnAxiom else { return }
-        guard VoiceParser.wake(in: recognized) != nil else { return }
-        let now = Date()
-        if VoiceParser.cooldownBlocks(lastWake: lastWake, now: now) { return }
-        lastWake = now
-        silentSince = Date()
-        openedFromWake = true
-        openedAt = now
-        dictationBase = panel.isVisible ? model.session.draft : ""
-        show()
-        setDictating(true)
-        applyDictation(recognized, isFinal: isFinal)
-        model.focusField()
-    }
-
-    private func applyDictation(_ recognized: String, isFinal: Bool) {
-        let tail: String
-        if openedFromWake, let wake = VoiceParser.wake(in: recognized) {
-            tail = wake.remainder
-        } else {
-            tail = recognized
-        }
-        let applied = VoiceParser.applyTranscript(base: dictationBase, transcript: tail, isFinal: isFinal)
-        dictationBase = applied.base
-        model.setDraft(applied.display)
-    }
-
-    private func handleSpeechDetected(_ detected: Bool) {
-        if detected {
-            silentSince = nil
-        } else if silentSince == nil {
-            silentSince = Date()
-        }
-    }
-
-    private func handleSendBegan() {
-        endDictation(keepWakeCapture: true)
-    }
-
-    private func setDictating(_ on: Bool) {
-        model.dictating = on
-        if !on {
-            dictationBase = ""
-            silentSince = nil
-        }
-        model.onLayout()
-    }
-
-    private func endDictation(keepWakeCapture: Bool) {
-        setDictating(false)
-        openedFromWake = false
-        openedAt = nil
-        dictationBase = ""
-        silentSince = nil
-        if keepWakeCapture, store.wakeOnAxiom {
-            return
-        }
-        stopCapture()
-    }
-
-    private func startVoicePolling() {
-        voicePoll = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(250))
-                self?.pollVoice()
+            syncDictationGlow()
+            if next.wantsCardKey == true {
+                panel.makeKey()
+                DispatchQueue.main.async { [weak self] in
+                    self?.model.focusField()
+                }
+            } else if next.wantsCardKey == false {
+                debugWindow?.makeKey()
             }
         }
     }
 
-    private func pollVoice() {
-        if model.debugDriven { return }
-        let now = Date()
-        let silentFor = silentSince.map { now.timeIntervalSince($0) } ?? 0
-        let send = VoiceParser.shouldAutoSend(
-            optionOn: store.pauseToSend,
-            draft: model.session.draft,
-            silentFor: silentFor,
-            phase: model.session.phase,
-            dictating: model.dictating
-        )
-        if send {
-            model.submit()
-        }
-        if silentFor >= VoiceParser.emptyWakeHideAfter, let openedAt, VoiceParser.shouldHideEmptyWake(
-            openedFromWake: openedFromWake,
-            draft: model.session.draft,
-            openedAt: openedAt,
-            now: now
-        ) {
-            userDismiss(clickOutside: false)
-        }
-    }
+
 
     func windowDidBecomeKey(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === panel else { return }
@@ -765,205 +616,5 @@ final class HUDController: NSObject, NSWindowDelegate {
         model.cardIsKey = false
     }
 
-    func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow else { return }
-        let closingSettings = window == settingsWindow
-        let closingDebug = window == debugWindow
-        guard closingSettings || closingDebug else { return }
-        let settingsOpen = !closingSettings && settingsWindow?.isVisible == true
-        let debugOpen = !closingDebug && debugWindow?.isVisible == true
-        if closingDebug {
-            model.debugDriven = false
-            startVoiceIfNeeded()
-        }
-        if !settingsOpen && !debugOpen {
-            NSApp.setActivationPolicy(.accessory)
-        }
-    }
 }
 
-final class HUDChromeWrapper: NSView {
-    var plate: NSView?
-    var lip: NSView?
-    var hasLip = false
-    var cardHeight: CGFloat = HUDMetrics.minCardHeight
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.isOpaque = false
-        layer?.backgroundColor = NSColor.clear.cgColor
-    }
-
-    required init?(coder: NSCoder) { return nil }
-
-    func embedPlateAndLip() {
-        if let lip, lip.superview !== self {
-            lip.removeFromSuperview()
-            addSubview(lip, positioned: .below, relativeTo: nil)
-        }
-        if let plate {
-            if plate.superview !== self {
-                plate.removeFromSuperview()
-                addSubview(plate, positioned: .above, relativeTo: lip)
-            } else if let lip {
-                addSubview(plate, positioned: .above, relativeTo: lip)
-            }
-        }
-        plate?.autoresizingMask = []
-        lip?.autoresizingMask = []
-        needsLayout = true
-    }
-
-    override func layout() {
-        super.layout()
-        let width = bounds.width
-        let card = max(HUDMetrics.minCardHeight, min(cardHeight, bounds.height))
-        let plateY = hasLip ? HUDLayout.lipVisible : 0
-        lip?.isHidden = !hasLip
-        lip?.frame = HUDLayout.lipFrame(cardWidth: width)
-        if hasLip {
-            layer?.cornerRadius = 0
-            layer?.masksToBounds = false
-        } else {
-            layer?.mask = nil
-            layer?.cornerRadius = HUDMetrics.cornerRadius
-            layer?.cornerCurve = .continuous
-            layer?.masksToBounds = true
-        }
-        plate?.frame = NSRect(x: 0, y: plateY, width: width, height: card)
-        (plate as? CardGlassView)?.includeNarrowLip = hasLip
-        (plate as? CardGlassView)?.containKeyFringe()
-    }
-}
-
-final class ErrorLipBand: NSView {
-    private let host: ClickThroughHosting<ErrorLipContent>
-    private let fill = CAGradientLayer()
-
-    override init(frame frameRect: NSRect) {
-        host = ClickThroughHosting(
-            rootView: ErrorLipContent(text: "", action: .none, onTap: {}, onDismiss: {})
-        )
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.isOpaque = false
-        layer?.backgroundColor = NSColor.clear.cgColor
-        layer?.cornerRadius = HUDLayout.lipCorner
-        layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        layer?.masksToBounds = true
-        fill.colors = [
-            HUDLipChrome.fillTop.cgColor,
-            HUDLipChrome.fillBottom.cgColor
-        ]
-        fill.startPoint = CGPoint(x: 0.5, y: 1)
-        fill.endPoint = CGPoint(x: 0.5, y: 0)
-        layer?.addSublayer(fill)
-        host.safeAreaRegions = []
-        addSubview(host)
-    }
-
-    required init?(coder: NSCoder) { return nil }
-
-    func apply(
-        _ message: HUDErrorLip.Message,
-        onTap: @escaping () -> Void,
-        onDismiss: @escaping () -> Void
-    ) {
-        host.rootView = ErrorLipContent(
-            text: message.text,
-            action: message.action,
-            onTap: onTap,
-            onDismiss: onDismiss
-        )
-    }
-
-    override func layout() {
-        super.layout()
-        layer?.cornerRadius = HUDLayout.lipCorner
-        layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        layer?.masksToBounds = true
-        fill.frame = bounds
-        host.frame = bounds
-    }
-
-    override var isOpaque: Bool { false }
-}
-
-final class ClickThroughHosting<Content: View>: NSHostingView<Content> {
-    override var isOpaque: Bool { false }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-}
-
-/// Keeps the window frame from painting a square behind the rounded plate.
-final class CardGlassView: NSGlassEffectView {
-    var includeNarrowLip = false
-    override var isOpaque: Bool { false }
-
-    override func layout() {
-        super.layout()
-        containKeyFringe()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        window?.backgroundColor = .clear
-        window?.isOpaque = false
-        containKeyFringe()
-    }
-
-    func containKeyFringe() {
-        applyClearRoundedMask(to: self)
-        var node = superview
-        while let view = node {
-            applyClearRoundedMask(to: view)
-            if view === window?.contentView {
-                if let frameView = view.superview {
-                    applyClearRoundedMask(to: frameView)
-                }
-                break
-            }
-            node = view.superview
-        }
-    }
-
-    private func applyClearRoundedMask(to view: NSView) {
-        view.wantsLayer = true
-        view.focusRingType = .none
-        view.layer?.isOpaque = false
-        view.layer?.backgroundColor = NSColor.clear.cgColor
-        if includeNarrowLip, view !== self {
-            HUDLayout.applyLipWindowMask(to: view, hasLip: true)
-            return
-        }
-        view.layer?.mask = nil
-        view.layer?.cornerRadius = cornerRadius
-        view.layer?.cornerCurve = .continuous
-        view.layer?.masksToBounds = true
-    }
-}
-
-final class SolidCardView: NSView {
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        layer?.cornerRadius = HUDMetrics.cornerRadius
-        layer?.masksToBounds = true
-    }
-
-    required init?(coder: NSCoder) { return nil }
-
-    func embed(_ child: NSView) {
-        if child.superview !== self {
-            addSubview(child)
-        }
-        child.frame = bounds
-        child.autoresizingMask = [.width, .height]
-    }
-
-    override func layout() {
-        super.layout()
-        subviews.forEach { $0.frame = bounds }
-    }
-}

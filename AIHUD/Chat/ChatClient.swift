@@ -5,6 +5,7 @@ struct ChatRequest: Sendable {
     var model: String
     var apiKey: String
     var messages: [OutboundMessage]
+    var reasoningEffort: ReasoningEffort = .off
 }
 
 enum ChatStreamEvent: Equatable, Sendable {
@@ -40,10 +41,14 @@ struct ChatClient: Sendable {
         self.session = session
     }
 
-    static func makeSession(host: String) -> (URLSession, RedirectGuard) {
+    static func makeSession(
+        host: String,
+        requestTimeout: TimeInterval = ChatTimeoutSettings.defaultSeconds
+    ) -> (URLSession, RedirectGuard) {
+        let timeout = ChatTimeoutSettings.clamp(requestTimeout)
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 45
-        configuration.timeoutIntervalForResource = 90
+        configuration.timeoutIntervalForRequest = timeout
+        configuration.timeoutIntervalForResource = ChatTimeoutSettings.resourceTimeout(forRequest: timeout)
         configuration.waitsForConnectivity = false
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         let guardDelegate = RedirectGuard(originalHost: host)
@@ -61,10 +66,13 @@ struct ChatClient: Sendable {
                     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     urlRequest.httpBody = try JSONEncoder().encode(ChatBody(request: request))
+                    DebugHTTPTranscript.recordRequest(urlRequest)
 
                     let (bytes, response) = try await session.bytes(for: urlRequest)
+                    DebugHTTPTranscript.recordStatus(response)
                     guard let http = response as? HTTPURLResponse else {
                         continuation.yield(.failure("The request failed."))
+                        DebugHTTPTranscript.recordFailure("The request failed.")
                         continuation.finish()
                         return
                     }
@@ -74,40 +82,58 @@ struct ChatClient: Sendable {
                             data.append(byte)
                             if data.count > 64 * 1024 { break }
                         }
+                        DebugHTTPTranscript.recordErrorBody(data)
                         let message = SSEParser.errorMessage(from: data) ?? "The request failed (\(http.statusCode))."
                         continuation.yield(.failure(message))
+                        DebugHTTPTranscript.recordFailure(message)
                         continuation.finish()
                         return
                     }
 
                     var sawDone = false
+                    var sawToken = false
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
+                        DebugHTTPTranscript.recordLine(line)
                         switch SSEParser.parse(line: line) {
                         case .skip:
                             continue
                         case .token(let token):
+                            sawToken = true
                             continuation.yield(.token(token))
                         case .done:
                             sawDone = true
                             continuation.yield(.done)
+                            DebugHTTPTranscript.recordFinished()
                             continuation.finish()
                             return
                         case .failure(let message):
                             continuation.yield(.failure(message))
+                            DebugHTTPTranscript.recordFailure(message)
                             continuation.finish()
                             return
                         }
                     }
                     if !sawDone {
-                        continuation.yield(.failure("The response ended early."))
+                        if sawToken {
+                            continuation.yield(.done)
+                        } else {
+                            continuation.yield(.failure("The response ended early."))
+                            DebugHTTPTranscript.recordFailure("The response ended early.")
+                            continuation.finish()
+                            return
+                        }
                     }
+                    DebugHTTPTranscript.recordFinished()
                     continuation.finish()
                 } catch is CancellationError {
+                    DebugHTTPTranscript.recordFinished()
                     continuation.finish()
                 } catch let error as URLError where error.code == .cancelled {
+                    DebugHTTPTranscript.recordFinished()
                     continuation.finish()
                 } catch {
+                    DebugHTTPTranscript.recordFailure(error.localizedDescription)
                     continuation.finish(throwing: error)
                 }
             }
@@ -118,7 +144,7 @@ struct ChatClient: Sendable {
     }
 }
 
-private struct ChatBody: Encodable {
+struct ChatBody: Encodable {
     struct ImageURL: Encodable {
         var url: String
     }
@@ -165,10 +191,19 @@ private struct ChatBody: Encodable {
     var model: String
     var stream: Bool
     var messages: [Message]
+    var reasoningEffort: String
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case stream
+        case messages
+        case reasoningEffort = "reasoning_effort"
+    }
 
     init(request: ChatRequest) {
         model = request.model
         stream = true
+        reasoningEffort = request.reasoningEffort.openAIValue
         messages = request.messages.map { message in
             if message.imageJPEGs.isEmpty {
                 return Message(role: message.role, content: .string(message.text))
@@ -186,5 +221,13 @@ private struct ChatBody: Encodable {
             }
             return Message(role: message.role, content: .parts(parts))
         }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(model, forKey: .model)
+        try container.encode(stream, forKey: .stream)
+        try container.encode(messages, forKey: .messages)
+        try container.encode(reasoningEffort, forKey: .reasoningEffort)
     }
 }

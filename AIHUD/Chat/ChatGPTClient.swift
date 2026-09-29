@@ -25,6 +25,11 @@ enum ResponsesParser {
         let type = object["type"] as? String
         if type == "response.completed" || type == "response.incomplete" || type == "response.failed" {
             if type == "response.failed" {
+                if let response = object["response"] as? [String: Any],
+                   let message = SSEParser.errorMessage(in: response)
+                {
+                    return .failure(message)
+                }
                 return .failure("The request failed.")
             }
             return .done
@@ -57,10 +62,13 @@ struct ChatGPTClient: Sendable {
                         accountId: credential.accountId
                     )
                     urlRequest.httpBody = try JSONEncoder().encode(ResponsesBody(request: request))
+                    DebugHTTPTranscript.recordRequest(urlRequest)
 
                     let (bytes, response) = try await session.bytes(for: urlRequest)
+                    DebugHTTPTranscript.recordStatus(response)
                     guard let http = response as? HTTPURLResponse else {
                         continuation.yield(.failure("The request failed."))
+                        DebugHTTPTranscript.recordFailure("The request failed.")
                         continuation.finish()
                         return
                     }
@@ -70,47 +78,67 @@ struct ChatGPTClient: Sendable {
                             data.append(byte)
                             if data.count > 64 * 1024 { break }
                         }
+                        DebugHTTPTranscript.recordErrorBody(data)
                         let message = SSEParser.errorMessage(from: data) ?? "The request failed (\(http.statusCode))."
                         continuation.yield(.failure(message))
+                        DebugHTTPTranscript.recordFailure(message)
                         continuation.finish()
                         return
                     }
 
                     var sawDone = false
+                    var sawToken = false
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
+                        DebugHTTPTranscript.recordLine(line)
                         switch ResponsesParser.parse(line: line) {
                         case .skip:
                             continue
                         case .token(let token):
+                            sawToken = true
                             continuation.yield(.token(token))
                         case .done:
                             sawDone = true
                             continuation.yield(.done)
+                            DebugHTTPTranscript.recordFinished()
                             continuation.finish()
                             return
                         case .failure(let message):
                             continuation.yield(.failure(message))
+                            DebugHTTPTranscript.recordFailure(message)
                             continuation.finish()
                             return
                         }
                     }
                     if !sawDone {
-                        continuation.yield(.failure("The response ended early."))
+                        if sawToken {
+                            continuation.yield(.done)
+                        } else {
+                            continuation.yield(.failure("The response ended early."))
+                            DebugHTTPTranscript.recordFailure("The response ended early.")
+                            continuation.finish()
+                            return
+                        }
                     }
+                    DebugHTTPTranscript.recordFinished()
                     continuation.finish()
                 } catch is CancellationError {
+                    DebugHTTPTranscript.recordFinished()
                     continuation.finish()
                 } catch let error as URLError where error.code == .cancelled {
+                    DebugHTTPTranscript.recordFinished()
                     continuation.finish()
                 } catch let error as ChatGPTAuthError {
                     if case .message(let message) = error {
                         continuation.yield(.failure(message))
+                        DebugHTTPTranscript.recordFailure(message)
                     } else {
                         continuation.yield(.failure("Sign in to ChatGPT in Settings"))
+                        DebugHTTPTranscript.recordFailure("Sign in to ChatGPT in Settings")
                     }
                     continuation.finish()
                 } catch {
+                    DebugHTTPTranscript.recordFailure(error.localizedDescription)
                     continuation.finish(throwing: error)
                 }
             }
@@ -139,15 +167,29 @@ struct ResponsesBody: Encodable {
         var content: [Content]
     }
 
+    struct Reasoning: Encodable {
+        var effort: String
+    }
+
     var model: String
     var input: [Input]
     var store: Bool
     var stream: Bool
+    var reasoning: Reasoning
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case input
+        case store
+        case stream
+        case reasoning
+    }
 
     init(request: ChatRequest) {
         model = request.model
         store = false
         stream = true
+        reasoning = Reasoning(effort: request.reasoningEffort.openAIValue)
         input = request.messages.map { message in
             let textType = message.role == "assistant" ? "output_text" : "input_text"
             var content: [Content] = []
@@ -168,5 +210,14 @@ struct ResponsesBody: Encodable {
             }
             return Input(role: message.role == "system" ? "developer" : message.role, content: content)
         }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(model, forKey: .model)
+        try container.encode(input, forKey: .input)
+        try container.encode(store, forKey: .store)
+        try container.encode(stream, forKey: .stream)
+        try container.encode(reasoning, forKey: .reasoning)
     }
 }
