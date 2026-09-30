@@ -43,6 +43,11 @@ import Testing
     #expect(!dump.contains("query-secret"))
     #expect(!dump.contains("api-key-header-secret"))
     #expect(dump.contains("[redacted]"))
+    let ipv6 = URL(string: "http://[::1]:8080/v1/models?api_key=query-secret&foo=a%26b")!
+    #expect(
+        DebugTranscriptRedaction.displayURL(ipv6)
+            == "[::1]:8080/v1/models?api_key=[redacted]&foo=a%26b"
+    )
 }
 
 @Test @MainActor

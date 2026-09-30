@@ -172,24 +172,18 @@ enum DebugTranscriptRedaction: Sendable {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         if let items = components?.queryItems, !items.isEmpty {
             components?.queryItems = items.map { item in
-                if secretQueryKeys.contains(item.name.lowercased()) {
-                    return URLQueryItem(name: item.name, value: placeholder)
-                }
-                return item
+                guard secretQueryKeys.contains(item.name.lowercased()) else { return item }
+                return URLQueryItem(name: item.name, value: placeholder)
             }
         }
-        let host = url.host.map { $0 + (url.port.map { ":\($0)" } ?? "") } ?? ""
+        let name = url.host ?? ""
+        let host = name.contains(":") ? "[\(name)]" : name
+        let port = url.port.map { ":\($0)" } ?? ""
         let path = url.path.isEmpty ? "/" : url.path
-        let query: String
-        if let items = components?.queryItems, !items.isEmpty {
-            query = "?" + items.map { item in
-                let value = item.value ?? ""
-                return "\(item.name)=\(value)"
-            }.joined(separator: "&")
-        } else {
-            query = ""
-        }
-        return "\(host)\(path)\(query)"
+        let encoded = components?.percentEncodedQuery?
+            .replacingOccurrences(of: "%5Bredacted%5D", with: "[redacted]") ?? ""
+        let query = encoded.isEmpty ? "" : "?\(encoded)"
+        return "\(host)\(port)\(path)\(query)"
     }
 
     static func redactText(_ text: String) -> String {

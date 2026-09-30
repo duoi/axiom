@@ -16,6 +16,8 @@
 
 - Redirects stay on the same host, and an https request does not follow an http redirect. An http request may still follow http on that host, which is how loopback and allowed cleartext hosts keep working.
 
+- The debug transcript prints an IPv6 host in brackets and percent-encodes query values after redacting secret keys.
+
 - Reasoning effort lives in UserDefaults `chat.reasoningEffort` (default Medium when the key is missing). A saved legacy `off` loads as None. Settings Models and the HUD logo Reasoning submenu share the same value. OpenAI-compatible always sends `reasoning_effort` (`none` / `minimal` / `low` / `medium` / `high`). ChatGPT Responses always sends `reasoning.effort` the same way. Anthropic omits `thinking` for None; otherwise sends `thinking.budget_tokens` (1024/2048/8192/16384) and raises `max_tokens`.
 
 - Request timeout is UserDefaults `chat.requestTimeoutSeconds` (default 45, clamp 10 to 600). Settings Models edits it; `ChatClient.makeSession` uses it for `timeoutIntervalForRequest` and 2x for the resource timeout.
