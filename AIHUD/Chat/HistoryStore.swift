@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Observation
 
@@ -21,21 +20,6 @@ enum HistorySettings {
     static func saveSaveScreenshots(_ value: Bool, to defaults: UserDefaults) {
         defaults.set(value, forKey: saveScreenshotsKey)
     }
-}
-
-/// Prefer `ghost` / `ghost.fill` when the symbol catalog has them; otherwise masks.
-enum HistoryChrome {
-    static func symbol(excluded: Bool) -> String {
-        if excluded {
-            return hasGhost ? "ghost.fill" : "theatermasks.fill"
-        }
-        return hasGhost ? "ghost" : "theatermasks"
-    }
-
-    private static let hasGhost: Bool = {
-        NSImage(systemSymbolName: "ghost", accessibilityDescription: nil) != nil
-            && NSImage(systemSymbolName: "ghost.fill", accessibilityDescription: nil) != nil
-    }()
 }
 
 struct HistoryTurnRecord: Codable, Equatable, Sendable {

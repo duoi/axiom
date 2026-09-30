@@ -14,7 +14,6 @@ import Testing
     #expect(ChatTimeoutSettings.load(from: defaults) == 120)
     #expect(ChatTimeoutSettings.resourceTimeout(forRequest: 45) == 90)
     let (session, _) = ChatClient.makeSession(
-        host: "example.com",
         requestTimeout: ChatTimeoutSettings.load(from: defaults)
     )
     #expect(session.configuration.timeoutIntervalForRequest == 120)

@@ -296,7 +296,7 @@ struct SettingsView: View {
                     }
                 }
                 .labelsHidden()
-                Text("OpenAI-compatible sends reasoning_effort (including off). ChatGPT Responses sends reasoning.effort (including off). Anthropic enables thinking.budget_tokens only when effort is not Off.")
+                Text("OpenAI-compatible sends reasoning_effort (none, minimal, low, medium, high). ChatGPT Responses sends reasoning.effort the same way. Anthropic enables thinking.budget_tokens only when effort is not None. Default is Medium.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

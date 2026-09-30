@@ -2,21 +2,21 @@ import Foundation
 
 /// Shared chat option for reasoning / thinking effort across providers.
 enum ReasoningEffort: String, CaseIterable, Identifiable, Equatable, Sendable {
-    /// OpenAI/Responses send `"off"`; Anthropic omits `thinking`.
-    case off
+    /// OpenAI/Responses send `"none"`; Anthropic omits `thinking`.
+    case none
     case minimal
     case low
     case medium
     case high
 
     static let defaultsKey = "chat.reasoningEffort"
-    static let `default`: ReasoningEffort = .off
+    static let `default`: ReasoningEffort = .medium
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .off: "Off"
+        case .none: "None"
         case .minimal: "Minimal"
         case .low: "Low"
         case .medium: "Medium"
@@ -25,13 +25,13 @@ enum ReasoningEffort: String, CaseIterable, Identifiable, Equatable, Sendable {
     }
 
     /// OpenAI chat completions `reasoning_effort` / Responses `reasoning.effort`.
-    /// Always a concrete value, including `"off"`.
+    /// Always a concrete value, including `"none"`.
     var openAIValue: String { rawValue }
 
-    /// Anthropic extended-thinking token budget when effort is on. Nil for Off.
+    /// Anthropic extended-thinking token budget. Nil for None.
     var anthropicBudgetTokens: Int? {
         switch self {
-        case .off: nil
+        case .none: nil
         case .minimal: 1_024
         case .low: 2_048
         case .medium: 8_192
@@ -40,12 +40,11 @@ enum ReasoningEffort: String, CaseIterable, Identifiable, Equatable, Sendable {
     }
 
     static func load(from defaults: UserDefaults) -> ReasoningEffort {
-        guard let raw = defaults.string(forKey: defaultsKey),
-              let value = ReasoningEffort(rawValue: raw)
-        else {
+        guard let raw = defaults.string(forKey: defaultsKey) else {
             return .default
         }
-        return value
+        if raw == "off" { return .none }
+        return ReasoningEffort(rawValue: raw) ?? .default
     }
 
     static func save(_ value: ReasoningEffort, to defaults: UserDefaults) {

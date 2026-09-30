@@ -53,7 +53,4 @@ enum PromptInFlightPolicy {
         submitted
     }
 
-    static func allowsDictation(phase: Phase) -> Bool {
-        isEditable(phase: phase)
-    }
 }

@@ -54,6 +54,32 @@ import Testing
     #expect(!RedirectPolicy.allows(originalHost: "api.openai.com", next: other))
 }
 
+@Test func redirectRejectsCleartextDowngrade() {
+    let insecure = URL(string: "http://api.openai.com/v1/chat/completions")!
+    #expect(RedirectPolicy.allows(
+        originalHost: "api.openai.com",
+        originalScheme: "https",
+        next: insecure
+    ) == false)
+    let secure = URL(string: "https://API.openai.com/v1/chat/completions")!
+    #expect(RedirectPolicy.allows(
+        originalHost: "api.openai.com",
+        originalScheme: "https",
+        next: secure
+    ))
+    let loopback = URL(string: "http://127.0.0.1:8080/v1/chat/completions")!
+    #expect(RedirectPolicy.allows(
+        originalHost: "127.0.0.1",
+        originalScheme: "http",
+        next: loopback
+    ))
+    #expect(RedirectPolicy.allows(
+        originalHost: "127.0.0.1",
+        originalScheme: "https",
+        next: loopback
+    ) == false)
+}
+
 @Test func sendBuildsAFollowUpAndStopKeepsThePartial() {
     var session = Session()
     session.draft = "  Hello  "

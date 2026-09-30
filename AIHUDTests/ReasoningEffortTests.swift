@@ -4,12 +4,12 @@ import Testing
 
 @Test func reasoningEffortBodiesMatchEachProvider() throws {
     let messages = [OutboundMessage(role: "user", text: "hi", imageJPEGs: [])]
-    let off = ChatRequest(
+    let none = ChatRequest(
         url: URL(string: "https://example.com/v1")!,
         model: "m",
         apiKey: "",
         messages: messages,
-        reasoningEffort: .off
+        reasoningEffort: .none
     )
     let medium = ChatRequest(
         url: URL(string: "https://example.com/v1")!,
@@ -40,15 +40,15 @@ import Testing
         reasoningEffort: .minimal
     )
 
-    let offCompletions = try JSONSerialization.jsonObject(
-        with: JSONEncoder().encode(ChatBody(request: off))
+    let noneCompletions = try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(ChatBody(request: none))
     ) as? [String: Any]
-    #expect(offCompletions?["reasoning_effort"] as? String == "off")
+    #expect(noneCompletions?["reasoning_effort"] as? String == "none")
 
-    let onCompletions = try JSONSerialization.jsonObject(
+    let mediumCompletions = try JSONSerialization.jsonObject(
         with: JSONEncoder().encode(ChatBody(request: medium))
     ) as? [String: Any]
-    #expect(onCompletions?["reasoning_effort"] as? String == "medium")
+    #expect(mediumCompletions?["reasoning_effort"] as? String == "medium")
     #expect(
         (try JSONSerialization.jsonObject(
             with: JSONEncoder().encode(ChatBody(request: low))
@@ -65,30 +65,30 @@ import Testing
         ) as? [String: Any])?["reasoning_effort"] as? String == "minimal"
     )
 
-    let offResponses = try JSONSerialization.jsonObject(
-        with: JSONEncoder().encode(ResponsesBody(request: off))
+    let noneResponses = try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(ResponsesBody(request: none))
     ) as? [String: Any]
-    let offReasoning = try #require(offResponses?["reasoning"] as? [String: Any])
-    #expect(offReasoning["effort"] as? String == "off")
+    let noneReasoning = try #require(noneResponses?["reasoning"] as? [String: Any])
+    #expect(noneReasoning["effort"] as? String == "none")
 
-    let onResponses = try JSONSerialization.jsonObject(
+    let mediumResponses = try JSONSerialization.jsonObject(
         with: JSONEncoder().encode(ResponsesBody(request: medium))
     ) as? [String: Any]
-    let reasoning = try #require(onResponses?["reasoning"] as? [String: Any])
+    let reasoning = try #require(mediumResponses?["reasoning"] as? [String: Any])
     #expect(reasoning["effort"] as? String == "medium")
 
-    let offAnthropic = try JSONSerialization.jsonObject(
-        with: JSONEncoder().encode(AnthropicBody(request: off))
+    let noneAnthropic = try JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(AnthropicBody(request: none))
     ) as? [String: Any]
-    #expect(offAnthropic?["thinking"] == nil)
+    #expect(noneAnthropic?["thinking"] == nil)
 
-    let onAnthropic = try JSONSerialization.jsonObject(
+    let mediumAnthropic = try JSONSerialization.jsonObject(
         with: JSONEncoder().encode(AnthropicBody(request: medium))
     ) as? [String: Any]
-    let thinking = try #require(onAnthropic?["thinking"] as? [String: Any])
+    let thinking = try #require(mediumAnthropic?["thinking"] as? [String: Any])
     #expect(thinking["type"] as? String == "enabled")
     #expect(thinking["budget_tokens"] as? Int == 8_192)
-    #expect((onAnthropic?["max_tokens"] as? Int) ?? 0 > 8_192)
+    #expect((mediumAnthropic?["max_tokens"] as? Int) ?? 0 > 8_192)
 
     let lowAnthropic = try JSONSerialization.jsonObject(
         with: JSONEncoder().encode(AnthropicBody(request: low))
@@ -101,19 +101,23 @@ import Testing
     #expect((highAnthropic?["thinking"] as? [String: Any])?["budget_tokens"] as? Int == 16_384)
 }
 
-@Test func reasoningEffortDefaultsToOffAndPersists() {
+@Test func reasoningEffortDefaultsToMediumAndMapsLegacyOff() {
     let suite = "aihud.tests.reasoning-effort.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
-    #expect(ReasoningEffort.load(from: defaults) == .off)
-    #expect(ReasoningEffort.default == .off)
+    #expect(ReasoningEffort.load(from: defaults) == .medium)
+    #expect(ReasoningEffort.default == .medium)
+    defaults.set("off", forKey: ReasoningEffort.defaultsKey)
+    #expect(ReasoningEffort.load(from: defaults) == .none)
     ReasoningEffort.save(.high, to: defaults)
     #expect(ReasoningEffort.load(from: defaults) == .high)
-    #expect(ReasoningEffort.off.openAIValue == "off")
+    #expect(ReasoningEffort.none.title == "None")
+    #expect(ReasoningEffort.none.openAIValue == "none")
     #expect(ReasoningEffort.medium.openAIValue == "medium")
     #expect(ReasoningEffort.low.openAIValue == "low")
     #expect(ReasoningEffort.high.openAIValue == "high")
     #expect(ReasoningEffort.minimal.openAIValue == "minimal")
-    #expect(ReasoningEffort.off.anthropicBudgetTokens == nil)
+    #expect(ReasoningEffort.none.anthropicBudgetTokens == nil)
+    #expect(ReasoningEffort.medium.anthropicBudgetTokens == 8_192)
     #expect(ReasoningEffort.minimal.anthropicBudgetTokens == 1_024)
 }

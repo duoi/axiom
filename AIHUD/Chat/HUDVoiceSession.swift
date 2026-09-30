@@ -13,7 +13,7 @@ extension HUDController {
     }
 
     func toggleDictation() {
-        guard PromptInFlightPolicy.allowsDictation(phase: model.session.phase) else { return }
+        guard PromptInFlightPolicy.isEditable(phase: model.session.phase) else { return }
         if store.wakeOnAxiom {
             if let denied = VoicePermission.deniedSentence() {
                 model.voiceStatus = denied
@@ -158,7 +158,7 @@ extension HUDController {
     }
 
     func applyDictation(_ recognized: String, isFinal: Bool) {
-        guard PromptInFlightPolicy.allowsDictation(phase: model.session.phase) else { return }
+        guard PromptInFlightPolicy.isEditable(phase: model.session.phase) else { return }
         let tail: String
         if openedFromWake, let wake = VoiceParser.wake(in: recognized) {
             tail = wake.remainder

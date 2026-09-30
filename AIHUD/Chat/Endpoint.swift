@@ -882,8 +882,17 @@ struct ChatEndpointCatalog: Equatable, Sendable {
 }
 
 enum RedirectPolicy {
-    static func allows(originalHost: String, next: URL) -> Bool {
+    /// Same host only. An https request may not follow an http redirect.
+    static func allows(originalHost: String, originalScheme: String? = nil, next: URL) -> Bool {
         guard let host = next.host, !host.isEmpty else { return false }
-        return host.compare(originalHost, options: .caseInsensitive) == .orderedSame
+        guard host.compare(originalHost, options: .caseInsensitive) == .orderedSame else { return false }
+        switch next.scheme?.lowercased() {
+        case "https":
+            return true
+        case "http":
+            return originalScheme?.lowercased() == "http"
+        default:
+            return false
+        }
     }
 }

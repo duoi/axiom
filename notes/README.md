@@ -2,6 +2,8 @@
 
 ## 2026-09-29
 
+- The history toggle uses the incognito ghost SVG (`Incognito` asset) instead of the `ghost` / `theatermasks` symbols. Recording off is primary; recording on is secondary. Capture: `notes/captures/hud-incognito.png`. Compared with `notes/references/launcher-hud.jpg`: same 560×108 card; the ghost replaces the shortcut badge while history is on.
+
 - Debug has Open transcript. It opens a second titled window "Axiom transcript" that streams live redacted HTTP request and response lines from ChatClient, AnthropicClient, and ChatGPTClient. Authorization, x-api-key, api-key, bearer values, refresh_token / api_key JSON fields, and secret query params become `[redacted]`. Prompt text stays. Closing the window keeps the buffer; chat keeps working.
 
 - Debug Thinking orb panel now has a Shimmer picker for every text treatment in mdo91/AI-Animation-Demo: ChatGPT style (default), Grok style, ShimmeringText, Summerizing the text, Processing label. Selecting one drives the locked in-flight prompt when Debug is on; Preview shimmer / `--debug-state=shimmer-<slug>` shows a sample draft without a network send. Production sends stay ChatGPT style when Debug has not picked another. Not ported as text shimmers: Analyzing the text (Pulsing orb) and Sequential dot grid. Captures: `notes/captures/hud-shimmer-grok-a.png`, `notes/captures/hud-shimmer-grok-b.png` (14477 changed pixels), `notes/captures/hud-shimmer-chatgpt-a.png`, `notes/captures/hud-shimmer-chatgpt-b.png` (13232 changed), `notes/captures/hud-shimmer-summerizing.png`.
@@ -12,7 +14,9 @@
 
 - Waiting with no reply text no longer opens a reply band or expand chevron (`HistoryChromePolicy`). Idle and pre-token waiting stay 560x108. Chevron and growth return for nonempty reply, failure, or already-expanded history. Capture: same waiting pair above (compact height).
 
-- Reasoning effort lives in UserDefaults `chat.reasoningEffort` (default Off). Settings Models has a picker; the HUD logo menu adds a Reasoning submenu that writes the same key. OpenAI-compatible always sends `reasoning_effort` (`off` / `minimal` / `low` / `medium` / `high`). ChatGPT Responses always sends `reasoning.effort` the same way. Anthropic omits `thinking` when Off; otherwise sends `thinking.budget_tokens` (1024/2048/8192/16384) and raises `max_tokens`.
+- Redirects stay on the same host, and an https request does not follow an http redirect. An http request may still follow http on that host, which is how loopback and allowed cleartext hosts keep working.
+
+- Reasoning effort lives in UserDefaults `chat.reasoningEffort` (default Medium when the key is missing). A saved legacy `off` loads as None. Settings Models and the HUD logo Reasoning submenu share the same value. OpenAI-compatible always sends `reasoning_effort` (`none` / `minimal` / `low` / `medium` / `high`). ChatGPT Responses always sends `reasoning.effort` the same way. Anthropic omits `thinking` for None; otherwise sends `thinking.budget_tokens` (1024/2048/8192/16384) and raises `max_tokens`.
 
 - Request timeout is UserDefaults `chat.requestTimeoutSeconds` (default 45, clamp 10 to 600). Settings Models edits it; `ChatClient.makeSession` uses it for `timeoutIntervalForRequest` and 2x for the resource timeout.
 

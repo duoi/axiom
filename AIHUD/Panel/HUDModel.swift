@@ -508,9 +508,7 @@ final class HUDModel {
         messages: [OutboundMessage]
     ) {
         task?.cancel()
-        let host = url.host ?? ""
         let (session, guardDelegate) = ChatClient.makeSession(
-            host: host,
             requestTimeout: store.requestTimeoutSeconds
         )
         clientSession = session

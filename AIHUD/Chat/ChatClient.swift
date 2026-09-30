@@ -5,7 +5,7 @@ struct ChatRequest: Sendable {
     var model: String
     var apiKey: String
     var messages: [OutboundMessage]
-    var reasoningEffort: ReasoningEffort = .off
+    var reasoningEffort: ReasoningEffort = ReasoningEffort.default
 }
 
 enum ChatStreamEvent: Equatable, Sendable {
@@ -15,19 +15,21 @@ enum ChatStreamEvent: Equatable, Sendable {
 }
 
 final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    let originalHost: String
-
-    init(originalHost: String) {
-        self.originalHost = originalHost
-    }
-
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
         willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest
     ) async -> URLRequest? {
-        guard let next = request.url, RedirectPolicy.allows(originalHost: originalHost, next: next) else {
+        guard let next = request.url,
+              let original = task.originalRequest?.url,
+              let originalHost = original.host,
+              RedirectPolicy.allows(
+                originalHost: originalHost,
+                originalScheme: original.scheme,
+                next: next
+              )
+        else {
             return nil
         }
         return request
@@ -42,7 +44,6 @@ struct ChatClient: Sendable {
     }
 
     static func makeSession(
-        host: String,
         requestTimeout: TimeInterval = ChatTimeoutSettings.defaultSeconds
     ) -> (URLSession, RedirectGuard) {
         let timeout = ChatTimeoutSettings.clamp(requestTimeout)
@@ -51,7 +52,7 @@ struct ChatClient: Sendable {
         configuration.timeoutIntervalForResource = ChatTimeoutSettings.resourceTimeout(forRequest: timeout)
         configuration.waitsForConnectivity = false
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        let guardDelegate = RedirectGuard(originalHost: host)
+        let guardDelegate = RedirectGuard()
         let session = URLSession(configuration: configuration, delegate: guardDelegate, delegateQueue: nil)
         return (session, guardDelegate)
     }

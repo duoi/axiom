@@ -275,7 +275,11 @@ struct ModelListResult: Equatable, Sendable {
 struct ModelListClient: Sendable {
     var session: URLSession
 
-    init(session: URLSession = URLSession(configuration: .ephemeral)) {
+    init(session: URLSession = URLSession(
+        configuration: .ephemeral,
+        delegate: RedirectGuard(),
+        delegateQueue: nil
+    )) {
         self.session = session
     }
 

@@ -134,7 +134,6 @@ import Testing
     #expect(PromptInFlightPolicy.isEditable(phase: .finished))
     #expect(PromptInFlightPolicy.isEditable(phase: .failed("x")))
     #expect(PromptInFlightPolicy.isEditable(phase: .composing))
-    #expect(!PromptInFlightPolicy.allowsDictation(phase: .waiting))
 
     var session = Session()
     session.draft = "Keep visible"

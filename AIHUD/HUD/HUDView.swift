@@ -508,8 +508,11 @@ struct HUDView: View {
 
     private var historyGhostButton: some View {
         Button(action: model.toggleHistoryExclusion) {
-            Image(systemName: HistoryChrome.symbol(excluded: model.historyExcluded))
-                .font(.system(size: 13, weight: .medium))
+            Image("Incognito")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .frame(width: 15, height: 15)
                 .foregroundStyle(model.historyExcluded ? Color.primary : Color.secondary)
                 .frame(width: HUDMetrics.controlSize, height: HUDMetrics.controlSize)
                 .contentShape(Rectangle())
