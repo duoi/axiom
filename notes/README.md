@@ -2,6 +2,8 @@
 
 ## 2026-09-29
 
+- Root `README.md` describes the app. `.cursor/rules/readme.mdc` says to update it when behavior, install, or publishing changes. `.github/workflows/build.yml` builds on the `xcode-27` runner and publishes `Axiom-macOS.zip`.
+
 - The history toggle uses the incognito ghost SVG (`Incognito` asset) instead of the `ghost` / `theatermasks` symbols. Recording off is primary; recording on is secondary. Capture: `notes/captures/hud-incognito.png`. Compared with `notes/references/launcher-hud.jpg`: same 560×108 card; the ghost replaces the shortcut badge while history is on.
 
 - Debug has Open transcript. It opens a second titled window "Axiom transcript" that streams live redacted HTTP request and response lines from ChatClient, AnthropicClient, and ChatGPTClient. Authorization, x-api-key, api-key, bearer values, refresh_token / api_key JSON fields, and secret query params become `[redacted]`. Prompt text stays. Closing the window keeps the buffer; chat keeps working.

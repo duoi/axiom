@@ -1,0 +1,68 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode.app ]; then
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          fi
+          xcodebuild -version
+
+      - name: Test
+        run: |
+          xcodebuild test \
+            -scheme Axiom \
+            -destination 'platform=macOS,arch=arm64' \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=""
+
+      - name: Build Release
+        run: |
+          xcodebuild build \
+            -scheme Axiom \
+            -configuration Release \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=""
+          ditto -c -k --keepParent \
+            "$RUNNER_TEMP/DerivedData/Build/Products/Release/Axiom.app" \
+            Axiom-macOS.zip
+
+      - name: Publish
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            title="Axiom $tag"
+          else
+            tag="build-${GITHUB_SHA::7}"
+            title="Axiom $tag"
+          fi
+          notes="$(git log -1 --pretty=%s)"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" Axiom-macOS.zip --clobber
+          else
+            gh release create "$tag" Axiom-macOS.zip \
+              --title "$title" \
+              --notes "$notes" \
+              --latest
+          fi

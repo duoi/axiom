@@ -4,6 +4,7 @@ Native macOS menu-bar app. A hotkey shows a Liquid Glass prompt card and streams
 
 ## Read first
 
+- `README.md` is the user-facing description. Update it in the same change when behavior, install, or publishing changes. See `.cursor/rules/readme.mdc`.
 - `notes/README.md` is the running log.
 - `notes/references/launcher-hud.jpg` is the visual spec.
 - `notes/plan.md` points at the canonical plan. Do not paste a second copy of that plan into the repo.

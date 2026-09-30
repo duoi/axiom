@@ -1,0 +1,24 @@
+---
+description: Update the root README when Axiom behavior, install, or publishing changes
+alwaysApply: true
+---
+
+# Keep README.md current
+
+`README.md` at the repo root is the user-facing description of Axiom. When a change alters what a person can do, how they install the app, or how a build is published, update that file in the same change.
+
+Update the matching section when you change:
+
+- The card, hotkey, voice, capture, attachments, history, or Settings
+- Models, providers, reasoning, timeouts, or where keys are stored
+- macOS version, build steps, or the GitHub Actions release
+
+Leave `README.md` alone for a comment, rename, or fix that does not change those facts.
+
+```markdown
+# Bad
+Add a Settings toggle and do not mention it.
+
+# Good
+Add the toggle, then add one sentence under the matching README section.
+```
