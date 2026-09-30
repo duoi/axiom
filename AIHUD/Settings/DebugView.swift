@@ -110,7 +110,7 @@ struct DebugView: View {
                             Button("Make card key") { send(.makeKey) }
                             Button("Resign key") { send(.resignKey) }
                         }
-                        Text("Compare matte versus clear glass and the pill backdrop. Matte still skips the window shadow.")
+                        Text("Resigning key leaves the capsule fill unchanged. Matte still skips the window shadow.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
@@ -239,16 +239,15 @@ struct DebugView: View {
             }
             Button("Force Waiting") { send(.waiting) }
             Button("In-flight prompt") {
-                preview.orbChoice = .pulsingOrb
                 onCommand(DebugCommand.inFlightPrompt.rawValue)
             }
-            Text("In-flight prompt keeps the draft visible with shimmer and uses the Pulsing orb on send.")
+            Text("In-flight prompt keeps the draft visible with a white highlight. The send icon stays Composing unless the orb picker says otherwise.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
             Divider()
 
-            Text("Text shimmers from AI-Animation-Demo. Default send uses ChatGPT style unless Debug picks another.")
+            Text("Locked prompt text uses a white sweep while a reply is in flight. Production sends use that sweep. The send icon is not changed by the shimmer.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Picker("Shimmer", selection: $preview.shimmerStyle) {
@@ -266,7 +265,6 @@ struct DebugView: View {
                     .foregroundStyle(.secondary)
             }
             Button("Preview shimmer") {
-                preview.orbChoice = .pulsingOrb
                 onCommand(preview.shimmerStyle.debugCommand)
             }
         }

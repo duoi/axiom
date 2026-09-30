@@ -42,6 +42,18 @@ enum PromptLayout {
         max(0, (HUDMetrics.rowHeight - lineHeight(for: font)) / 2)
     }
 
+    /// NSTextContainer's default fragment padding. The multiline editor sets this explicitly.
+    static let multilineFragmentPadding: CGFloat = 5
+    static let multilineTextContainerInset = NSSize.zero
+
+    /// Vertically centers one line inside the text field cell's drawing rect.
+    static func singleLineGlyphRect(cellRect: NSRect, font: NSFont) -> NSRect {
+        let line = lineHeight(for: font)
+        let height = min(line, cellRect.height)
+        let dy = max(0, (cellRect.height - height) / 2)
+        return NSRect(x: cellRect.origin.x, y: cellRect.origin.y + dy, width: cellRect.width, height: height)
+    }
+
     static func paragraphStyle(for font: NSFont) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         let line = lineHeight(for: font)
@@ -71,6 +83,7 @@ struct PromptField: NSViewRepresentable {
     var placeholder: String
     var multiline: Bool
     var isEditable: Bool = true
+    var showsInFlightShimmer: Bool = false
     var onSubmit: () -> Void
     var onReady: (any PromptEditing) -> Void
     var onHeight: (CGFloat) -> Void = { _ in }
@@ -96,6 +109,7 @@ struct PromptField: NSViewRepresentable {
         nsView.placeholder = placeholder
         nsView.isMultiline = multiline
         nsView.isPromptEditable = isEditable
+        nsView.showsInFlightShimmer = showsInFlightShimmer
         nsView.applyPrompt(text)
         context.coordinator.publishHeight()
     }
@@ -169,6 +183,56 @@ final class PromptHostView: NSView, PromptEditing {
         didSet {
             guard oldValue != isPromptEditable else { return }
             applyEditableState()
+        }
+    }
+
+    var showsInFlightShimmer = false {
+        didSet {
+            guard oldValue != showsInFlightShimmer else { return }
+            field.showsInFlightShimmer = showsInFlightShimmer
+            textView.showsInFlightShimmer = showsInFlightShimmer
+            if showsInFlightShimmer {
+                startShimmerClock()
+            } else {
+                stopShimmerClock()
+            }
+        }
+    }
+
+    private var shimmerClock: PromptShimmerClock?
+    private var shimmerTimer: Timer?
+
+    func redrawInFlightShimmer() {
+        field.needsDisplay = true
+        textView.needsDisplay = true
+    }
+
+    private func startShimmerClock() {
+        guard shimmerTimer == nil else { return }
+        let clock = shimmerClock ?? PromptShimmerClock()
+        clock.host = self
+        shimmerClock = clock
+        let timer = Timer(
+            timeInterval: 1.0 / 30.0,
+            target: clock,
+            selector: #selector(PromptShimmerClock.tick),
+            userInfo: nil,
+            repeats: true
+        )
+        RunLoop.main.add(timer, forMode: .common)
+        shimmerTimer = timer
+    }
+
+    private func stopShimmerClock() {
+        shimmerTimer?.invalidate()
+        shimmerTimer = nil
+        field.needsDisplay = true
+        textView.needsDisplay = true
+    }
+
+    deinit {
+        MainActor.assumeIsolated {
+            shimmerTimer?.invalidate()
         }
     }
 
@@ -280,7 +344,8 @@ final class PromptHostView: NSView, PromptEditing {
         textView.font = font
         textView.textColor = .labelColor
         textView.insertionPointColor = .labelColor
-        textView.textContainerInset = .zero
+        textView.textContainerInset = PromptLayout.multilineTextContainerInset
+        textView.textContainer?.lineFragmentPadding = PromptLayout.multilineFragmentPadding
         textView.defaultParagraphStyle = PromptLayout.paragraphStyle(for: font)
         textView.typingAttributes = PromptLayout.typingAttributes(font: font)
         textView.textContainer?.widthTracksTextView = true
@@ -416,18 +481,44 @@ final class CenteredPromptCell: NSTextFieldCell {
         )
     }
 
+    override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
+        guard let field = controlView as? ClickThroughTextField,
+              field.showsInFlightShimmer,
+              !stringValue.isEmpty
+        else {
+            super.drawInterior(withFrame: cellFrame, in: controlView)
+            return
+        }
+        let saved = textColor
+        textColor = NSColor.white.withAlphaComponent(0.38)
+        super.drawInterior(withFrame: cellFrame, in: controlView)
+        textColor = .white
+        if let context = NSGraphicsContext.current?.cgContext {
+            context.saveGState()
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            super.drawInterior(withFrame: cellFrame, in: controlView)
+            context.setBlendMode(.sourceIn)
+            PromptShimmerBand.draw(in: titleRect(forBounds: cellFrame))
+            context.endTransparencyLayer()
+            context.restoreGState()
+        }
+        textColor = saved
+    }
+
     private func centeredTitleRect(for rect: NSRect) -> NSRect {
-        let title = super.drawingRect(forBounds: rect)
-        let line = PromptLayout.lineHeight(for: font ?? PromptLayout.font())
-        let height = min(line, title.height)
-        let dy = max(0, (title.height - height) / 2)
-        return NSRect(x: title.origin.x, y: title.origin.y + dy, width: title.width, height: height)
+        PromptLayout.singleLineGlyphRect(
+            cellRect: super.drawingRect(forBounds: rect),
+            font: font ?? PromptLayout.font()
+        )
     }
 }
 
 final class ClickThroughTextField: NSTextField, NSTextFieldDelegate, PromptEditing {
     var onChange: (String) -> Void = { _ in }
     var onSubmit: () -> Void = {}
+    var showsInFlightShimmer = false {
+        didSet { needsDisplay = true }
+    }
 
     override class var cellClass: AnyClass? {
         get { CenteredPromptCell.self }
@@ -500,6 +591,9 @@ final class PromptTextView: NSTextView, NSTextViewDelegate, PromptEditing {
     }
     var onChange: (String) -> Void = { _ in }
     var onSubmit: () -> Void = {}
+    var showsInFlightShimmer = false {
+        didSet { needsDisplay = true }
+    }
     private var applyingAttributes = false
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -517,6 +611,10 @@ final class PromptTextView: NSTextView, NSTextViewDelegate, PromptEditing {
     var promptFocusView: NSView { self }
 
     override func draw(_ dirtyRect: NSRect) {
+        if showsInFlightShimmer, !string.isEmpty {
+            drawInFlightShimmer()
+            return
+        }
         super.draw(dirtyRect)
         guard string.isEmpty else { return }
         let font = self.font ?? PromptLayout.font()
@@ -529,6 +627,28 @@ final class PromptTextView: NSTextView, NSTextViewDelegate, PromptEditing {
         let padding = textContainer?.lineFragmentPadding ?? 5
         let y = max(0, (PromptLayout.lineHeight(for: font) - size.height) / 2)
         label.draw(at: NSPoint(x: textContainerInset.width + padding, y: y), withAttributes: attrs)
+    }
+
+    private func drawInFlightShimmer() {
+        guard let layout = layoutManager, let container = textContainer else { return }
+        let glyphRange = layout.glyphRange(for: container)
+        guard glyphRange.length > 0 else { return }
+        let characters = layout.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        let origin = textContainerOrigin
+        let dim = NSColor.white.withAlphaComponent(0.38)
+        layout.addTemporaryAttribute(.foregroundColor, value: dim, forCharacterRange: characters)
+        layout.drawGlyphs(forGlyphRange: glyphRange, at: origin)
+        layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: characters)
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        layout.addTemporaryAttribute(.foregroundColor, value: NSColor.white, forCharacterRange: characters)
+        layout.drawGlyphs(forGlyphRange: glyphRange, at: origin)
+        layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: characters)
+        context.setBlendMode(.sourceIn)
+        PromptShimmerBand.draw(in: bounds)
+        context.endTransparencyLayer()
+        context.restoreGState()
     }
 
     override func didChangeText() {
@@ -560,5 +680,29 @@ final class PromptTextView: NSTextView, NSTextViewDelegate, PromptEditing {
             return true
         }
         return false
+    }
+}
+
+private final class PromptShimmerClock: NSObject {
+    weak var host: PromptHostView?
+
+    @objc func tick() {
+        host?.redrawInFlightShimmer()
+    }
+}
+
+enum PromptShimmerBand {
+    static func draw(in rect: NSRect) {
+        let width = max(rect.width, 1)
+        let band = max(width * 0.42, 36)
+        let phase = InFlightPromptShimmer.bandPhase(at: Date(), duration: InFlightPromptShimmer.bandDuration)
+        let x = rect.minX - band + phase * (width + band)
+        let bandRect = NSRect(x: x, y: rect.minY, width: band, height: rect.height)
+        guard let gradient = NSGradient(colors: [
+            NSColor.white.withAlphaComponent(0),
+            NSColor.white,
+            NSColor.white.withAlphaComponent(0),
+        ]) else { return }
+        gradient.draw(in: bandRect, angle: 0)
     }
 }

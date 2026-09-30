@@ -8,12 +8,17 @@ final class HUDController: NSObject, NSWindowDelegate {
     let store: EndpointStore
 
     private var hosting: ClickThroughHosting<HUDView>?
+    private var promptAnchor: PromptAnchorView?
+    /// Offscreen. The on-screen host must never be resized to the 10_000pt measure.
+    private var measurementHost: ClickThroughHosting<HUDView>?
     private var glass: NSGlassEffectView?
     private var glassContainer: NSGlassEffectContainerView?
     private var solid: SolidCardView?
     var chrome: HUDChromeWrapper?
     private var lip: ErrorLipBand?
     private var settledCardHeight: CGFloat = HUDMetrics.minCardHeight
+    private var layoutCard: CGFloat = HUDMetrics.minCardHeight
+    private var layoutHasLip = false
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var menuBegin: NSObjectProtocol?
@@ -38,7 +43,13 @@ final class HUDController: NSObject, NSWindowDelegate {
         model.onOpenSettings = { [weak self] in self?.openSettings() }
         model.onAddContext = { [weak self] in self?.addContext() }
         model.onCaptureScreen = { [weak self] in self?.captureForSend() }
-        model.onLayout = { [weak self] in self?.syncFrame(animated: false) }
+        model.onLayout = { [weak self] in
+            guard let self else { return }
+            self.syncFrame(animated: self.panel.isVisible && !self.panel.isFadingOut)
+        }
+        panel.onFrameStep = { [weak self] in
+            self?.layoutChrome()
+        }
         model.onToggleDictation = { [weak self] in self?.toggleDictation() }
         model.onSetWake = { [weak self] on in self?.setWake(on) }
         model.onSendBegan = { [weak self] in self?.handleSendBegan() }
@@ -118,7 +129,6 @@ final class HUDController: NSObject, NSWindowDelegate {
 
     private func installChrome() {
         reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
-        model.reduceTransparency = reduceTransparency
         let host = ClickThroughHosting(rootView: HUDView(model: model, store: store))
         host.safeAreaRegions = []
         host.setContentHuggingPriority(.required, for: .vertical)
@@ -139,7 +149,6 @@ final class HUDController: NSObject, NSWindowDelegate {
         let next = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
         if !force && next == reduceTransparency && panel.contentView != nil { return }
         reduceTransparency = next
-        model.reduceTransparency = next
         applyAppearance()
     }
 
@@ -164,6 +173,7 @@ final class HUDController: NSObject, NSWindowDelegate {
         let veil = HUDMaterial.veilOpacity(glassAmount: store.glassAmount)
         glassView.tintColor = veil == 0 ? nil : NSColor.windowBackgroundColor.withAlphaComponent(veil)
         if #available(macOS 27.0, *) {
+            // A click flexes this 560-point plate.
             glassView.effectIsInteractive = false
         }
         // Regular glass is opaque, so the window shadow becomes a black box while the panel is key.
@@ -173,7 +183,9 @@ final class HUDController: NSObject, NSWindowDelegate {
     }
 
     private func mount(_ hosting: NSView) {
-        hosting.removeFromSuperview()
+        let anchor = promptAnchor ?? PromptAnchorView(host: hosting)
+        promptAnchor = anchor
+        anchor.removeFromSuperview()
         let chrome = self.chrome ?? HUDChromeWrapper(
             frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight)
         )
@@ -183,7 +195,7 @@ final class HUDController: NSObject, NSWindowDelegate {
         if HUDMaterial.usesSolidCard(reduceTransparency: reduceTransparency) {
             let card = solid ?? SolidCardView(frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight))
             solid = card
-            card.embed(hosting)
+            card.embed(anchor)
             glass?.contentView = nil
             glassContainer?.contentView = nil
             glass?.removeFromSuperview()
@@ -196,7 +208,7 @@ final class HUDController: NSObject, NSWindowDelegate {
             let glassView = glass ?? CardGlassView(frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight))
             glass = glassView
             applyGlass(glassView)
-            glassView.contentView = hosting
+            glassView.contentView = anchor
             let container = glassContainer ?? NSGlassEffectContainerView(
                 frame: NSRect(x: 0, y: 0, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight)
             )
@@ -214,6 +226,7 @@ final class HUDController: NSObject, NSWindowDelegate {
             panel.contentView = container
         }
         clipHosting(hosting)
+        anchor.clipsToBounds = true
     }
 
     private func clipHosting(_ hosting: NSView) {
@@ -229,10 +242,15 @@ final class HUDController: NSObject, NSWindowDelegate {
     private func measuredHeight() -> CGFloat {
         guard let hosting else { return HUDLayout.cardHeight() }
         hosting.rootView = HUDView(model: model, store: store)
-        hosting.setFrameSize(HUDLayout.hostingFitSize)
-        hosting.invalidateIntrinsicContentSize()
-        hosting.layoutSubtreeIfNeeded()
-        let fitted = hosting.fittingSize.height
+        let probe = HUDView(model: model, store: store, measuresOnly: true)
+        let measurer = measurementHost ?? ClickThroughHosting(rootView: probe)
+        measurementHost = measurer
+        measurer.safeAreaRegions = []
+        measurer.rootView = probe
+        measurer.setFrameSize(HUDLayout.hostingFitSize)
+        measurer.invalidateIntrinsicContentSize()
+        measurer.layoutSubtreeIfNeeded()
+        let fitted = measurer.fittingSize.height
         let chromeHeight = estimatedChromeHeight(fitted: fitted)
         let baseCap = HUDLayout.cappedCardHeight(proposed: fitted, chromeHeight: chromeHeight)
         let showsReply = HistoryChromePolicy.showsReplyRegion(
@@ -304,22 +322,15 @@ final class HUDController: NSObject, NSWindowDelegate {
         if showsReply {
             growthChrome += HUDLayout.replyScrollVerticalPadding
         }
-        _ = animated
         panel.resizeForReply(
             to: height,
             replyLines: growthLines,
             chromeHeight: growthChrome,
-            animated: false
+            animated: animated
         )
-        let windowBounds = NSRect(
-            origin: .zero,
-            size: NSSize(width: HUDMetrics.cardWidth, height: panel.frame.height)
-        )
-        chrome?.hasLip = hasLip
-        chrome?.cardHeight = card
-        chrome?.frame = windowBounds
-        glassContainer?.frame = windowBounds
-        panel.contentView?.frame = windowBounds
+        layoutCard = card
+        layoutHasLip = hasLip
+        layoutChrome()
         if let message {
             lip?.apply(
                 message,
@@ -327,14 +338,34 @@ final class HUDController: NSObject, NSWindowDelegate {
                 onDismiss: { [weak self] in self?.model.dismissLip() }
             )
         }
+        syncDictationGlow()
+    }
+
+    /// Plate tracks the live window rect. Content stays on the pinned edge while the frame eases.
+    private func layoutChrome() {
+        let card = layoutCard
+        let hasLip = layoutHasLip
+        let windowBounds = NSRect(
+            origin: .zero,
+            size: NSSize(width: HUDMetrics.cardWidth, height: panel.frame.height)
+        )
+        chrome?.hasLip = hasLip
+        if panel.isAnimatingFrame {
+            let lip = hasLip ? HUDLayout.lipVisible : 0
+            chrome?.cardHeight = max(card, panel.frame.height - lip)
+        } else {
+            chrome?.cardHeight = card
+        }
+        chrome?.frame = windowBounds
+        glassContainer?.frame = windowBounds
+        panel.contentView?.frame = windowBounds
         chrome?.needsLayout = true
         chrome?.layoutSubtreeIfNeeded()
-        let cardBounds = NSRect(
-            origin: .zero,
-            size: NSSize(width: HUDMetrics.cardWidth, height: card)
-        )
-        hosting?.frame = cardBounds
-        syncDictationGlow()
+        promptAnchor?.needsLayout = true
+        promptAnchor?.layoutSubtreeIfNeeded()
+        if panel.isAnimatingFrame {
+            refreshActiveGlow()
+        }
     }
 
 
@@ -384,7 +415,7 @@ final class HUDController: NSObject, NSWindowDelegate {
             case .keyDown:
                 var handled = false
                 MainActor.assumeIsolated {
-                    handled = self.panel.handleEscapeEvent(event)
+                    handled = self.panel.handleEscapeEvent(event) || self.handleCardShortcut(event)
                 }
                 return handled ? nil : event
             default:
@@ -438,6 +469,36 @@ final class HUDController: NSObject, NSWindowDelegate {
         }
     }
 
+    private func handleCardShortcut(_ event: NSEvent) -> Bool {
+        guard !event.isARepeat else { return false }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard let shortcut = HUDShortcuts.action(
+            characters: event.charactersIgnoringModifiers,
+            control: flags.contains(.control),
+            command: flags.contains(.command),
+            option: flags.contains(.option),
+            shift: flags.contains(.shift),
+            panelIsKey: panel.isVisible && panel.isKeyWindow,
+            menuTracking: panel.menuTracking,
+            hasAttachedSheet: panel.attachedSheet != nil
+        ) else {
+            return false
+        }
+        switch shortcut {
+        case .cyclePreset:
+            model.setPreset(model.session.preset == .agent ? .ask : .agent)
+        case .cycleCapture:
+            model.cycleCaptureShortcut()
+        case .addContext:
+            addContext()
+        case .toggleIncognito:
+            model.toggleHistoryExclusion()
+        case .toggleDictation:
+            model.toggleDictation()
+        }
+        return true
+    }
+
     private func clickOutside(_ event: NSEvent) {
         guard panel.isVisible else { return }
         if model.voicePermissionPrompt { return }
@@ -481,10 +542,13 @@ final class HUDController: NSObject, NSWindowDelegate {
         }
         let windowID = CGWindowID(panel.windowNumber)
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let target = store.captureTarget
-        panel.orderOut(nil)
+        let target = model.displayedCaptureTarget
+        let hides = CapturePanelConceal.hidesPanel(target: target)
+        if hides {
+            panel.concealForCapture()
+            CATransaction.flush()
+        }
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(90))
             do {
                 let result = try await ScreenGrab.capture(
                     excluding: windowID,
@@ -493,8 +557,8 @@ final class HUDController: NSObject, NSWindowDelegate {
                     target: target
                 )
                 let jpeg = ScreenImage.jpeg(from: result.image)
-                restorePanel()
                 guard !jpeg.isEmpty else {
+                    if hides { self.revealAfterCapture() }
                     model.reportScreenFailure(.failed)
                     return
                 }
@@ -503,20 +567,19 @@ final class HUDController: NSObject, NSWindowDelegate {
                     name: target.title,
                     highlightFrame: result.highlightFrame
                 )
+                if hides { self.revealAfterCapture() }
             } catch let error as ScreenGrabError {
-                restorePanel()
+                if hides { self.revealAfterCapture() }
                 model.reportScreenFailure(error)
             } catch {
-                restorePanel()
+                if hides { self.revealAfterCapture() }
                 model.reportScreenFailure(.failed)
             }
         }
     }
 
-    private func restorePanel() {
-        panel.alphaValue = 1
-        panel.orderFrontRegardless()
-        panel.makeKey()
+    private func revealAfterCapture() {
+        panel.reveal()
         DispatchQueue.main.async { [weak self] in
             self?.model.focusField()
         }
@@ -566,9 +629,6 @@ final class HUDController: NSObject, NSWindowDelegate {
         if let shimmer = plan.shimmer {
             preview.shimmerStyle = shimmer
         }
-        if plan.usePulsingOrb {
-            preview.orbChoice = .pulsingOrb
-        }
         switch plan.kind {
         case .openTranscript:
             openTranscript()
@@ -582,7 +642,7 @@ final class HUDController: NSObject, NSWindowDelegate {
                 show()
             }
             model.simulateIncomingStream(text, finish: finish)
-            syncFrame(animated: false)
+            syncFrame(animated: true)
         case .apply(let next):
             model.apply(next)
             hosting?.rootView = HUDView(model: model, store: store)

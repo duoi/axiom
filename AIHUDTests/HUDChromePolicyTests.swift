@@ -1,6 +1,97 @@
+import AppKit
 import Foundation
 import Testing
 @testable import Axiom
+@Test func frameMotionDurationMatchesThePanelFade() {
+    #expect(HUDFrameMotion.duration(reduceMotion: false) == HUDPanelFade.duration)
+    #expect(HUDFrameMotion.duration(reduceMotion: false) == HUDLayout.scrollerFadeDuration)
+    #expect(HUDFrameMotion.duration(reduceMotion: false) == 0.16)
+    #expect(HUDFrameMotion.duration(reduceMotion: true) == 0)
+}
+
+@Test func frameMotionKeepsThePinnedEdge() {
+    let tall = NSRect(x: 40, y: 100, width: 560, height: 400)
+    let compact = NSRect(x: 40, y: 392, width: 560, height: 108)
+    #expect(tall.maxY == compact.maxY)
+    #expect(HUDFrameMotion.pinsTop(from: tall, to: compact))
+    let mid = HUDFrameMotion.frame(from: tall, to: compact, linearProgress: 0.5)
+    #expect(abs(mid.maxY - tall.maxY) < 0.01)
+    #expect(mid.height < tall.height)
+    #expect(mid.height > compact.height)
+    #expect(HUDFrameMotion.frame(from: tall, to: compact, linearProgress: 0) == tall)
+    #expect(HUDFrameMotion.frame(from: tall, to: compact, linearProgress: 1) == compact)
+
+    let taller = NSRect(x: 40, y: 100, width: 560, height: 520)
+    #expect(tall.minY == taller.minY)
+    #expect(!HUDFrameMotion.pinsTop(from: tall, to: taller))
+    let up = HUDFrameMotion.frame(from: tall, to: taller, linearProgress: 0.5)
+    #expect(abs(up.minY - tall.minY) < 0.01)
+    #expect(up.maxY > tall.maxY)
+    #expect(up.height < taller.height)
+}
+
+@Test func topPinnedCollapseHoldsTheTopAtMidpoint() {
+    let tall = NSRect(x: 40, y: 100, width: 560, height: 400)
+    let compact = NSRect(x: 40, y: 392.6, width: 560, height: 108)
+    #expect(tall.maxY == 500)
+    #expect(abs(tall.maxY - compact.maxY) <= 1)
+    #expect(HUDFrameMotion.pinsTop(from: tall, to: compact))
+    let mid = HUDFrameMotion.frame(from: tall, to: compact, linearProgress: 0.5)
+    #expect(mid.maxY == tall.maxY)
+    #expect(mid.height < tall.height)
+    #expect(mid.height > compact.height)
+    let host = HUDFrameMotion.promptHostFrame(
+        plateWidth: 560,
+        plateHeight: tall.height,
+        contentHeight: compact.height
+    )
+    #expect(host.height == compact.height)
+    #expect(host.maxY == tall.height)
+    #expect(host.minY == tall.height - compact.height)
+}
+
+@Test func promptHostStaysOnThePlateTopWhileTheWindowIsShorter() {
+    let growing = HUDFrameMotion.promptHostFrame(plateWidth: 560, plateHeight: 180, contentHeight: 388)
+    #expect(growing.height == 388)
+    #expect(growing.maxY == 180)
+    #expect(growing.minY == CGFloat(180) - 388)
+}
+
+@Test func raisedTopContractionMayMoveTheTop() {
+    let raised = NSRect(x: 40, y: 80, width: 560, height: 520)
+    let compact = NSRect(x: 40, y: 392, width: 560, height: 108)
+    #expect(raised.maxY == 600)
+    #expect(compact.maxY == 500)
+    #expect(abs(raised.maxY - compact.maxY) > 1)
+    #expect(!HUDFrameMotion.pinsTop(from: raised, to: compact))
+    let mid = HUDFrameMotion.frame(from: raised, to: compact, linearProgress: 0.5)
+    #expect(mid.maxY < raised.maxY)
+    #expect(mid.maxY > compact.maxY)
+}
+
+@Test func windowCaptureLeavesThePanelUp() {
+    #expect(!CapturePanelConceal.hidesPanel(target: .window))
+    #expect(CapturePanelConceal.hidesPanel(target: .screen))
+}
+
+@Test @MainActor func measurementHostLeavesTheLivePromptEditor() {
+    let store = EndpointStore()
+    let model = HUDModel(store: store)
+    let live = ClickThroughHosting(rootView: HUDView(model: model, store: store))
+    live.setFrameSize(NSSize(width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight))
+    live.layoutSubtreeIfNeeded()
+    let editor = model.promptEditor
+    #expect(editor != nil)
+    model.promptLineCount = 99
+    let probe = ClickThroughHosting(
+        rootView: HUDView(model: model, store: store, measuresOnly: true)
+    )
+    probe.setFrameSize(HUDLayout.hostingFitSize)
+    probe.layoutSubtreeIfNeeded()
+    #expect(model.promptEditor === editor)
+    #expect(model.promptLineCount == 99)
+}
+
 @Test func composingOrbShowsOnlyWhileWaitingWithEmptyAnswer() {
     #expect(ReplyWaitingChrome.showsComposingOrb(phase: .waiting, answer: ""))
     #expect(ReplyWaitingChrome.showsComposingOrb(phase: .streaming, answer: ""))
@@ -97,32 +188,80 @@ import Testing
     #expect(ThinkingOrbChoice.allCases.count == 19)
 }
 
-@Test func inFlightShimmerPickerListsEveryDemoTextStyle() {
-    #expect(InFlightShimmerStyle.default == .chatGPTStyle)
+@Test func inFlightShimmerPickerListsMonochromeStyle() {
+    #expect(InFlightShimmerStyle.default == .whiteSweep)
     #expect(InFlightShimmerStyle.allCases.map(\.title) == [
-        "ChatGPT style",
-        "Grok style",
-        "ShimmeringText",
-        "Summerizing the text",
-        "Processing label",
+        "White sweep",
     ])
-    #expect(InFlightShimmerStyle.resolved(nil) == .chatGPTStyle)
-    #expect(InFlightShimmerStyle.resolved("") == .chatGPTStyle)
-    #expect(InFlightShimmerStyle.resolved("nope") == .chatGPTStyle)
-    #expect(InFlightShimmerStyle.resolved("grok") == .grokStyle)
-    #expect(InFlightShimmerStyle.fromDebugCommand("shimmer-chatgpt") == .chatGPTStyle)
-    #expect(InFlightShimmerStyle.fromDebugCommand("shimmer-summerizing-the-text") == .summerizingTheText)
+    #expect(InFlightShimmerStyle.resolved(nil) == .whiteSweep)
+    #expect(InFlightShimmerStyle.resolved("") == .whiteSweep)
+    #expect(InFlightShimmerStyle.resolved("nope") == .whiteSweep)
+    #expect(InFlightShimmerStyle.resolved("chatgpt") == .whiteSweep)
+    #expect(InFlightShimmerStyle.resolved("grok") == .whiteSweep)
+    #expect(InFlightShimmerStyle.resolved("iridescent-mesh") == .whiteSweep)
+    #expect(InFlightShimmerStyle.resolved("ocean-mesh") == .whiteSweep)
+    #expect(InFlightShimmerStyle.resolved("wide-hue-slide") == .whiteSweep)
+    #expect(InFlightShimmerStyle.resolved("white-sweep") == .whiteSweep)
+    #expect(InFlightShimmerStyle.fromDebugCommand("shimmer-white-sweep") == .whiteSweep)
+    #expect(InFlightShimmerStyle.fromDebugCommand("shimmer-iridescent-mesh") == nil)
+    #expect(InFlightShimmerStyle.fromDebugCommand("shimmer-chatgpt") == nil)
+    #expect(InFlightShimmerStyle.fromDebugCommand("shimmer-grok") == nil)
     #expect(InFlightShimmerStyle.fromDebugCommand("waiting") == nil)
-    #expect(InFlightShimmerStyle.chatGPTStyle.debugCommand == "shimmer-chatgpt")
+    #expect(InFlightShimmerStyle.whiteSweep.debugCommand == "shimmer-white-sweep")
 }
 
-@Test func inFlightShimmerPhaseRestartsAfterRepeatDelay() {
-    let start = Date(timeIntervalSinceReferenceDate: 100)
-    #expect(InFlightPromptShimmer.phase(at: start, duration: 2, repeatDelay: 0.5) == 0)
-    let mid = Date(timeIntervalSinceReferenceDate: 101)
-    #expect(abs(InFlightPromptShimmer.phase(at: mid, duration: 2, repeatDelay: 0.5) - 0.5) < 0.001)
-    let rest = Date(timeIntervalSinceReferenceDate: 102.2)
-    #expect(InFlightPromptShimmer.phase(at: rest, duration: 2, repeatDelay: 0.5) == 0)
+@Test @MainActor func inFlightShimmerUsesThePromptEditorsGlyphMetrics() {
+    let font = PromptLayout.font()
+    #expect(font.pointSize == PromptLayout.fontSize)
+    let bounds = NSRect(x: 0, y: 0, width: 420, height: HUDMetrics.rowHeight)
+    let plain = NSTextFieldCell(textCell: "What is the total mass of the sun?")
+    plain.font = font
+    plain.isBordered = false
+    plain.isBezeled = false
+    plain.drawsBackground = false
+    plain.usesSingleLineMode = true
+    plain.lineBreakMode = .byClipping
+    let base = plain.drawingRect(forBounds: bounds)
+    let expected = PromptLayout.singleLineGlyphRect(cellRect: base, font: font)
+    let cell = CenteredPromptCell(textCell: "What is the total mass of the sun?")
+    cell.font = font
+    cell.isBordered = false
+    cell.isBezeled = false
+    cell.drawsBackground = false
+    cell.usesSingleLineMode = true
+    cell.lineBreakMode = .byClipping
+    #expect(cell.drawingRect(forBounds: bounds) == expected)
+    #expect(cell.titleRect(forBounds: bounds) == expected)
+
+    let host = PromptHostView(frame: bounds)
+    host.showsInFlightShimmer = true
+    #expect(host.field.font == font)
+    #expect(host.textView.font == font)
+    #expect(host.field.showsInFlightShimmer)
+    #expect(host.textView.showsInFlightShimmer)
+    #expect(host.textView.textContainerInset == PromptLayout.multilineTextContainerInset)
+    #expect(host.textView.textContainer?.lineFragmentPadding == PromptLayout.multilineFragmentPadding)
+    let line = PromptLayout.lineHeight(for: font)
+    #expect(host.textView.defaultParagraphStyle?.minimumLineHeight == line)
+    #expect(host.textView.defaultParagraphStyle?.maximumLineHeight == line)
+    host.isMultiline = true
+    host.frame = NSRect(
+        x: 0,
+        y: 0,
+        width: 420,
+        height: PromptLayout.rowHeight(visibleLines: 2, font: font)
+    )
+    host.layoutSubtreeIfNeeded()
+    #expect(abs(host.scroll.frame.minY - PromptLayout.verticalInset(font: font)) < 0.5)
+}
+
+@Test func inFlightShimmerBandLoopsWithoutResting() {
+    let start = Date(timeIntervalSinceReferenceDate: 0)
+    #expect(InFlightPromptShimmer.bandPhase(at: start, duration: 1.8) == 0)
+    let mid = Date(timeIntervalSinceReferenceDate: 0.9)
+    #expect(abs(InFlightPromptShimmer.bandPhase(at: mid, duration: 1.8) - 0.5) < 0.001)
+    let wrapped = Date(timeIntervalSinceReferenceDate: 1.8)
+    #expect(InFlightPromptShimmer.bandPhase(at: wrapped, duration: 1.8) == 0)
 }
 
 @Test func promptInFlightKeepsDraftUntilProcessed() {
@@ -149,4 +288,68 @@ import Testing
     session.fail("boom")
     #expect(session.draft == "Retry me")
     #expect(PromptInFlightPolicy.isEditable(phase: session.phase))
+}
+
+@Test func controlShortcutsApplyOnlyWhileTheCardIsKey() {
+    let key = (
+        control: true,
+        command: false,
+        option: false,
+        shift: false,
+        panelIsKey: true,
+        menuTracking: false,
+        hasAttachedSheet: false
+    )
+    #expect(HUDShortcuts.action(characters: "a", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .cyclePreset)
+    #expect(HUDShortcuts.action(characters: "A", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .cyclePreset)
+    #expect(HUDShortcuts.action(characters: "s", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .cycleCapture)
+    #expect(HUDShortcuts.action(characters: "c", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .addContext)
+    #expect(HUDShortcuts.action(characters: "i", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .toggleIncognito)
+    #expect(HUDShortcuts.action(characters: "'", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .toggleDictation)
+    #expect(HUDShortcuts.action(characters: "a", control: false, command: true, option: false, shift: false, panelIsKey: true, menuTracking: false, hasAttachedSheet: false) == nil)
+    #expect(HUDShortcuts.action(characters: "a", control: true, command: true, option: false, shift: false, panelIsKey: true, menuTracking: false, hasAttachedSheet: false) == nil)
+    #expect(HUDShortcuts.action(characters: "a", control: true, command: false, option: true, shift: false, panelIsKey: true, menuTracking: false, hasAttachedSheet: false) == nil)
+    #expect(HUDShortcuts.action(characters: "a", control: true, command: false, option: false, shift: true, panelIsKey: true, menuTracking: false, hasAttachedSheet: false) == nil)
+    #expect(HUDShortcuts.action(characters: "a", control: true, command: false, option: false, shift: false, panelIsKey: false, menuTracking: false, hasAttachedSheet: false) == nil)
+    #expect(HUDShortcuts.action(characters: "a", control: true, command: false, option: false, shift: false, panelIsKey: true, menuTracking: true, hasAttachedSheet: false) == nil)
+    #expect(HUDShortcuts.action(characters: "a", control: true, command: false, option: false, shift: false, panelIsKey: true, menuTracking: false, hasAttachedSheet: true) == nil)
+    #expect(HUDShortcuts.action(characters: "k", control: true, command: false, option: false, shift: false, panelIsKey: true, menuTracking: false, hasAttachedSheet: false) == nil)
+}
+
+@Test func controlSCyclesCaptureOnThenTheOtherTargetThenOff() {
+    let enabled = HUDCaptureCycle.advance(armed: false, target: .screen, toggledOption: false)
+    #expect(enabled.armed)
+    #expect(enabled.target == .screen)
+    #expect(!enabled.toggledOption)
+
+    let flipped = HUDCaptureCycle.advance(
+        armed: enabled.armed,
+        target: enabled.target,
+        toggledOption: enabled.toggledOption
+    )
+    #expect(flipped.armed)
+    #expect(flipped.target == .window)
+    #expect(flipped.toggledOption)
+
+    let off = HUDCaptureCycle.advance(
+        armed: flipped.armed,
+        target: flipped.target,
+        toggledOption: flipped.toggledOption
+    )
+    #expect(!off.armed)
+    #expect(off.target == .window)
+    #expect(!off.toggledOption)
+
+    let armedAgain = HUDCaptureCycle.advance(armed: false, target: .window, toggledOption: true)
+    #expect(armedAgain.armed)
+    #expect(armedAgain.target == .window)
+    #expect(!armedAgain.toggledOption)
+
+    let backToScreen = HUDCaptureCycle.advance(
+        armed: true,
+        target: .window,
+        toggledOption: false
+    )
+    #expect(backToScreen.armed)
+    #expect(backToScreen.target == .screen)
 }

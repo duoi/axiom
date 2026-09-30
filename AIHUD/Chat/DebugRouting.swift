@@ -106,7 +106,6 @@ enum HUDCardMenu {
 
 struct DebugCommandPlan: Equatable, Sendable {
     var shimmer: InFlightShimmerStyle?
-    var usePulsingOrb: Bool
     var kind: Kind
 
     enum Kind: Equatable, Sendable {
@@ -186,26 +185,24 @@ func greet() {
     /// One classification for a debug command. Unknown strings apply the current snapshot unchanged.
     static func plan(command: String, snapshot: DebugSnapshot) -> DebugCommandPlan {
         if command == "open-transcript" {
-            return DebugCommandPlan(shimmer: nil, usePulsingOrb: false, kind: .openTranscript)
+            return DebugCommandPlan(shimmer: nil, kind: .openTranscript)
         }
         if let style = InFlightShimmerStyle.fromDebugCommand(command) {
             let next = apply(DebugCommand.inFlightPrompt.rawValue, to: snapshot)
-            return DebugCommandPlan(shimmer: style, usePulsingOrb: true, kind: .apply(next))
+            return DebugCommandPlan(shimmer: style, kind: .apply(next))
         }
         let parsed = parse(command)
         if parsed == .flashHighlight {
-            return DebugCommandPlan(shimmer: nil, usePulsingOrb: false, kind: .flashHighlight)
+            return DebugCommandPlan(shimmer: nil, kind: .flashHighlight)
         }
         if let parsed, let text = liveStreamText(for: parsed) {
             return DebugCommandPlan(
                 shimmer: nil,
-                usePulsingOrb: false,
                 kind: .liveStream(text: text, finish: liveStreamFinishes(parsed))
             )
         }
         return DebugCommandPlan(
             shimmer: nil,
-            usePulsingOrb: parsed == .inFlightPrompt,
             kind: .apply(apply(command, to: snapshot))
         )
     }

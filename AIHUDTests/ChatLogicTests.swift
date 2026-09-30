@@ -569,20 +569,6 @@ import Testing
     #expect(HUDMaterial.usesSolidCard(reduceTransparency: true))
 }
 
-@Test func selectedPillIsMatteWhenTheCardIsNotKey() {
-    #expect(!HUDMaterial.pillIsMatte(preference: false, reduceTransparency: false, cardIsKey: true))
-    #expect(HUDMaterial.pillIsMatte(preference: false, reduceTransparency: false, cardIsKey: false))
-    #expect(HUDMaterial.pillIsMatte(preference: true, reduceTransparency: false, cardIsKey: true))
-    #expect(HUDMaterial.pillIsMatte(preference: false, reduceTransparency: true, cardIsKey: true))
-    #expect(HUDMaterial.effectStyle(matte: HUDMaterial.pillIsMatte(preference: false, reduceTransparency: false, cardIsKey: false)) == .regular)
-}
-
-@Test func interactiveGlassStaysOffSoAClickDoesNotDistortTheCard() {
-    #expect(!HUDMaterial.prefersInteractiveGlass(isControlBackdrop: true, osMajorVersion: 27))
-    #expect(!HUDMaterial.prefersInteractiveGlass(isControlBackdrop: false, osMajorVersion: 27))
-    #expect(!HUDMaterial.prefersInteractiveGlass(isControlBackdrop: true, osMajorVersion: 26))
-}
-
 @Test func glassContainerSpacingBatchesWithoutMergingNearbyPlates() {
     #expect(HUDMaterial.glassContainerSpacing == 0)
     #expect(HUDMaterial.glassContainerSpacing < HUDMetrics.controlSpacing)

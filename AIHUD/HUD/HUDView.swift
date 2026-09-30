@@ -5,6 +5,8 @@ import SwiftUI
 struct HUDView: View {
     @Bindable var model: HUDModel
     var store: EndpointStore
+    /// Offscreen height probe. It must not take the live prompt editor or report line height.
+    var measuresOnly = false
     @State private var promptHeight = HUDMetrics.rowHeight
     @State private var scrollerVisible = false
     @Bindable private var preview = DebugPreviewStore.shared
@@ -18,7 +20,6 @@ struct HUDView: View {
                     override: override,
                     endpoint: store.selectedEndpoint ?? ChatEndpointCatalog.onDeviceEndpoint
                 ),
-                shimmerStyle: preview.cardShimmer,
                 orbChoice: preview.cardOrb
             )
             if !model.session.chips.isEmpty {
@@ -43,7 +44,6 @@ struct HUDView: View {
 
     private func promptRow(
         idleSlot: HUDIdleSlot,
-        shimmerStyle: InFlightShimmerStyle,
         orbChoice: ThinkingOrbChoice
     ) -> some View {
         HStack(alignment: .center, spacing: 10) {
@@ -75,43 +75,36 @@ struct HUDView: View {
             }
             .id(model.logoOverride)
             .frame(width: 18, height: 18)
-            ZStack(alignment: .leading) {
-                PromptField(
-                    text: Binding(
-                        get: { model.session.draft },
-                        set: { model.setDraft($0) }
-                    ),
-                    placeholder: model.dictating && model.session.draft.isEmpty ? "Listening..." : "Ask anything...",
-                    multiline: model.displayedMultiline,
-                    isEditable: PromptInFlightPolicy.isEditable(phase: model.session.phase),
-                    onSubmit: { model.submit() },
-                    onReady: { model.promptEditor = $0 },
-                    onHeight: { height in
-                        let line = PromptLayout.lineHeight(for: PromptLayout.font())
-                        let extra = max(0, height - HUDMetrics.rowHeight)
-                        let lines = model.displayedMultiline
-                            ? min(PromptLayout.maxVisibleLines, 1 + Int((extra / max(line, 1)).rounded()))
-                            : 1
-                        let heightChanged = promptHeight != height
-                        let linesChanged = model.promptLineCount != lines
-                        promptHeight = height
-                        model.promptLineCount = lines
-                        if heightChanged || linesChanged {
-                            model.onLayout()
-                        }
+            PromptField(
+                text: Binding(
+                    get: { model.session.draft },
+                    set: { model.setDraft($0) }
+                ),
+                placeholder: model.dictating && model.session.draft.isEmpty ? "Listening..." : "Ask anything...",
+                multiline: model.displayedMultiline,
+                isEditable: PromptInFlightPolicy.isEditable(phase: model.session.phase),
+                showsInFlightShimmer: showsInFlightShimmer,
+                onSubmit: { model.submit() },
+                onReady: { editor in
+                    guard !measuresOnly else { return }
+                    model.promptEditor = editor
+                },
+                onHeight: { height in
+                    guard !measuresOnly else { return }
+                    let line = PromptLayout.lineHeight(for: PromptLayout.font())
+                    let extra = max(0, height - HUDMetrics.rowHeight)
+                    let lines = model.displayedMultiline
+                        ? min(PromptLayout.maxVisibleLines, 1 + Int((extra / max(line, 1)).rounded()))
+                        : 1
+                    let heightChanged = promptHeight != height
+                    let linesChanged = model.promptLineCount != lines
+                    promptHeight = height
+                    model.promptLineCount = lines
+                    if heightChanged || linesChanged {
+                        model.onLayout()
                     }
-                )
-                .opacity(showsInFlightShimmer ? 0 : 1)
-
-                if showsInFlightShimmer {
-                    InFlightPromptShimmer(
-                        text: model.session.draft,
-                        style: shimmerStyle
-                    )
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .allowsHitTesting(false)
                 }
-            }
+            )
             Button(action: model.submitOrStop) {
                 if ReplyWaitingChrome.showsComposingOrb(
                     phase: model.session.phase,
@@ -318,25 +311,29 @@ struct HUDView: View {
     }
 
     private var toolbar: some View {
-        HUDToolbarCluster {
-            presetToggle
-            captureControl
-            Button(action: model.addContext) {
-                HStack(spacing: 6) {
-                    Image(systemName: "paperclip")
-                    Text("Add context")
+        HStack(alignment: .center, spacing: 0) {
+            HStack(spacing: HUDMetrics.controlSpacing) {
+                presetToggle
+                captureControl
+                Button(action: model.addContext) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "paperclip")
+                        Text("Add context")
+                    }
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
                 }
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-        } trailing: {
-            if store.savesHistory {
-                historyGhostButton
-            } else {
-                shortcutBadge
+            Spacer(minLength: HUDMetrics.controlSpacing)
+            HStack(spacing: HUDMetrics.controlSpacing) {
+                if store.savesHistory {
+                    historyGhostButton
+                } else {
+                    shortcutBadge
+                }
+                micButton
             }
-            micButton
         }
         .frame(width: HUDLayout.rowWidth, height: HUDMetrics.rowHeight)
         .clipped()

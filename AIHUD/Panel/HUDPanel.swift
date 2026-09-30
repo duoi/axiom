@@ -19,6 +19,57 @@ enum HUDEscape {
     }
 }
 
+enum HUDShortcut: Equatable {
+    case cyclePreset
+    case cycleCapture
+    case addContext
+    case toggleIncognito
+    case toggleDictation
+}
+
+enum HUDShortcuts {
+    /// Control chords while the card is key. Command, Option, and Shift stay with the field.
+    static func action(
+        characters: String?,
+        control: Bool,
+        command: Bool,
+        option: Bool,
+        shift: Bool,
+        panelIsKey: Bool,
+        menuTracking: Bool,
+        hasAttachedSheet: Bool
+    ) -> HUDShortcut? {
+        guard panelIsKey, !menuTracking, !hasAttachedSheet, control, !command, !option, !shift else {
+            return nil
+        }
+        switch characters?.lowercased() {
+        case "a": return .cyclePreset
+        case "s": return .cycleCapture
+        case "c": return .addContext
+        case "i": return .toggleIncognito
+        case "'": return .toggleDictation
+        default: return nil
+        }
+    }
+}
+
+enum HUDCaptureCycle {
+    /// Control-S: arm the current target, switch Screen/Window, then disarm.
+    static func advance(
+        armed: Bool,
+        target: CaptureTarget,
+        toggledOption: Bool
+    ) -> (armed: Bool, target: CaptureTarget, toggledOption: Bool) {
+        if !armed {
+            return (true, target, false)
+        }
+        if !toggledOption {
+            return (true, target == .screen ? .window : .screen, true)
+        }
+        return (false, target, false)
+    }
+}
+
 /// Quick panel show/hide fade. Same duration as the overlay scroller.
 enum HUDPanelFade {
     static let duration: TimeInterval = HUDLayout.scrollerFadeDuration
@@ -33,6 +84,63 @@ enum HUDPanelFade {
     }
 }
 
+/// Window-frame resize. Same 160ms ease as the panel fade. Reduce Motion is instant.
+enum HUDFrameMotion {
+    static func duration(reduceMotion: Bool) -> TimeInterval {
+        HUDPanelFade.animationDuration(reduceMotion: reduceMotion)
+    }
+
+    /// Symmetric ease in-out. Halfway in time is halfway across the rect.
+    static func easeInOut(_ linear: Double) -> Double {
+        let t = min(1, max(0, linear))
+        return t * t * (3 - 2 * t)
+    }
+
+    /// Tops within 1pt share one top. A raised reply (past 15 lines) is the case that moves it.
+    static let topPinTolerance: CGFloat = 1
+
+    static func pinsTop(from start: NSRect, to end: NSRect) -> Bool {
+        abs(start.maxY - end.maxY) <= topPinTolerance
+    }
+
+    static func frame(from start: NSRect, to end: NSRect, linearProgress: Double) -> NSRect {
+        let t = CGFloat(easeInOut(linearProgress))
+        if t <= 0 { return start }
+        if t >= 1 { return end }
+        let x = start.origin.x + (end.origin.x - start.origin.x) * t
+        let width = start.width + (end.width - start.width) * t
+        let height = start.height + (end.height - start.height) * t
+        if pinsTop(from: start, to: end) {
+            return NSRect(x: x, y: start.maxY - height, width: width, height: height)
+        }
+        return NSRect(
+            x: x,
+            y: start.origin.y + (end.origin.y - start.origin.y) * t,
+            width: width,
+            height: height
+        )
+    }
+
+    /// Non-flipped plate. The host keeps its fitting height and its top on the plate top.
+    /// A taller reply hangs below the plate (negative y) until the window catches up.
+    /// A shorter reply leaves empty plate below it. Spare room is never above the field.
+    static func promptHostFrame(
+        plateWidth: CGFloat,
+        plateHeight: CGFloat,
+        contentHeight: CGFloat
+    ) -> NSRect {
+        let height = contentHeight > 1 ? contentHeight : plateHeight
+        return NSRect(x: 0, y: plateHeight - height, width: plateWidth, height: height)
+    }
+
+    static func matches(_ lhs: NSRect, _ rhs: NSRect) -> Bool {
+        abs(lhs.origin.x - rhs.origin.x) < 0.5
+            && abs(lhs.origin.y - rhs.origin.y) < 0.5
+            && abs(lhs.size.width - rhs.size.width) < 0.5
+            && abs(lhs.size.height - rhs.size.height) < 0.5
+    }
+}
+
 final class HUDPanel: NSPanel {
     var onCancel: (() -> Void)?
     var menuTracking = false
@@ -41,6 +149,18 @@ final class HUDPanel: NSPanel {
     private let cardWidth: CGFloat = HUDMetrics.cardWidth
     private var fadeToken = 0
     private(set) var isFadingOut = false
+    var onFrameStep: (() -> Void)?
+    private var frameTimer: Timer?
+    private var frameAnim: FrameAnim?
+
+    private struct FrameAnim {
+        var from: NSRect
+        var to: NSRect
+        var start: TimeInterval
+        var duration: TimeInterval
+    }
+
+    var isAnimatingFrame: Bool { frameAnim != nil }
 
     init() {
         super.init(
@@ -134,6 +254,7 @@ final class HUDPanel: NSPanel {
             x: visible.midX - size.width / 2,
             y: visible.midY - size.height / 2
         )
+        cancelFrameAnimation()
         didPlace = false
         replyPinTopMaxY = nil
         setFrame(NSRect(origin: origin, size: size), display: true)
@@ -151,30 +272,119 @@ final class HUDPanel: NSPanel {
         chromeHeight: CGFloat = HUDMetrics.minCardHeight,
         animated: Bool
     ) {
+        let current = presentedFrame()
         if replyPinTopMaxY == nil {
             let extraUp = HUDLayout.replyExtraUpHeight(lines: replyLines)
-            replyPinTopMaxY = frame.maxY - extraUp
+            replyPinTopMaxY = current.maxY - extraUp
         }
         let visible = screen?.visibleFrame
         var next = HUDLayout.frameForReplyGrowth(
-            x: frame.origin.x,
-            pinTopMaxY: replyPinTopMaxY ?? frame.maxY,
+            x: current.origin.x,
+            pinTopMaxY: replyPinTopMaxY ?? current.maxY,
             height: height,
             replyLines: replyLines,
             chromeHeight: chromeHeight,
             visibleFrame: visible
         )
-        guard next != frame else { return }
-        if !didPlace {
-            next.origin = frame.origin
-            _ = animated
-            setFrame(next, display: true)
-            invalidateShadow()
+        if let anim = frameAnim, HUDFrameMotion.matches(anim.to, next) {
             return
         }
-        _ = animated
-        setFrame(next, display: true)
+        if !didPlace {
+            next.origin = frame.origin
+            finishFrameAnimation(at: next)
+            return
+        }
+        if HUDFrameMotion.matches(current, next) {
+            finishFrameAnimation(at: next)
+            return
+        }
+        let duration = animated
+            ? HUDFrameMotion.duration(
+                reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            )
+            : 0
+        if duration == 0 {
+            finishFrameAnimation(at: next)
+            return
+        }
+        frameAnim = FrameAnim(
+            from: current,
+            to: next,
+            start: Date().timeIntervalSinceReferenceDate,
+            duration: duration
+        )
+        if !HUDFrameMotion.matches(frame, current) {
+            setFrame(current, display: false)
+        }
+        startFrameTimer()
+    }
+
+    /// Instant absence for a screen shot. No fade, and no AppKit window-close shrink.
+    func concealForCapture() {
+        cancelFrameAnimation()
+        fadeToken += 1
+        isFadingOut = false
+        animationBehavior = .none
+        alphaValue = 0
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        orderOut(nil)
+        NSAnimationContext.endGrouping()
+    }
+
+    private func presentedFrame() -> NSRect {
+        guard let anim = frameAnim else { return frame }
+        let linear = (Date().timeIntervalSinceReferenceDate - anim.start) / anim.duration
+        if linear >= 1 { return anim.to }
+        return HUDFrameMotion.frame(from: anim.from, to: anim.to, linearProgress: linear)
+    }
+
+    private func finishFrameAnimation(at rect: NSRect) {
+        cancelFrameAnimation()
+        setFrame(rect, display: true)
         invalidateShadow()
+    }
+
+    private func cancelFrameAnimation() {
+        frameAnim = nil
+        stopFrameTimer()
+    }
+
+    private func startFrameTimer() {
+        guard frameTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.stepFrameAnimation()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        frameTimer = timer
+    }
+
+    private func stopFrameTimer() {
+        frameTimer?.invalidate()
+        frameTimer = nil
+    }
+
+    private func stepFrameAnimation() {
+        guard let anim = frameAnim else {
+            stopFrameTimer()
+            return
+        }
+        let linear = (Date().timeIntervalSinceReferenceDate - anim.start) / anim.duration
+        if linear >= 1 {
+            frameAnim = nil
+            setFrame(anim.to, display: false)
+            invalidateShadow()
+            stopFrameTimer()
+            onFrameStep?()
+            displayIfNeeded()
+            return
+        }
+        let rect = HUDFrameMotion.frame(from: anim.from, to: anim.to, linearProgress: linear)
+        setFrame(rect, display: false)
+        onFrameStep?()
+        displayIfNeeded()
     }
 
     func reveal() {

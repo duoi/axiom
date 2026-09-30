@@ -14,10 +14,6 @@ enum HUDMaterial {
         reduceTransparency
     }
 
-    static func pillIsMatte(preference: Bool, reduceTransparency: Bool, cardIsKey: Bool) -> Bool {
-        preference || reduceTransparency || !cardIsKey
-    }
-
     static func clampAmount(_ value: Double) -> Double {
         min(max(value, 0), 1)
     }
@@ -26,12 +22,6 @@ enum HUDMaterial {
     static func veilOpacity(glassAmount: Double) -> Double {
         let amount = clampAmount(glassAmount)
         return amount >= 0.99 ? 0 : 1 - amount
-    }
-
-    /// AppKit `effectIsInteractive` exists on macOS 27+. Keep it off: a click
-    /// must not distort the card.
-    static func prefersInteractiveGlass(isControlBackdrop: Bool, osMajorVersion: Int) -> Bool {
-        false
     }
 
     /// Zero batches similar descendant glass without merging shapes that only sit nearby.

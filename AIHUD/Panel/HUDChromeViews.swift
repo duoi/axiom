@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 
 @MainActor
@@ -71,6 +72,7 @@ final class HUDChromeWrapper: NSView {
         }
         plate?.frame = NSRect(x: 0, y: plateY, width: width, height: card)
         (plate as? CardGlassView)?.includeNarrowLip = hasLip
+        plate?.layoutSubtreeIfNeeded()
         (plate as? CardGlassView)?.containKeyFringe()
     }
 }
@@ -133,6 +135,55 @@ final class ClickThroughHosting<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
+/// Sits between the glass and the SwiftUI host. The glass shrink-wraps an NSHostingView
+/// onto the AppKit bottom. This view fills the plate, and the host keeps its own height
+/// with its top on the plate top, so the field cannot drop while the window eases.
+final class PromptAnchorView: NSView {
+    let host: NSView
+
+    init(host: NSView) {
+        self.host = host
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
+        clipsToBounds = true
+        host.autoresizingMask = []
+        if host.superview !== self {
+            host.removeFromSuperview()
+            addSubview(host)
+        }
+    }
+
+    required init?(coder: NSCoder) { return nil }
+
+    override var isOpaque: Bool { false }
+
+    override func layout() {
+        super.layout()
+        let fitted = host.fittingSize.height
+        // The 10_000pt measure proposal is not a real card. Using it pins the
+        // prompt thousands of points above the clip, so the glass looks empty.
+        let content = (fitted > 1 && fitted < HUDLayout.hostingFitSize.height - 1)
+            ? fitted
+            : bounds.height
+        let next = HUDFrameMotion.promptHostFrame(
+            plateWidth: bounds.width,
+            plateHeight: bounds.height,
+            contentHeight: content
+        )
+        guard host.frame != next else { return }
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        NSAnimationContext.current.allowsImplicitAnimation = false
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        host.frame = next
+        CATransaction.commit()
+        NSAnimationContext.endGrouping()
+    }
+}
+
 /// Keeps the window frame from painting a square behind the rounded plate.
 final class CardGlassView: NSGlassEffectView {
     var includeNarrowLip = false
@@ -140,7 +191,30 @@ final class CardGlassView: NSGlassEffectView {
 
     override func layout() {
         super.layout()
+        pinContentToPlate()
         containKeyFringe()
+    }
+
+    /// The glass holder follows this view, not the SwiftUI fitting size.
+    private func pinContentToPlate() {
+        guard let content = contentView else { return }
+        let holder = content.superview
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        NSAnimationContext.current.allowsImplicitAnimation = false
+        if let holder, holder !== self {
+            holder.clipsToBounds = true
+            if holder.frame != bounds {
+                holder.frame = bounds
+            }
+        }
+        let parent = (holder != nil && holder !== self) ? holder! : self
+        content.clipsToBounds = true
+        if content.frame != parent.bounds {
+            content.frame = parent.bounds
+        }
+        NSAnimationContext.endGrouping()
+        content.layoutSubtreeIfNeeded()
     }
 
     override func viewDidMoveToWindow() {
@@ -202,6 +276,11 @@ final class SolidCardView: NSView {
 
     override func layout() {
         super.layout()
-        subviews.forEach { $0.frame = bounds }
+        for child in subviews {
+            if child.frame != bounds {
+                child.frame = bounds
+            }
+            child.layoutSubtreeIfNeeded()
+        }
     }
 }

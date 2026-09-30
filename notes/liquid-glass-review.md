@@ -8,45 +8,15 @@ This is a macOS 26 menu-bar HUD, not an iOS app. Rules that are iOS-only are cal
 
 Compared against the live views, `HUDMetrics`, and `notes/references/launcher-hud.jpg`. No restyle in this pass.
 
+## Accepted for this plate
+
+One `NSGlassEffectView` sits inside `NSGlassEffectContainerView` at spacing 0. There is no SwiftUI `GlassEffectContainer`. Agent, Screen, chips, and the shortcut badge are fills inside `contentView`, not sibling glass and not `.buttonStyle(.glass)`. `effectIsInteractive` stays off because a click flexes the 560-point plate. Do not add `glassEffect` or turn the flag on to match the skill.
+
 ## Gaps
-
-### 1. Nested glass without a container (HUD card + pills)
-
-**Where:** `AIHUD/Panel/HUDController.swift` (`CardGlassView` / `NSGlassEffectView` as the card), `AIHUD/HUD/GlassPill.swift` (`GlassBackdrop` → a second `NSGlassEffectView`), `AIHUD/HUD/HUDView.swift` (`presetToggle`, `captureControl` backgrounds).
-
-**Skill:** Glass cannot sample other glass. Multiple glass shapes belong in one `GlassEffectContainer` so they render together, blend, and morph. `applying-to-custom-views.md`: extra containers and effects outside a container degrade performance.
-
-The card is one glass plate. Agent and armed Screen each add another plate on top of it. There is no `GlassEffectContainer` (SwiftUI) and no `NSGlassEffectContainerView` (AppKit).
-
-### 2. Interactive glass is forced off
-
-**Where:** `HUDController.applyGlass` and `GlassBackdropView.init` set `effectIsInteractive = false` on macOS 27+.
-
-**Skill:** Custom glass should use `.interactive()` / the interactive flag so controls scale, shimmer, and react to pointer the way `.buttonStyle(.glass)` does.
-
-The HUD is pointer-first. Turning this off removes the system press/hover response the skill documents for custom controls.
-
-### 3. Toolbar is a custom HStack, not grouped system glass
-
-**Where:** `HUDView.toolbar`. Idle look vs `notes/references/launcher-hud.jpg` (left cluster, trailing shortcut).
-
-**Skill:** Toolbars get Liquid Glass from `.toolbar`. Group related actions with `ToolbarItemGroup` and split groups with `ToolbarSpacer(.fixed)` / `.flexible` (`landmarks-toolbar-glass.md`, `adopting-liquid-glass.md`). Use icons for common actions; do not mix text and icons across items that share a background. Prefer `.buttonStyle(.glass)` / `.glassProminent` over handmade glass.
-
-This row is `.buttonStyle(.plain)`: Ask/Agent (icon+text), Screen (icon+text+chevron), Add context (icon+text), shortcut glyph, mic (icon only). No spacer grouping. Submit in the prompt row is also `.plain` (`arrow.up.right` / `stop.fill`).
-
-A macOS floating panel does not need an iOS `TabView` or `NSToolbar` chrome. The skill still wants those controls as system glass buttons in one container, grouped the way the reference card is grouped (left cluster vs trailing hint).
-
-### 4. Fake materials on chips and the shortcut badge
-
-**Where:** `HUDView.chipRow` (`Capsule().fill(Color.primary.opacity(0.08))`), `HUDView.shortcutBadge` (fill + stroke, corner 5).
-
-**Skill:** Control-layer chrome is `.glassEffect` (default capsule) or `.identity` when off. Do not invent a second material on the control layer. `.clear` is for floating controls over media; `.regular` is for standard controls.
-
-These sit on the card glass and never use `glassEffect` / `NSGlassEffectView`.
 
 ### 5. Hardcoded corner radius, not concentric to the plate
 
-**Where:** `HUDMetrics.cornerRadius = 24` on the card (`HUDController.clipHosting`, `CardGlassView`) and on Settings cards. Pills use a 24pt glass view behind capsule-ish padding (`pillInset` 8).
+**Where:** `HUDMetrics.cornerRadius = 24` on the card (`HUDController.clipHosting`, `CardGlassView`) and on Settings cards. Highlighted controls use `HUDMetrics.pillInset` (8) on a capsule fill.
 
 **Skill:** Harmony = concentric corners. Custom glass should use `.rect(cornerRadius: .containerConcentric)` / `ConcentricRectangle`, not a one-size radius copied onto inner cards.
 
@@ -60,13 +30,13 @@ Settings cards reuse the HUD’s 24pt radius on a 720×680 window, so they are n
 
 The Settings window (`HUDController.makeSettingsWindow`) is a titled, closable `NSWindow` with `safeAreaRegions = []` and no resize. The same adopting doc: support arbitrary window sizes; keep safe areas so title-bar / window controls can sit correctly.
 
-### 7. Focus is hand-rolled; the prompt kills the focus ring
+### 7. The prompt kills the focus ring
 
-**Where:** `HUDMaterial.pillIsMatte` (matte when the card is not key), `PromptField` / `PromptHostView` (`focusRingType = .none` on field and scroll).
+**Where:** `PromptField` / `PromptHostView` (`focusRingType = .none` on field and scroll).
 
-**Skill:** System glass adapts to focus. Use standard controls and the system focus APIs; do not replace that with a second background. `reference.md` lists `@Environment(\.colorSchemeContrast)` next to Reduce Transparency / Reduce Motion.
+**Skill:** System glass adapts to focus. Use standard controls and the system focus APIs. `reference.md` lists `@Environment(\.colorSchemeContrast)` next to Reduce Transparency / Reduce Motion.
 
-Reduce Transparency is wired (`HUDController` rebuilds to `SolidCardView`). Focus is not: unfocused pills switch to regular/matte by policy instead of letting the glass view react. The prompt has no system focus treatment at all.
+Reduce Transparency is wired (`HUDController` rebuilds to `SolidCardView`). Resigning key does not change the capsule fill. The prompt has no system focus treatment.
 
 ### 8. Typography ignores Dynamic Type
 
@@ -100,7 +70,7 @@ Not HUD chrome. Still a documented Liquid Glass gap for the Dock/About icon.
 
 ## What already matches
 
-- Card material is real `NSGlassEffectView`, clear vs regular mapped from Appearance Glass/Matte (`HUDMaterial.effectStyle`). Matches the skill’s `.clear` (over wallpaper) vs `.regular` variants. Reference card is a clear floating plate.
+- Card material is real `NSGlassEffectView` inside `NSGlassEffectContainerView` (spacing 0), clear vs regular mapped from Appearance Glass/Matte (`HUDMaterial.effectStyle`). Reference card is a clear floating plate. Highlighted Agent and Screen are `HUDSelectionFill`, not a second glass view.
 - Reduce Transparency swaps the card to a solid plate (`HUDMaterial.usesSolidCard`). Reduce Motion zeroes panel fade (`HUDPanel`).
 - Content (prompt, reply) is not itself glass; it sits in the plate. That matches “glass frames, does not obscure.”
 - Idle metrics (560 width, 52 pt rows, left cluster / trailing shortcut) already follow `launcher-hud.jpg`. Do not restyle that layout to look like an iOS toolbar.

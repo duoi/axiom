@@ -7,6 +7,14 @@ enum ReplyWaitingChrome {
     }
 }
 
+/// Screen shots include the HUD, so the card has to leave the image.
+/// Window capture is some other window.
+enum CapturePanelConceal {
+    static func hidesPanel(target: CaptureTarget) -> Bool {
+        target == .screen
+    }
+}
+
 /// Reply band and expand chevron. Waiting with no text stays compact.
 enum HistoryChromePolicy {
     static func showsReplyRegion(

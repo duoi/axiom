@@ -538,19 +538,20 @@ import Testing
         Issue.record("unknown commands should apply the current snapshot")
     }
     #expect(unknown.shimmer == nil)
-    #expect(!unknown.usePulsingOrb)
 
     let transcript = DebugRouting.plan(command: "open-transcript", snapshot: snapshot)
     #expect(transcript.kind == .openTranscript)
 
-    let shimmer = DebugRouting.plan(command: "shimmer-grok", snapshot: snapshot)
-    #expect(shimmer.shimmer == .grokStyle)
-    #expect(shimmer.usePulsingOrb)
+    let shimmer = DebugRouting.plan(command: "shimmer-white-sweep", snapshot: snapshot)
+    #expect(shimmer.shimmer == .whiteSweep)
     if case .apply(let next) = shimmer.kind {
         #expect(next.session.phase == .waiting)
     } else {
         Issue.record("shimmer commands should apply the in-flight snapshot")
     }
+
+    let retired = DebugRouting.plan(command: "shimmer-grok", snapshot: snapshot)
+    #expect(retired.shimmer == nil)
 
     let bogusShimmer = DebugRouting.plan(command: "shimmer-nope", snapshot: snapshot)
     #expect(bogusShimmer.shimmer == nil)
@@ -564,7 +565,6 @@ import Testing
     #expect(flash.kind == .flashHighlight)
 
     let inflight = DebugRouting.plan(command: "in-flight-prompt", snapshot: snapshot)
-    #expect(inflight.usePulsingOrb)
     #expect(inflight.shimmer == nil)
 
     let stream = DebugRouting.plan(command: "stream-line", snapshot: snapshot)

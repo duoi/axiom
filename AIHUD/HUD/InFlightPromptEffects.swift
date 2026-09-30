@@ -1,46 +1,27 @@
 import SwiftUI
 
-/// Text shimmer presets from mdo91/AI-Animation-Demo. Names match the demo's
-/// AnimationKind labels. Analyzing the text and Sequential dot grid are not
-/// text shimmers (orb / grid) and are omitted here.
+/// Locked in-flight prompt treatment. One grayscale sweep. Unknown raw values
+/// fall back to it.
 enum InFlightShimmerStyle: String, CaseIterable, Identifiable, Sendable {
-    case chatGPTStyle = "chatgpt"
-    case grokStyle = "grok"
-    case shimmeringText = "shimmering-text"
-    case summerizingTheText = "summerizing-the-text"
-    case processingLabel = "processing-label"
+    case whiteSweep = "white-sweep"
 
-    static let `default`: InFlightShimmerStyle = .chatGPTStyle
+    static let `default`: InFlightShimmerStyle = .whiteSweep
 
     var id: String { rawValue }
 
-    /// Labels from AI-Animation-Demo AnimationKind.
     var title: String {
         switch self {
-        case .chatGPTStyle: "ChatGPT style"
-        case .grokStyle: "Grok style"
-        case .shimmeringText: "ShimmeringText"
-        case .summerizingTheText: "Summerizing the text"
-        case .processingLabel: "Processing label"
+        case .whiteSweep: "White sweep"
         }
     }
 
     var summary: String {
         switch self {
-        case .chatGPTStyle:
-            "Monochrome gray gradient sweep."
-        case .grokStyle:
-            "Blue to purple to pink on bold text."
-        case .shimmeringText:
-            "Base colorful gradient fill."
-        case .summerizingTheText:
-            "Secondary text with a soft highlight and a short pause."
-        case .processingLabel:
-            "Secondary text with a continuous highlight sweep."
+        case .whiteSweep:
+            "Dim white letters with a brighter highlight moving through them."
         }
     }
 
-    /// Unknown or empty raw values fall back to ChatGPT style without crashing.
     static func resolved(_ raw: String?) -> InFlightShimmerStyle {
         guard let raw, !raw.isEmpty, let style = InFlightShimmerStyle(rawValue: raw) else {
             return .default
@@ -57,146 +38,57 @@ enum InFlightShimmerStyle: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Ported from mdo91/AI-Animation-Demo ShimmeringText, with every text preset.
-/// TimelineView is forced unpaused and scenePhase active for the HUD panel.
+/// Dim white glyphs with a white linear-gradient highlight masked to the letters.
+/// TimelineView stays unpaused and scenePhase is forced active because the
+/// nonactivating HUD panel reports background and would otherwise freeze the clock.
 struct InFlightPromptShimmer: View {
     var text: String
     var style: InFlightShimmerStyle = .default
-    /// Nil keeps the style's demo weight at the prompt row size.
-    var font: Font? = nil
 
     var body: some View {
-        let preset = style.preset
-        let resolvedFont = font ?? style.promptFont
+        let _ = style
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
-            let phase = Self.phase(
-                at: context.date,
-                duration: preset.duration,
-                repeatDelay: preset.repeatDelay
-            )
-            Text(text)
-                .font(resolvedFont)
-                .foregroundStyle(preset.usesOverlay ? Color.secondary : .clear)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            let phase = Self.bandPhase(at: context.date, duration: Self.bandDuration)
+            glyph(text)
+                .foregroundStyle(Color.white.opacity(0.38))
                 .overlay {
                     GeometryReader { geometry in
-                        shimmerBand(in: geometry, phase: phase, preset: preset)
+                        let width = max(geometry.size.width, 1)
+                        let band = max(width * 0.42, 36)
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0),
+                                Color.white,
+                                Color.white.opacity(0),
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: band, height: geometry.size.height, alignment: .leading)
+                        .offset(x: -band + phase * (width + band))
                     }
-                    .mask(
-                        Text(text)
-                            .font(resolvedFont)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    )
-                    .blendMode(preset.usesOverlay ? .plusLighter : .normal)
+                    .mask { glyph(text) }
                 }
         }
         .environment(\.scenePhase, .active)
         .accessibilityLabel(text)
     }
 
-    @ViewBuilder
-    private func shimmerBand(
-        in geometry: GeometryProxy,
-        phase: CGFloat,
-        preset: ShimmerPreset
-    ) -> some View {
-        let width = geometry.size.width
-        if preset.usesOverlay {
-            let bandWidth = max(width * 0.6, 24)
-            LinearGradient(
-                colors: preset.gradientColors,
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: bandWidth, height: geometry.size.height, alignment: .leading)
-            .offset(x: -bandWidth + phase * (width + bandWidth))
-        } else {
-            LinearGradient(
-                colors: preset.gradientColors,
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: width * 3, height: geometry.size.height, alignment: .leading)
-            .offset(x: -width * 2 + phase * width * 2)
-        }
+    private func glyph(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: PromptLayout.fontSize))
+            .lineLimit(1)
+            .truncationMode(.tail)
     }
 
-    /// 0...1 during the sweep, then 0 while resting for `repeatDelay`.
-    static func phase(at date: Date, duration: TimeInterval, repeatDelay: TimeInterval) -> CGFloat {
-        let cycleLength = duration + repeatDelay
-        guard cycleLength > 0 else { return 0 }
-        let cyclePosition = date.timeIntervalSinceReferenceDate
-            .truncatingRemainder(dividingBy: cycleLength)
-        guard cyclePosition < duration else { return 0 }
-        return CGFloat(cyclePosition / duration)
-    }
-}
+    static let bandDuration: TimeInterval = 1.8
 
-private struct ShimmerPreset: Sendable {
-    var gradientColors: [Color]
-    var duration: TimeInterval
-    var repeatDelay: TimeInterval
-    var usesOverlay: Bool
-}
-
-private extension InFlightShimmerStyle {
-    /// Demo fonts scaled to the prompt row so the field height stays stable.
-    var promptFont: Font {
-        switch self {
-        case .chatGPTStyle:
-            .system(size: PromptLayout.fontSize).weight(.medium)
-        case .grokStyle:
-            .system(size: PromptLayout.fontSize, design: .rounded).weight(.semibold)
-        case .shimmeringText:
-            .system(size: PromptLayout.fontSize, design: .rounded).weight(.bold)
-        case .summerizingTheText:
-            .system(size: PromptLayout.fontSize).weight(.regular)
-        case .processingLabel:
-            .system(size: PromptLayout.fontSize).weight(.medium)
-        }
-    }
-
-    var preset: ShimmerPreset {
-        switch self {
-        case .chatGPTStyle:
-            let gray = Color.secondary
-            return ShimmerPreset(
-                gradientColors: [gray, gray.opacity(0.45), gray, gray.opacity(0.45), gray],
-                duration: 2.0,
-                repeatDelay: 0,
-                usesOverlay: false
-            )
-        case .grokStyle:
-            return ShimmerPreset(
-                gradientColors: [.blue, .purple, .pink, .blue],
-                duration: 2.0,
-                repeatDelay: 0,
-                usesOverlay: false
-            )
-        case .shimmeringText:
-            return ShimmerPreset(
-                gradientColors: [.blue, .purple, .pink, .blue],
-                duration: 2.0,
-                repeatDelay: 0,
-                usesOverlay: false
-            )
-        case .summerizingTheText:
-            return ShimmerPreset(
-                gradientColors: [.clear, Color.white.opacity(0.1), .clear],
-                duration: 2.0,
-                repeatDelay: 0.5,
-                usesOverlay: true
-            )
-        case .processingLabel:
-            return ShimmerPreset(
-                gradientColors: [.clear, Color.white.opacity(0.1), .clear],
-                duration: 1.5,
-                repeatDelay: 0,
-                usesOverlay: true
-            )
-        }
+    /// 0...1 across `duration`, then the next sweep starts immediately.
+    static func bandPhase(at date: Date, duration: TimeInterval) -> CGFloat {
+        guard duration > 0 else { return 0 }
+        let raw = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: duration)
+        let wrapped = raw < 0 ? raw + duration : raw
+        return CGFloat(wrapped / duration)
     }
 }
 

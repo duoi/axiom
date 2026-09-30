@@ -29,8 +29,9 @@ final class HUDModel {
         }
     }
     var captureArmed = false
+    /// Control-S has already switched Screen/Window since capture was armed.
+    var captureShortcutToggled = false
     var cardIsKey = true
-    var reduceTransparency = false
     var dictating = false
     var voiceStatus: String? {
         didSet {
@@ -69,14 +70,6 @@ final class HUDModel {
 
     var displayedMultiline: Bool {
         multilineOverride ?? store.usesMultilinePrompt
-    }
-
-    var pillIsMatte: Bool {
-        HUDMaterial.pillIsMatte(
-            preference: store.usesMatte,
-            reduceTransparency: reduceTransparency,
-            cardIsKey: cardIsKey
-        )
     }
 
     private var task: Task<Void, Never>?
@@ -386,6 +379,24 @@ final class HUDModel {
 
     func toggleCapture() {
         captureArmed.toggle()
+        if captureArmed {
+            captureShortcutToggled = false
+        }
+        screenNotice = nil
+        onLayout()
+    }
+
+    func cycleCaptureShortcut() {
+        let next = HUDCaptureCycle.advance(
+            armed: captureArmed,
+            target: displayedCaptureTarget,
+            toggledOption: captureShortcutToggled
+        )
+        captureArmed = next.armed
+        captureShortcutToggled = next.toggledOption
+        if next.target != displayedCaptureTarget {
+            setCaptureTarget(next.target)
+        }
         screenNotice = nil
         onLayout()
     }

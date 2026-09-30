@@ -1,6 +1,20 @@
 # Notes
 
+## 2026-09-30
+
+- The in-flight white sweep is drawn by the prompt field itself, with the field font, cell rect, and multiline container inset, so it sits on the typed glyphs. The SwiftUI string that used to cover a hidden field is gone from the card. The same sentence in the editable field shares the glyph box (left 101, right 589 on the 2x capture). Capture: `notes/captures/hud-shimmer-aligned.png`.
+
+- The locked in-flight prompt is a white sweep. Dim white letters get a brighter white highlight moving through them. Iridescent mesh, Ocean mesh, and Wide hue slide are gone. Shimmer previews no longer switch the send icon to the Pulsing orb. A real wait and the in-flight preview use the Composing ThinkingOrb. Pulsing orb remains a debug orb-picker choice. Capture: `notes/captures/hud-mono-shimmer.png`.
+
+- The in-flight prompt no longer uses the text presets from mdo91/AI-Animation-Demo. Removed ChatGPT style, Grok style, ShimmeringText, Summerizing the text, and Processing label. The locked draft uses Iridescent mesh: a MeshGradient masked to the glyphs, control points drifting on a cosine, from Rudrank Riyam's mesh-on-text article, with the intelligence palette pulled toward white so the 16pt line stays readable. Debug also lists Ocean mesh and Wide hue slide. Unknown shimmer names do not crash. Production sends use Iridescent mesh when Debug is off. Pulsing orb stays. Captures: `notes/captures/hud-iridescent-mesh-a.png`, `notes/captures/hud-iridescent-mesh-b.png` (2381 changed pixels in the prompt crop; the right-hand glyphs moved from pink toward blue).
+
+- While the card is key, Control-A switches Ask and Agent, Control-S cycles capture through armed, the other of Screen or Window, then off, Control-C adds context, Control-I toggles incognito, and Control-' toggles dictation. Command-A and Command-C are unchanged.
+
+- The idle card went blank because the on-screen SwiftUI host was left at the 10,000pt measurement size, so the prompt sat above the clip. Measurement now uses an offscreen host that does not install the prompt editor or report line height. The on-screen host keeps its fitting height, top pinned to the plate.
+
 ## 2026-09-29
+
+- A follow-up send eases the HUD frame over 160ms (`HUDFrameMotion.duration`, same as the panel fade). Reduce Motion resizes on the next frame. A newer size during that ease starts from the rect on screen, and the top or bottom edge stays pinned the same way `frameForReplyGrowth` already chooses. Screen capture sets alpha to 0 and orders the panel out with `animationBehavior` `.none`, takes the shot, then uses the 160ms fade to come back. Window capture leaves the card up. Chevron rules are unchanged. A still frame cannot show the ease.
 
 - Root `README.md` describes the app. `.cursor/rules/readme.mdc` says to update it when behavior, install, or publishing changes. `.github/workflows/build.yml` builds on the `xcode-27` runner and publishes `Axiom-macOS.zip`.
 

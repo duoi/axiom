@@ -28,19 +28,21 @@ Escape dismisses the card. A click outside dismisses it unless Settings has "Kee
 
 Type a prompt and press Return to send. The field is one line by default and stays vertically centered. Settings can turn on a multiline prompt. Then the field wraps, the card grows downward, and the visible field stops at 10 lines. Option-Return or Shift-Return inserts a newline. Return still sends.
 
-While a request is in flight, the field keeps the exact text you sent and cannot be edited. Dictation cannot rewrite it. Success clears the field. Failure puts the text back and unlocks it.
+While a request is in flight, the field keeps the exact text you sent and cannot be edited. That locked text shows a white highlight moving through the letters. Dictation cannot rewrite it. Success clears the field. Failure puts the text back and unlocks it.
 
 Ask and Agent are presets. Each one appends its own instruction to the endpoint system prompt. Ask asks for a short answer from what you typed or attached. Agent asks for concrete steps and tells the model it cannot run tools, browse, or change the computer. Neither preset calls tools.
 
 The logo menu lists saved providers and models, and a Reasoning submenu. The choice is the same value as Settings.
 
-Screen and Window arm the next send. Screen captures the display. Window captures the front window and needs Accessibility. The capture is not a chip. A highlight tracks the target. The card hides for the shot so it is not in the image.
+Screen and Window arm the next send. Screen captures the display. Window captures the front window and needs Accessibility. The capture is not a chip. A highlight tracks the target. A screen shot hides the card with no close animation, then fades it back in. A window shot leaves the card up, because that shot is the other window.
 
 Add context attaches up to 4 files, 4 MB each. Text files go in as text. Images are sent as JPEG. Anything else is refused.
 
 The mic button dictates into the field. While it is listening, the card shows a waveform. An empty draft shows "Listening...".
 
 When history is on, the shortcut badge swaps for an incognito mark. That mark excludes the current conversation from history. Primary means this chat is not being recorded.
+
+While the card is key, Control-A switches Ask and Agent. Control-S cycles capture: on, then the other of Screen or Window, then off. Control-C adds context. Control-I toggles incognito. Control-' starts or stops dictation.
 
 A long reply grows the card, then scrolls. The expand chevron opens the rest of the thread. Waiting with no reply text stays the compact 560 by 108 card. Assistant replies render headings, lists, links, and fenced code. What you type stays plain.
 
@@ -115,7 +117,7 @@ Settings shows the time and title. Double-click opens the thread. Screenshot sav
 
 ## Appearance
 
-Glass is the clear card. Matte is the heavier glass. The amount slider adds a veil. At 100% the glass stays clear. Unfocused pills use the same family of glass, not a black fill.
+Glass is the clear card. Matte is the heavier glass. The amount slider adds a veil. At 100% the glass stays clear. Highlighted Agent and Screen use a quiet capsule fill on the plate.
 
 ## Debug
 
