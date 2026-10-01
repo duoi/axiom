@@ -44,7 +44,7 @@ enum SSEParser {
             if let message = error["message"] as? String, !message.isEmpty {
                 return message
             }
-            return "The request failed."
+            return String(localized: "The request failed.")
         }
         if let error = object["error"] as? String, !error.isEmpty {
             return error

@@ -20,9 +20,11 @@ enum HistoryChromePolicy {
     static func showsReplyRegion(
         answer: String,
         phase: Phase,
-        historyExpanded: Bool
+        historyExpanded: Bool,
+        toolLine: String? = nil
     ) -> Bool {
         if historyExpanded { return true }
+        if let toolLine, !toolLine.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
         if !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
         if case .failed = phase { return true }
         return false
@@ -32,10 +34,16 @@ enum HistoryChromePolicy {
         answer: String,
         phase: Phase,
         historyExpanded: Bool,
-        hasUserTurns: Bool
+        hasUserTurns: Bool,
+        toolLine: String? = nil
     ) -> Bool {
         guard hasUserTurns else { return false }
-        return showsReplyRegion(answer: answer, phase: phase, historyExpanded: historyExpanded)
+        return showsReplyRegion(
+            answer: answer,
+            phase: phase,
+            historyExpanded: historyExpanded,
+            toolLine: toolLine
+        )
     }
 }
 

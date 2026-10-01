@@ -169,7 +169,7 @@ final class HistoryStore {
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.temporaryDirectory
         let folder = base
-            .appendingPathComponent("com.stevenjohns.Axiom", isDirectory: true)
+            .appendingPathComponent("com.duoi.axiom", isDirectory: true)
             .appendingPathComponent("History", isDirectory: true)
         try? fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder

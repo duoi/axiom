@@ -94,8 +94,8 @@ enum HUDCardMenu {
 
     static func title(for item: Item) -> String {
         switch item {
-        case .settings: return "Settings"
-        case .debug: return "Debug"
+        case .settings: return String(localized: "Settings")
+        case .debug: return String(localized: "Debug")
         }
     }
 
@@ -139,8 +139,8 @@ func greet() {
 }
 ```
 """#
-    static let timedOut = "The request timed out."
-    static let genericFailure = "The screen capture failed."
+    static let timedOut = String(localized: "The request timed out.")
+    static let genericFailure = String(localized: "The screen capture failed.")
     static let chipName = "notes.txt"
     static let followUp = "And the Earth?"
     static let liveStreamReply =
@@ -148,10 +148,10 @@ func greet() {
     static let streamLineReply = "The Sun's mass is about 1.989e30 kilograms."
     static let streamMultiReply =
         "The Sun's total mass is about 1.989 × 10^30 kilograms. That's roughly 333,000 times Earth's mass, and about 99.86% of all the mass in the Solar System. In other units: about 2 × 10^30 kg, or roughly 2 octillion tonnes. Same number as last time; it is not going to change."
-    static let missingKey = "Add an API key in Settings"
-    static let missingModel = "Add a model id in Settings"
-    static let signIn = "Sign in to ChatGPT in Settings"
-    static let requestFailed = "The request failed."
+    static let missingKey = String(localized: "Add an API key in Settings")
+    static let missingModel = String(localized: "Add a model id in Settings")
+    static let signIn = String(localized: "Sign in to ChatGPT in Settings")
+    static let requestFailed = String(localized: "The request failed.")
 
     static func numberedReply(lines: Int) -> String {
         guard lines > 0 else { return "" }
@@ -209,8 +209,8 @@ func greet() {
 
     static let logoChoices: [DebugLogoChoice] = {
         var rows = [
-            DebugLogoChoice(title: "On-device", command: "logo-on-device", kind: .appleIntelligence),
-            DebugLogoChoice(title: "Axiom", command: "logo-axiom", kind: .axiom)
+            DebugLogoChoice(title: String(localized: "On-device"), command: "logo-on-device", kind: .appleIntelligence),
+            DebugLogoChoice(title: String(localized: "Axiom"), command: "logo-axiom", kind: .axiom)
         ]
         for preset in ChatEndpointCatalog.cloudPresets {
             rows.append(

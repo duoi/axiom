@@ -5,4 +5,5 @@ xcuserdata/
 *.xcuserstate
 .env
 Config/dev-endpoint.json
+Config/Signing.local.xcconfig
 notes/captures/

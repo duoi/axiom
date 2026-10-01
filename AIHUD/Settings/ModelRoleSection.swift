@@ -24,7 +24,7 @@ struct ModelRoleSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
             Text(title)
                 .font(.headline)
             Text(detail)
@@ -38,28 +38,26 @@ struct ModelRoleSection: View {
                     Text(endpoint.name).tag(Optional(endpoint.id))
                 }
             }
-            if providerID == nil && allowsUnset {
-                Text("Images use the chat model.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } else if isOnDevice {
-                Text("Apple Intelligence")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
-            } else if availableModels.isEmpty {
-                TextField("Model id", text: $modelID)
-                    .textFieldStyle(.roundedBorder)
-            } else {
-                Picker("Model", selection: $modelID) {
-                    ForEach(availableModels, id: \.self) { id in
-                        Text(id).tag(id)
-                    }
-                    if !availableModels.contains(modelID) && !modelID.isEmpty {
-                        Text(modelID).tag(modelID)
-                    }
-                    if modelID.isEmpty {
-                        Text("Choose a model").tag("")
+            if providerID != nil || !allowsUnset {
+                if isOnDevice {
+                    Text("Apple Intelligence")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                } else if availableModels.isEmpty {
+                    TextField("Model id", text: $modelID)
+                        .textFieldStyle(.roundedBorder)
+                } else {
+                    Picker("Model", selection: $modelID) {
+                        ForEach(availableModels, id: \.self) { id in
+                            Text(id).tag(id)
+                        }
+                        if !availableModels.contains(modelID) && !modelID.isEmpty {
+                            Text(modelID).tag(modelID)
+                        }
+                        if modelID.isEmpty {
+                            Text("Choose a model").tag("")
+                        }
                     }
                 }
             }

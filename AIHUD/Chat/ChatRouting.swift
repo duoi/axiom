@@ -29,11 +29,11 @@ enum ChatSettings {
 }
 
 enum ChatRouting {
-    static let appleIntelligenceOff = "Apple Intelligence is off."
-    static let macNotEligible = "This Mac is not eligible for Apple Intelligence."
-    static let modelNotReady = "The on-device model is still downloading."
-    static let modelUnavailable = "The on-device model is not available."
-    static let cannotTakeImage = "The on-device model cannot take that image."
+    static let appleIntelligenceOff = String(localized: "Apple Intelligence is off.")
+    static let macNotEligible = String(localized: "This Mac is not eligible for Apple Intelligence.")
+    static let modelNotReady = String(localized: "The on-device model is still downloading.")
+    static let modelUnavailable = String(localized: "The on-device model is not available.")
+    static let cannotTakeImage = String(localized: "The on-device model cannot take that image.")
 
     static func decide(
         onDevice: Bool,

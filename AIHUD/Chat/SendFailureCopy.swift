@@ -16,11 +16,11 @@ enum SendFailureCopy {
             if case .message(let message) = auth {
                 return message
             }
-            return "Sign in to ChatGPT in Settings"
+            return String(localized: "Sign in to ChatGPT in Settings")
         }
         if let urlError = error as? URLError, urlError.code == .timedOut {
-            return "The request timed out."
+            return String(localized: "The request timed out.")
         }
-        return "The request failed."
+        return String(localized: "The request failed.")
     }
 }

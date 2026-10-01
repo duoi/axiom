@@ -27,7 +27,7 @@ enum AnthropicParser {
             return .done
         }
         if type == "error" {
-            return .failure("The request failed.")
+            return .failure(String(localized: "The request failed."))
         }
         if type == "content_block_delta",
            let delta = object["delta"] as? [String: Any],
@@ -59,8 +59,8 @@ struct AnthropicClient: Sendable {
                     let (bytes, response) = try await session.bytes(for: urlRequest)
                     DebugHTTPTranscript.recordStatus(response)
                     guard let http = response as? HTTPURLResponse else {
-                        continuation.yield(.failure("The request failed."))
-                        DebugHTTPTranscript.recordFailure("The request failed.")
+                        continuation.yield(.failure(String(localized: "The request failed.")))
+                        DebugHTTPTranscript.recordFailure(String(localized: "The request failed."))
                         continuation.finish()
                         return
                     }
@@ -71,7 +71,7 @@ struct AnthropicClient: Sendable {
                             if data.count > 64 * 1024 { break }
                         }
                         DebugHTTPTranscript.recordErrorBody(data)
-                        let message = SSEParser.errorMessage(from: data) ?? "The request failed (\(http.statusCode))."
+                        let message = SSEParser.errorMessage(from: data) ?? String(localized: "The request failed (\(http.statusCode)).")
                         continuation.yield(.failure(message))
                         DebugHTTPTranscript.recordFailure(message)
                         continuation.finish()
@@ -80,9 +80,11 @@ struct AnthropicClient: Sendable {
 
                     var sawDone = false
                     var sawToken = false
+                    var lines: [String] = []
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
                         DebugHTTPTranscript.recordLine(line)
+                        lines.append(line)
                         switch AnthropicParser.parse(line: line) {
                         case .skip:
                             continue
@@ -91,7 +93,9 @@ struct AnthropicClient: Sendable {
                             continuation.yield(.token(token))
                         case .done:
                             sawDone = true
-                            continuation.yield(.done)
+                            for event in ToolCallAssembler.trailingEvents(wire: .anthropic, lines: lines) {
+                                continuation.yield(event)
+                            }
                             DebugHTTPTranscript.recordFinished()
                             continuation.finish()
                             return
@@ -103,11 +107,14 @@ struct AnthropicClient: Sendable {
                         }
                     }
                     if !sawDone {
-                        if sawToken {
-                            continuation.yield(.done)
+                        let assembled = ToolCallAssembler.anthropic(lines: lines)
+                        if sawToken || !assembled.calls.isEmpty {
+                            for event in ToolCallAssembler.trailingEvents(wire: .anthropic, lines: lines) {
+                                continuation.yield(event)
+                            }
                         } else {
-                            continuation.yield(.failure("The response ended early."))
-                            DebugHTTPTranscript.recordFailure("The response ended early.")
+                            continuation.yield(.failure(String(localized: "The response ended early.")))
+                            DebugHTTPTranscript.recordFailure(String(localized: "The response ended early."))
                             continuation.finish()
                             return
                         }
@@ -149,6 +156,37 @@ struct AnthropicBody: Encodable {
         var type: String
         var text: String?
         var source: Source?
+        var id: String? = nil
+        var name: String? = nil
+        var input: [String: String]? = nil
+        var toolUseID: String? = nil
+        var content: String? = nil
+        var isError: Bool? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case text
+            case source
+            case id
+            case name
+            case input
+            case content
+            case toolUseID = "tool_use_id"
+            case isError = "is_error"
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(type, forKey: .type)
+            try container.encodeIfPresent(text, forKey: .text)
+            try container.encodeIfPresent(source, forKey: .source)
+            try container.encodeIfPresent(id, forKey: .id)
+            try container.encodeIfPresent(name, forKey: .name)
+            try container.encodeIfPresent(input, forKey: .input)
+            try container.encodeIfPresent(toolUseID, forKey: .toolUseID)
+            try container.encodeIfPresent(content, forKey: .content)
+            try container.encodeIfPresent(isError, forKey: .isError)
+        }
     }
 
     struct Message: Encodable {
@@ -172,6 +210,7 @@ struct AnthropicBody: Encodable {
     var system: String?
     var messages: [Message]
     var thinking: Thinking?
+    var tools: [AgentToolWire.Anthropic]?
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -180,6 +219,7 @@ struct AnthropicBody: Encodable {
         case system
         case messages
         case thinking
+        case tools
     }
 
     init(request: ChatRequest) {
@@ -192,10 +232,19 @@ struct AnthropicBody: Encodable {
             thinking = nil
             maxTokens = 4_096
         }
+        tools = request.tools.isEmpty ? nil : AgentToolWire.anthropic(request.tools)
         var systemText = ""
         var outbound: [Message] = []
+        var pendingResults: [Part] = []
+        func flushResults() {
+            if !pendingResults.isEmpty {
+                outbound.append(Message(role: "user", content: pendingResults))
+                pendingResults = []
+            }
+        }
         for message in request.messages {
             if message.role == "system" {
+                flushResults()
                 if systemText.isEmpty {
                     systemText = message.text
                 } else {
@@ -203,6 +252,18 @@ struct AnthropicBody: Encodable {
                 }
                 continue
             }
+            if message.role == "tool" {
+                pendingResults.append(
+                    Part(
+                        type: "tool_result",
+                        toolUseID: message.toolCallID,
+                        content: message.text,
+                        isError: message.toolIsError ? true : nil
+                    )
+                )
+                continue
+            }
+            flushResults()
             var parts: [Part] = []
             if !message.text.isEmpty {
                 parts.append(Part(type: "text", text: message.text, source: nil))
@@ -216,11 +277,22 @@ struct AnthropicBody: Encodable {
                     )
                 )
             }
+            for call in message.toolCalls {
+                parts.append(
+                    Part(
+                        type: "tool_use",
+                        id: call.id,
+                        name: call.name,
+                        input: AgentTools.stringObject(from: call.arguments)
+                    )
+                )
+            }
             if parts.isEmpty {
                 parts.append(Part(type: "text", text: message.text, source: nil))
             }
             outbound.append(Message(role: message.role, content: parts))
         }
+        flushResults()
         system = systemText.isEmpty ? nil : systemText
         messages = outbound
     }
@@ -233,5 +305,6 @@ struct AnthropicBody: Encodable {
         try container.encodeIfPresent(system, forKey: .system)
         try container.encode(messages, forKey: .messages)
         try container.encodeIfPresent(thinking, forKey: .thinking)
+        try container.encodeIfPresent(tools, forKey: .tools)
     }
 }

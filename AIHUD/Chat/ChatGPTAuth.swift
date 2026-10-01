@@ -104,7 +104,7 @@ enum ChatGPTAuth {
     static func parseAuthorizationInput(_ input: String) throws -> (code: String, state: String?) {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            throw ChatGPTAuthError.message("Paste the authorization code to continue.")
+            throw ChatGPTAuthError.message(String(localized: "Paste the authorization code to continue."))
         }
         if let url = URL(string: trimmed), let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
             if let code = components.queryItems?.first(where: { $0.name == "code" })?.value?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -118,7 +118,7 @@ enum ChatGPTAuth {
             let code = trimmed[..<hash].trimmingCharacters(in: .whitespacesAndNewlines)
             let state = trimmed[trimmed.index(after: hash)...].trimmingCharacters(in: .whitespacesAndNewlines)
             guard !code.isEmpty else {
-                throw ChatGPTAuthError.message("Paste the authorization code to continue.")
+                throw ChatGPTAuthError.message(String(localized: "Paste the authorization code to continue."))
             }
             return (code, state.isEmpty ? nil : state)
         }
@@ -127,7 +127,7 @@ enum ChatGPTAuth {
 
     static func assertState(session: ConnectSession, parsedState: String?) throws {
         if let parsedState, parsedState != session.state {
-            throw ChatGPTAuthError.message("This sign-in expired. Try connecting again.")
+            throw ChatGPTAuthError.message(String(localized: "This sign-in expired. Try connecting again."))
         }
     }
 
@@ -138,7 +138,7 @@ enum ChatGPTAuth {
             "code": code,
             "redirect_uri": redirectURI,
             "code_verifier": verifier
-        ], fallback: "Could not connect ChatGPT subscription.")
+        ], fallback: String(localized: "Could not connect ChatGPT subscription."))
     }
 
     static func refresh(_ credential: Credential) async throws -> Credential {
@@ -146,7 +146,7 @@ enum ChatGPTAuth {
             "grant_type": "refresh_token",
             "client_id": clientID,
             "refresh_token": credential.refresh
-        ], fallback: "Could not refresh ChatGPT subscription.", previous: credential)
+        ], fallback: String(localized: "Could not refresh ChatGPT subscription."), previous: credential)
         if next.accountId == nil {
             next.accountId = credential.accountId
         }
@@ -155,7 +155,7 @@ enum ChatGPTAuth {
 
     static func freshCredential(_ secret: String) async throws -> Credential {
         guard let credential = parse(secret) else {
-            throw ChatGPTAuthError.message("Sign in to ChatGPT in Settings")
+            throw ChatGPTAuthError.message(String(localized: "Sign in to ChatGPT in Settings"))
         }
         if isFresh(credential) {
             return credential
@@ -288,7 +288,7 @@ final class OAuthCallbackServer: @unchecked Sendable {
 
     func listen() async throws -> URL {
         if listener != nil {
-            throw ChatGPTAuthError.message("Sign-in is already waiting.")
+            throw ChatGPTAuthError.message(String(localized: "Sign-in is already waiting."))
         }
         let parameters = NWParameters.tcp
         parameters.acceptLocalOnly = true
@@ -301,7 +301,7 @@ final class OAuthCallbackServer: @unchecked Sendable {
             }
             listener.stateUpdateHandler = { [weak self] state in
                 if case .failed = state {
-                    self?.finish(.failure(ChatGPTAuthError.message("Could not listen for ChatGPT sign-in. Paste the redirect URL.")))
+                    self?.finish(.failure(ChatGPTAuthError.message(String(localized: "Could not listen for ChatGPT sign-in. Paste the redirect URL."))))
                 }
             }
             listener.start(queue: .main)
@@ -322,10 +322,11 @@ final class OAuthCallbackServer: @unchecked Sendable {
             if let url = URL(string: "http://localhost:\(ChatGPTAuth.callbackPort)\(target)"),
                url.path == "/auth/callback"
             {
-                self.reply(connection, status: 200, body: "<html><body>You can close this window and return to Axiom.</body></html>")
+                let sentence = String(localized: "You can close this window and return to Axiom.")
+                self.reply(connection, status: 200, body: "<html><body>\(sentence)</body></html>")
                 self.finish(.success(url))
             } else {
-                self.reply(connection, status: 404, body: "Not found")
+                self.reply(connection, status: 404, body: String(localized: "Not found"))
             }
         }
     }

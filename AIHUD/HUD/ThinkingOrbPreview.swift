@@ -53,18 +53,18 @@ enum ThinkingOrbChoice: String, CaseIterable, Identifiable, Sendable {
     var usesPulsingOrb: Bool { self == .pulsingOrb }
 
     var title: String {
-        if usesPulsingOrb { return "Pulsing orb" }
+        if usesPulsingOrb { return String(localized: "Pulsing orb") }
         guard let design else { return rawValue }
-        return usesGlow ? "\(design.title) glow" : design.title
+        return usesGlow ? String(localized: "\(design.title) glow") : design.title
     }
 
     var summary: String {
         if usesPulsingOrb {
-            return "Blue-purple rings from AI-Animation-Demo. Debug send icon only."
+            return String(localized: "Blue-purple rings from AI-Animation-Demo. Debug send icon only.")
         }
         guard let design else { return "" }
         return usesGlow
-            ? "\(design.summary). Conic intelligence palette on the dots."
+            ? String(localized: "\(design.summary). Conic intelligence palette on the dots.")
             : design.summary
     }
 

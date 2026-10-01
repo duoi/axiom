@@ -6,10 +6,12 @@ struct ChatRequest: Sendable {
     var apiKey: String
     var messages: [OutboundMessage]
     var reasoningEffort: ReasoningEffort = ReasoningEffort.default
+    var tools: [AgentToolDefinition] = []
 }
 
 enum ChatStreamEvent: Equatable, Sendable {
     case token(String)
+    case toolCalls([ToolCall], truncated: Bool)
     case done
     case failure(String)
 }
@@ -72,8 +74,8 @@ struct ChatClient: Sendable {
                     let (bytes, response) = try await session.bytes(for: urlRequest)
                     DebugHTTPTranscript.recordStatus(response)
                     guard let http = response as? HTTPURLResponse else {
-                        continuation.yield(.failure("The request failed."))
-                        DebugHTTPTranscript.recordFailure("The request failed.")
+                        continuation.yield(.failure(String(localized: "The request failed.")))
+                        DebugHTTPTranscript.recordFailure(String(localized: "The request failed."))
                         continuation.finish()
                         return
                     }
@@ -84,7 +86,7 @@ struct ChatClient: Sendable {
                             if data.count > 64 * 1024 { break }
                         }
                         DebugHTTPTranscript.recordErrorBody(data)
-                        let message = SSEParser.errorMessage(from: data) ?? "The request failed (\(http.statusCode))."
+                        let message = SSEParser.errorMessage(from: data) ?? String(localized: "The request failed (\(http.statusCode)).")
                         continuation.yield(.failure(message))
                         DebugHTTPTranscript.recordFailure(message)
                         continuation.finish()
@@ -93,9 +95,11 @@ struct ChatClient: Sendable {
 
                     var sawDone = false
                     var sawToken = false
+                    var lines: [String] = []
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
                         DebugHTTPTranscript.recordLine(line)
+                        lines.append(line)
                         switch SSEParser.parse(line: line) {
                         case .skip:
                             continue
@@ -104,7 +108,9 @@ struct ChatClient: Sendable {
                             continuation.yield(.token(token))
                         case .done:
                             sawDone = true
-                            continuation.yield(.done)
+                            for event in ToolCallAssembler.trailingEvents(wire: .completions, lines: lines) {
+                                continuation.yield(event)
+                            }
                             DebugHTTPTranscript.recordFinished()
                             continuation.finish()
                             return
@@ -116,11 +122,14 @@ struct ChatClient: Sendable {
                         }
                     }
                     if !sawDone {
-                        if sawToken {
-                            continuation.yield(.done)
+                        let assembled = ToolCallAssembler.completions(lines: lines)
+                        if sawToken || !assembled.calls.isEmpty {
+                            for event in ToolCallAssembler.trailingEvents(wire: .completions, lines: lines) {
+                                continuation.yield(event)
+                            }
                         } else {
-                            continuation.yield(.failure("The response ended early."))
-                            DebugHTTPTranscript.recordFailure("The response ended early.")
+                            continuation.yield(.failure(String(localized: "The response ended early.")))
+                            DebugHTTPTranscript.recordFailure(String(localized: "The response ended early."))
                             continuation.finish()
                             return
                         }
@@ -172,6 +181,8 @@ struct ChatBody: Encodable {
     struct Message: Encodable {
         var role: String
         var content: Content
+        var toolCalls: [ToolCall] = []
+        var toolCallID: String? = nil
 
         enum Content: Encodable {
             case string(String)
@@ -187,27 +198,84 @@ struct ChatBody: Encodable {
                 }
             }
         }
+
+        enum CodingKeys: String, CodingKey {
+            case role
+            case content
+            case toolCalls = "tool_calls"
+            case toolCallID = "tool_call_id"
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(role, forKey: .role)
+            if toolCallID != nil {
+                try container.encode(content, forKey: .content)
+                try container.encodeIfPresent(toolCallID, forKey: .toolCallID)
+                return
+            }
+            if !toolCalls.isEmpty {
+                if case .string(let value) = content, value.isEmpty {
+                    try container.encodeNil(forKey: .content)
+                } else {
+                    try container.encode(content, forKey: .content)
+                }
+                try container.encode(toolCalls.map(EncodedToolCall.init), forKey: .toolCalls)
+                return
+            }
+            try container.encode(content, forKey: .content)
+        }
+    }
+
+    struct EncodedToolCall: Encodable {
+        var id: String
+        var type = "function"
+        var function: Function
+
+        struct Function: Encodable {
+            var name: String
+            var arguments: String
+        }
+
+        init(_ call: ToolCall) {
+            id = call.id
+            function = Function(name: call.name, arguments: call.arguments)
+        }
     }
 
     var model: String
     var stream: Bool
     var messages: [Message]
     var reasoningEffort: String
+    var tools: [AgentToolWire.OpenAI]?
 
     enum CodingKeys: String, CodingKey {
         case model
         case stream
         case messages
         case reasoningEffort = "reasoning_effort"
+        case tools
     }
 
     init(request: ChatRequest) {
         model = request.model
         stream = true
         reasoningEffort = request.reasoningEffort.openAIValue
+        tools = request.tools.isEmpty ? nil : AgentToolWire.openAI(request.tools)
         messages = request.messages.map { message in
+            if message.toolCallID != nil {
+                return Message(
+                    role: message.role,
+                    content: .string(message.text),
+                    toolCallID: message.toolCallID
+                )
+            }
             if message.imageJPEGs.isEmpty {
-                return Message(role: message.role, content: .string(message.text))
+                return Message(
+                    role: message.role,
+                    content: .string(message.text),
+                    toolCalls: message.toolCalls
+                )
             }
             var parts = [Part(type: "text", text: message.text, imageURL: nil)]
             for data in message.imageJPEGs {
@@ -220,7 +288,7 @@ struct ChatBody: Encodable {
                     )
                 )
             }
-            return Message(role: message.role, content: .parts(parts))
+            return Message(role: message.role, content: .parts(parts), toolCalls: message.toolCalls)
         }
     }
 
@@ -230,5 +298,6 @@ struct ChatBody: Encodable {
         try container.encode(stream, forKey: .stream)
         try container.encode(messages, forKey: .messages)
         try container.encode(reasoningEffort, forKey: .reasoningEffort)
+        try container.encodeIfPresent(tools, forKey: .tools)
     }
 }

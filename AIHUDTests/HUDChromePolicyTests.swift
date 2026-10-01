@@ -291,29 +291,55 @@ import Testing
 }
 
 @Test func controlShortcutsApplyOnlyWhileTheCardIsKey() {
-    let key = (
-        control: true,
-        command: false,
-        option: false,
-        shift: false,
-        panelIsKey: true,
-        menuTracking: false,
-        hasAttachedSheet: false
-    )
-    #expect(HUDShortcuts.action(characters: "a", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .cyclePreset)
-    #expect(HUDShortcuts.action(characters: "A", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .cyclePreset)
-    #expect(HUDShortcuts.action(characters: "s", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .cycleCapture)
-    #expect(HUDShortcuts.action(characters: "c", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .addContext)
-    #expect(HUDShortcuts.action(characters: "i", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .toggleIncognito)
-    #expect(HUDShortcuts.action(characters: "'", control: key.control, command: key.command, option: key.option, shift: key.shift, panelIsKey: key.panelIsKey, menuTracking: key.menuTracking, hasAttachedSheet: key.hasAttachedSheet) == .toggleDictation)
-    #expect(HUDShortcuts.action(characters: "a", control: false, command: true, option: false, shift: false, panelIsKey: true, menuTracking: false, hasAttachedSheet: false) == nil)
-    #expect(HUDShortcuts.action(characters: "a", control: true, command: true, option: false, shift: false, panelIsKey: true, menuTracking: false, hasAttachedSheet: false) == nil)
-    #expect(HUDShortcuts.action(characters: "a", control: true, command: false, option: true, shift: false, panelIsKey: true, menuTracking: false, hasAttachedSheet: false) == nil)
-    #expect(HUDShortcuts.action(characters: "a", control: true, command: false, option: false, shift: true, panelIsKey: true, menuTracking: false, hasAttachedSheet: false) == nil)
-    #expect(HUDShortcuts.action(characters: "a", control: true, command: false, option: false, shift: false, panelIsKey: false, menuTracking: false, hasAttachedSheet: false) == nil)
-    #expect(HUDShortcuts.action(characters: "a", control: true, command: false, option: false, shift: false, panelIsKey: true, menuTracking: true, hasAttachedSheet: false) == nil)
-    #expect(HUDShortcuts.action(characters: "a", control: true, command: false, option: false, shift: false, panelIsKey: true, menuTracking: false, hasAttachedSheet: true) == nil)
-    #expect(HUDShortcuts.action(characters: "k", control: true, command: false, option: false, shift: false, panelIsKey: true, menuTracking: false, hasAttachedSheet: false) == nil)
+    func act(
+        keyCode: UInt16,
+        control: Bool = false,
+        command: Bool = false,
+        option: Bool = false,
+        shift: Bool = false,
+        panelIsKey: Bool = true,
+        menuTracking: Bool = false,
+        hasAttachedSheet: Bool = false,
+        isComposing: Bool = false,
+        bindings: [HUDShortcut: [BoundShortcut]] = HUDShortcuts.defaults
+    ) -> HUDShortcut? {
+        HUDShortcuts.action(
+            keyCode: keyCode,
+            control: control,
+            command: command,
+            option: option,
+            shift: shift,
+            panelIsKey: panelIsKey,
+            menuTracking: menuTracking,
+            hasAttachedSheet: hasAttachedSheet,
+            isComposing: isComposing,
+            bindings: bindings
+        )
+    }
+
+    #expect(act(keyCode: 0, control: true) == .cyclePreset)
+    #expect(act(keyCode: 1, control: true) == .cycleCapture)
+    #expect(act(keyCode: 8, control: true) == .addContext)
+    #expect(act(keyCode: 15, control: true) == .toggleIncognito)
+    #expect(act(keyCode: 39, control: true) == .toggleDictation)
+    #expect(act(keyCode: 53) == .hide)
+    #expect(act(keyCode: 36) == .send)
+    #expect(act(keyCode: 36, option: true) == .newline)
+    #expect(act(keyCode: 36, shift: true) == .newline)
+    #expect(act(keyCode: 76) == .send)
+    #expect(act(keyCode: 0, command: true) == nil)
+    #expect(act(keyCode: 0, control: true, command: true) == nil)
+    #expect(act(keyCode: 0, control: true, option: true) == nil)
+    #expect(act(keyCode: 0, control: true, shift: true) == nil)
+    #expect(act(keyCode: 0, control: true, panelIsKey: false) == nil)
+    #expect(act(keyCode: 0, control: true, menuTracking: true) == nil)
+    #expect(act(keyCode: 0, control: true, hasAttachedSheet: true) == nil)
+    #expect(act(keyCode: 36, isComposing: true) == nil)
+    #expect(act(keyCode: 0, control: true, isComposing: true) == nil)
+    let recording = BoundShortcut(keyCode: 15, control: true, command: false, option: false, shift: false)
+    #expect(HUDShortcuts.defaults[.toggleIncognito] == [recording])
+    #expect(act(keyCode: 15, control: true, bindings: [.toggleIncognito: [recording]]) == .toggleIncognito)
+    #expect(act(keyCode: 0, control: true, bindings: [.toggleIncognito: [recording]]) == nil)
 }
 
 @Test func controlSCyclesCaptureOnThenTheOtherTargetThenOff() {

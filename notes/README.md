@@ -1,6 +1,32 @@
 # Notes
 
+## 2026-10-01
+
+- A long reply follows the newest line while tokens are still arriving. Scrolling up holds that place. Returning to the end follows again. Growing text is not treated as a scroll. Capture: `notes/captures/hud-reply-tail.png` (40-line reply, last line in view).
+
+- The error lip uncovers as the window grows downward. The plate stays on the top edge for the whole 160ms ease, including while the gap is still shorter than 28pt, so the card no longer shifts up and then drops back. Dismiss slides the lip back under the same way. A still cannot show the ease. Settled capture: `notes/captures/hud-error-lip-emerge.png`.
+
+- User-facing copy is set up for localization. English stays in the source. `AIHUD/Localizable.xcstrings` is the string catalog, and `AIHUD/InfoPlist.xcstrings` holds the privacy prompts. Model prompts stay in code. They are saved settings, and they contain the `%datetime%` token.
+
+- Card shortcuts stay out of the way while the field has marked text, so Return can confirm an input method. Quitting or replacing the session during an open-link prompt declines that prompt instead of leaving the wait hanging. A failed Anthropic tool result sets `is_error`.
+
+- The repo no longer contains a development signing identity, a home-directory path, or a cleartext exception for a private host. Debug signing is ad-hoc unless `Config/Signing.local.xcconfig` sets one. A Debug build allows `http` for loopback and for the gitignored dev endpoint host, and writes that host into the built app's App Transport Security exceptions only.
+
+- The bundle id is `com.duoi.axiom`. Keychain items and history use that id. An existing install under the old id will not see its old keys or chats.
+
 ## 2026-09-30
+
+- Card shortcuts are recorders in Settings, General. Recording defaults to Control-R. The HUD control notes show the saved shortcut.
+
+- Settings and HUD help text matches the controls. Experimental, reasoning, the folder, and the hotkey say what they do. The always-on ad-hoc microphone sentence is gone. HUD controls that had no tooltip now have one.
+
+- The Models provider table is as tall as its rows, up to five, then it scrolls.
+
+- Chat model, Reasoning effort, Vision model, and Request timeout sit in a two-by-two grid on Settings, Models. Reasoning effort is to the right of the chat model.
+
+- Ask is the default. The Ask/Agent control is hidden until Settings, Models, Experimental is checked and that provider's Agent box is checked. Agent mode is one checkbox in the provider table. It shows the control, starts the card in Agent, and turns on tools. On-device still does not call tools. Ask keeps the short prompt.
+
+- Experimental Agent tools are off until that Models checkbox is checked. With it on, cloud Agent can fetch a page, open a link, and search one folder chosen there. glob, grep, and read stay inside that folder. The choice is an app-scoped security bookmark. Open asks on the card. Ask, on-device, and an unchecked box keep the one-shot send. Idle card stays 560 by 108 against `notes/references/launcher-hud.jpg`. Captures: `notes/captures/hud-experimental-idle.png`, `notes/captures/settings-experimental.png`. The tool line and Yes or No show only while a tool is running.
 
 - The in-flight white sweep is drawn by the prompt field itself, with the field font, cell rect, and multiline container inset, so it sits on the typed glyphs. The SwiftUI string that used to cover a hidden field is gone from the card. The same sentence in the editable field shares the glyph box (left 101, right 589 on the 2x capture). Capture: `notes/captures/hud-shimmer-aligned.png`.
 
@@ -57,15 +83,15 @@
 - Capture highlight and dictation use an Apple Intelligence-style animated glow (ported from Livsy90/IntelligenceGlow; the package is iOS-only so it is not an SPM dependency). Debug has Flash capture glow (`flash-highlight`). Older captures: `notes/captures/hud-dictate-glow.png`, `notes/captures/hud-capture-glow.png`, `notes/captures/hud-capture-glow-panel.png`.
 
 - History is one conversation per HUD session (upsert by `historyID`); Settings History shows Time + Title, double-click opens a scrollable detail sheet with every turn and saved screenshots; Accessibility sits beside mic/speech and Screen Recording; Settings opens at 760×640.
-- The app is Axiom, bundle id `com.stevenjohns.Axiom`.
-- Debug signs with Manual `CODE_SIGN_IDENTITY` `Apple Development: steven@sjohns.net (6V6MHJBVWL)` and `DEVELOPMENT_TEAM` `S7D8Q56TGV` in `project.yml` (Release stays ad-hoc `-`). Stable signing keeps the cdhash across rebuilds so Microphone / Screen Recording TCC entries should stick; allow those once for `com.stevenjohns.Axiom` in System Settings → Privacy & Security if prompted. Do not edit the TCC database. Screen capture no longer calls `CGRequestScreenCaptureAccess` on send; the mic button only reads status, and Wake on Axiom only requests when status is `.notDetermined`. Settings → General → Permissions has buttons that request mic/speech or Screen Recording when undecided, or open the matching Privacy pane when denied.
+- The app is Axiom, bundle id `com.duoi.axiom`.
+- Debug signing in the repo is ad-hoc via `Config/Signing.xcconfig`. A gitignored `Config/Signing.local.xcconfig` can set a local Apple Development identity so the cdhash stays stable and Microphone / Screen Recording TCC entries stick. Release stays ad-hoc. Allow those once for `com.duoi.axiom` in System Settings → Privacy & Security if prompted. Do not edit the TCC database. Screen capture no longer calls `CGRequestScreenCaptureAccess` on send; the mic button only reads status, and Wake on Axiom only requests when status is `.notDetermined`. Settings → General → Permissions has buttons that request mic/speech or Screen Recording when undecided, or open the matching Privacy pane when denied.
 
 - Expand chevron stays in the send/mic trailing column outside the reply text so "Thinking…" cannot push or overlap it. Capture: `notes/captures/hud-chevron-thinking.png`.
 
 - Screenshot sends no longer collapse ChatGPT `response.failed` (and nested `response.error`) or auth/timeout throws into generic "The request failed."; image routing again forwards vision credentials, and capture/permission copy stays distinct.
 - Expanded history caps at the same 30-line reply budget (15 down, then 15 up) and clamps inside `visibleFrame`, so a long thread scrolls instead of pushing the panel off screen. Capture: `notes/captures/hud-history-capped.png`.
 
-- Settings History (off by default) stores completed chats under Application Support `com.stevenjohns.Axiom/History`; when history is on the HUD toolbar swaps the hotkey badge for an ephemeral toggle (`ghost` when available, otherwise `theatermasks`). Capture: `notes/captures/hud-history-ghost.png`.
+- Settings History (off by default) stores completed chats under Application Support `com.duoi.axiom/History`; when history is on the HUD toolbar swaps the hotkey badge for an ephemeral toggle (`ghost` when available, otherwise `theatermasks`). Capture: `notes/captures/hud-history-ghost.png`.
 
 - Escape dismisses the card whenever it is key, including when the reply is first responder. Right-click on the card offers Settings, plus Debug when `--debug` or the status-item Debug gate is on.
 

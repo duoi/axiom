@@ -10,7 +10,7 @@ struct HistoryDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.title.isEmpty ? "Conversation" : entry.title)
+                    Text(entry.title.isEmpty ? String(localized: "Conversation") : entry.title)
                         .font(.headline)
                         .lineLimit(2)
                     Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened))
@@ -29,7 +29,7 @@ struct HistoryDetailView: View {
                 LazyVStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
                     ForEach(Array(entry.turns.enumerated()), id: \.offset) { _, turn in
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(turn.role == "user" ? "You" : "Axiom")
+                            Text(turn.role == "user" ? String(localized: "You") : String(localized: "Axiom"))
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                             if !turn.text.isEmpty {

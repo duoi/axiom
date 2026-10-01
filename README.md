@@ -30,7 +30,7 @@ Type a prompt and press Return to send. The field is one line by default and sta
 
 While a request is in flight, the field keeps the exact text you sent and cannot be edited. That locked text shows a white highlight moving through the letters. Dictation cannot rewrite it. Success clears the field. Failure puts the text back and unlocks it.
 
-Ask and Agent are presets. Each one appends its own instruction to the endpoint system prompt. Ask asks for a short answer from what you typed or attached. Agent asks for concrete steps and tells the model it cannot run tools, browse, or change the computer. Neither preset calls tools.
+The card opens in Ask. Ask appends a short-answer instruction to the endpoint system prompt. The Ask/Agent control stays hidden until Experimental is checked and that provider's Agent box is checked in the Models table. That checkbox defaults off. Agent mode shows the control, starts the card in Agent, and turns on tools for a cloud provider. The model can fetch a page, open a link, and search one folder chosen in that same card. glob lists paths, grep searches file contents, and read returns a line window. Those three stay inside the folder. Opening a link asks on the card first. Ask does not call tools. On-device Agent still does not call tools.
 
 The logo menu lists saved providers and models, and a Reasoning submenu. The choice is the same value as Settings.
 
@@ -40,17 +40,17 @@ Add context attaches up to 4 files, 4 MB each. Text files go in as text. Images 
 
 The mic button dictates into the field. While it is listening, the card shows a waveform. An empty draft shows "Listening...".
 
-When history is on, the shortcut badge swaps for an incognito mark. That mark excludes the current conversation from history. Primary means this chat is not being recorded.
+When history is on, the shortcut badge swaps for an incognito mark. The mark starts dim, and that chat is still saved. Click the mark, or press Control-R, and it turns solid. That chat is left out of history.
 
-While the card is key, Control-A switches Ask and Agent. Control-S cycles capture: on, then the other of Screen or Window, then off. Control-C adds context. Control-I toggles incognito. Control-' starts or stops dictation.
+While the card is key, and that model has Agent mode on, Control-A switches Ask and Agent. Control-S cycles capture: on, then the other of Screen or Window, then off. Control-C adds context. Control-R skips recording this chat. Control-' starts or stops dictation. Settings, General lists each of these as a recorder, along with Escape, Return, and the two multiline line breaks. The card's controls show the shortcut you saved.
 
-A long reply grows the card, then scrolls. The expand chevron opens the rest of the thread. Waiting with no reply text stays the compact 560 by 108 card. Assistant replies render headings, lists, links, and fenced code. What you type stays plain.
+A long reply grows the card, then scrolls. While tokens are still arriving, the reply stays on the newest line until you scroll away. The expand chevron opens the rest of the thread. Waiting with no reply text stays the compact 560 by 108 card. Assistant replies render headings, lists, links, and fenced code. What you type stays plain.
 
 Errors sit on a lip under the card so the toolbar stays inside the glass. A timeout, a missing key, a missing model, a sign-in failure, and a screen-recording denial each keep their own sentence.
 
 ## Models
 
-Settings has a table of endpoints. Keys live in the data-protection keychain, one item per endpoint. They are not written into the endpoint list.
+Settings, Models starts with Experimental. It is off until you check it. With it on, the provider table has an Agent checkbox. Checking it shows the Ask/Agent control and turns on tools for that provider. Keys live in the data-protection keychain, one item per endpoint. They are not written into the endpoint list.
 
 A fresh launch shows the on-device row only. Add fills a draft from a preset, or a custom host. Clicking a row selects it. Edit opens the sheet. Make default and Set as vision model are explicit.
 
@@ -89,7 +89,7 @@ OpenAI-compatible hosts use Chat Completions. Anthropic uses the Messages API. C
 
 Refresh asks the host for `/models` and keeps the saved model id when it is still in the list. Otherwise it takes the first remaining chat model. The stored URL is not rewritten. A base URL that already ends in `/chat/completions`, `/completions`, or `/messages` is used as the send URL. The models request strips those suffixes so `/v1/models` still works.
 
-Plain `http` is allowed for localhost, `127.0.0.1`, and `::1`. Other cleartext hosts are rejected. An https request will not follow a redirect onto http. A redirect onto a different host is refused, so the key is not sent there.
+Plain `http` is allowed for localhost, `127.0.0.1`, and `::1`. A Debug build also allows the host from the gitignored dev endpoint. Other cleartext hosts are rejected. An https request will not follow a redirect onto http. A redirect onto a different host is refused, so the key is not sent there.
 
 Reasoning effort is shared by Settings and the logo menu. The default is Medium when nothing is saved. A saved legacy value of `off` loads as None. OpenAI-compatible and ChatGPT send `none`, `minimal`, `low`, `medium`, or `high`. Anthropic omits thinking for None. Otherwise it sends a token budget of 1024, 2048, 8192, or 16384 and raises `max_tokens` above that budget.
 
@@ -111,7 +111,7 @@ Settings lists each permission. If macOS has not asked yet, the button requests 
 
 ## History
 
-History is off by default. When it is on, a finished conversation is stored on this Mac under Application Support `com.stevenjohns.Axiom/History`. Nothing is uploaded.
+History is off by default. When it is on, a finished conversation is stored on this Mac under Application Support `com.duoi.axiom/History`. Nothing is uploaded.
 
 Settings shows the time and title. Double-click opens the thread. Screenshot saving is a separate switch, off by default. It stores the Screen or Window JPEG with that chat. It does not copy your original files. Delete removes that chat and its stored screenshot.
 
@@ -133,7 +133,7 @@ Local tests:
 xcodebuild test -scheme Axiom -destination 'platform=macOS'
 ```
 
-Release signing in the project is ad-hoc. Debug signing on a development Mac uses the Apple Development identity in `project.yml`. The dev endpoint file `Config/dev-endpoint.json` is gitignored. `Config/dev-endpoint.example.json` has empty strings. Do not put an API key in git, logs, or error text.
+Release signing is ad-hoc. Debug signing reads `Config/Signing.xcconfig`, which is ad-hoc unless a gitignored `Config/Signing.local.xcconfig` sets a development identity. The dev endpoint file `Config/dev-endpoint.json` is gitignored. `Config/dev-endpoint.example.json` has empty strings. A Debug build copies that file into the app and, when its URL is `http`, adds an App Transport Security exception for that host in the built app only. Do not put an API key in git, logs, or error text.
 
 ## License
 

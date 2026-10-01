@@ -51,6 +51,10 @@ final class EndpointStore {
     var keepHovering: Bool {
         didSet { UserDefaults.standard.set(keepHovering, forKey: Self.hoverKey) }
     }
+    var experimentalAgent: Bool {
+        didSet { ExperimentalAgent.save(experimentalAgent, to: .standard) }
+    }
+    var agentFolderPath: String?
     var usesMultilinePrompt: Bool {
         didSet { PromptSettings.saveMultiline(usesMultilinePrompt, to: .standard) }
     }
@@ -130,6 +134,17 @@ final class EndpointStore {
     }
     let historyStore: HistoryStore
     var onAppearanceChange: () -> Void = {}
+
+    func saveAgentFolder(_ url: URL) {
+        guard let data = FolderGrant.data(for: url) else { return }
+        UserDefaults.standard.set(data, forKey: FolderGrant.defaultsKey)
+        agentFolderPath = FolderGrant.displayPath(url)
+    }
+
+    func clearAgentFolder() {
+        FolderGrant.clear(in: .standard)
+        agentFolderPath = nil
+    }
 
     init() {
         if DevCredentials.suppressesKeychain {
@@ -272,6 +287,8 @@ final class EndpointStore {
         } else {
             keepHovering = defaults.bool(forKey: Self.hoverKey)
         }
+        experimentalAgent = ExperimentalAgent.load(from: defaults)
+        agentFolderPath = FolderGrant.url(from: defaults).map(FolderGrant.displayPath)
         usesMultilinePrompt = PromptSettings.loadMultiline(from: defaults)
         captureTarget = CaptureTarget(rawValue: defaults.string(forKey: Self.captureKey) ?? "") ?? .screen
         usesMatte = defaults.bool(forKey: Self.matteKey)
@@ -303,16 +320,7 @@ final class EndpointStore {
     }
 
     var allowedCleartextHosts: Set<String> {
-        var hosts = EndpointResolver.loopbackHosts
-        if let devCleartextHost {
-            hosts.insert(devCleartextHost.lowercased())
-        }
-        for configured in endpoints.map(\.completionsURL) + [visionURL] {
-            if let host = URL(string: configured)?.host?.lowercased() {
-                hosts.insert(host)
-            }
-        }
-        return hosts
+        EndpointResolver.cleartextHosts(devHost: devCleartextHost)
     }
 
     var selectedEndpoint: ChatEndpoint? {
@@ -416,6 +424,15 @@ final class EndpointStore {
     func save() {
         persistCatalog()
         saveVision()
+    }
+
+    func setAgentMode(id: UUID, on: Bool) {
+        guard let index = endpoints.firstIndex(where: { $0.id == id }) else { return }
+        var endpoint = endpoints[index]
+        endpoint.prefersAgent = on
+        endpoint.enablesTools = on
+        endpoints[index] = endpoint
+        persistCatalog()
     }
 
     func setDefault(_ id: UUID) {

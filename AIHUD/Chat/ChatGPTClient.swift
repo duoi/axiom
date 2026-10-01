@@ -30,7 +30,7 @@ enum ResponsesParser {
                 {
                     return .failure(message)
                 }
-                return .failure("The request failed.")
+                return .failure(String(localized: "The request failed."))
             }
             return .done
         }
@@ -67,8 +67,8 @@ struct ChatGPTClient: Sendable {
                     let (bytes, response) = try await session.bytes(for: urlRequest)
                     DebugHTTPTranscript.recordStatus(response)
                     guard let http = response as? HTTPURLResponse else {
-                        continuation.yield(.failure("The request failed."))
-                        DebugHTTPTranscript.recordFailure("The request failed.")
+                        continuation.yield(.failure(String(localized: "The request failed.")))
+                        DebugHTTPTranscript.recordFailure(String(localized: "The request failed."))
                         continuation.finish()
                         return
                     }
@@ -79,7 +79,7 @@ struct ChatGPTClient: Sendable {
                             if data.count > 64 * 1024 { break }
                         }
                         DebugHTTPTranscript.recordErrorBody(data)
-                        let message = SSEParser.errorMessage(from: data) ?? "The request failed (\(http.statusCode))."
+                        let message = SSEParser.errorMessage(from: data) ?? String(localized: "The request failed (\(http.statusCode)).")
                         continuation.yield(.failure(message))
                         DebugHTTPTranscript.recordFailure(message)
                         continuation.finish()
@@ -88,9 +88,11 @@ struct ChatGPTClient: Sendable {
 
                     var sawDone = false
                     var sawToken = false
+                    var lines: [String] = []
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
                         DebugHTTPTranscript.recordLine(line)
+                        lines.append(line)
                         switch ResponsesParser.parse(line: line) {
                         case .skip:
                             continue
@@ -99,7 +101,9 @@ struct ChatGPTClient: Sendable {
                             continuation.yield(.token(token))
                         case .done:
                             sawDone = true
-                            continuation.yield(.done)
+                            for event in ToolCallAssembler.trailingEvents(wire: .responses, lines: lines) {
+                                continuation.yield(event)
+                            }
                             DebugHTTPTranscript.recordFinished()
                             continuation.finish()
                             return
@@ -111,11 +115,14 @@ struct ChatGPTClient: Sendable {
                         }
                     }
                     if !sawDone {
-                        if sawToken {
-                            continuation.yield(.done)
+                        let assembled = ToolCallAssembler.responses(lines: lines)
+                        if sawToken || !assembled.calls.isEmpty {
+                            for event in ToolCallAssembler.trailingEvents(wire: .responses, lines: lines) {
+                                continuation.yield(event)
+                            }
                         } else {
-                            continuation.yield(.failure("The response ended early."))
-                            DebugHTTPTranscript.recordFailure("The response ended early.")
+                            continuation.yield(.failure(String(localized: "The response ended early.")))
+                            DebugHTTPTranscript.recordFailure(String(localized: "The response ended early."))
                             continuation.finish()
                             return
                         }
@@ -133,8 +140,8 @@ struct ChatGPTClient: Sendable {
                         continuation.yield(.failure(message))
                         DebugHTTPTranscript.recordFailure(message)
                     } else {
-                        continuation.yield(.failure("Sign in to ChatGPT in Settings"))
-                        DebugHTTPTranscript.recordFailure("Sign in to ChatGPT in Settings")
+                        continuation.yield(.failure(String(localized: "Sign in to ChatGPT in Settings")))
+                        DebugHTTPTranscript.recordFailure(String(localized: "Sign in to ChatGPT in Settings"))
                     }
                     continuation.finish()
                 } catch {
@@ -163,8 +170,37 @@ struct ResponsesBody: Encodable {
     }
 
     struct Input: Encodable {
-        var role: String
-        var content: [Content]
+        var role: String? = nil
+        var content: [Content]? = nil
+        var type: String? = nil
+        var callID: String? = nil
+        var name: String? = nil
+        var arguments: String? = nil
+        var output: String? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case role
+            case content
+            case type
+            case name
+            case arguments
+            case output
+            case callID = "call_id"
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            if let type {
+                try container.encode(type, forKey: .type)
+                try container.encodeIfPresent(callID, forKey: .callID)
+                try container.encodeIfPresent(name, forKey: .name)
+                try container.encodeIfPresent(arguments, forKey: .arguments)
+                try container.encodeIfPresent(output, forKey: .output)
+                return
+            }
+            try container.encodeIfPresent(role, forKey: .role)
+            try container.encodeIfPresent(content, forKey: .content)
+        }
     }
 
     struct Reasoning: Encodable {
@@ -176,6 +212,7 @@ struct ResponsesBody: Encodable {
     var store: Bool
     var stream: Bool
     var reasoning: Reasoning
+    var tools: [AgentToolWire.Responses]?
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -183,6 +220,7 @@ struct ResponsesBody: Encodable {
         case store
         case stream
         case reasoning
+        case tools
     }
 
     init(request: ChatRequest) {
@@ -190,26 +228,60 @@ struct ResponsesBody: Encodable {
         store = false
         stream = true
         reasoning = Reasoning(effort: request.reasoningEffort.openAIValue)
-        input = request.messages.map { message in
-            let textType = message.role == "assistant" ? "output_text" : "input_text"
-            var content: [Content] = []
-            if !message.text.isEmpty {
-                content.append(Content(type: textType, text: message.text, imageURL: nil))
-            }
-            for data in message.imageJPEGs {
-                content.append(
-                    Content(
-                        type: "input_image",
-                        text: nil,
-                        imageURL: "data:image/jpeg;base64,\(data.base64EncodedString())"
+        tools = request.tools.isEmpty ? nil : AgentToolWire.responses(request.tools)
+        var items: [Input] = []
+        for message in request.messages {
+            if message.role == "tool" {
+                items.append(
+                    Input(
+                        type: "function_call_output",
+                        callID: message.toolCallID,
+                        output: message.text
                     )
                 )
+                continue
             }
-            if content.isEmpty {
-                content.append(Content(type: textType, text: message.text, imageURL: nil))
+            if !message.toolCalls.isEmpty {
+                if !message.text.isEmpty || !message.imageJPEGs.isEmpty {
+                    items.append(Self.inputItem(message))
+                }
+                for call in message.toolCalls {
+                    items.append(
+                        Input(
+                            type: "function_call",
+                            callID: call.id,
+                            name: call.name,
+                            arguments: call.arguments
+                        )
+                    )
+                }
+                continue
             }
-            return Input(role: message.role == "system" ? "developer" : message.role, content: content)
+            items.append(Self.inputItem(message))
         }
+        input = items
+    }
+
+    private static func inputItem(_ message: OutboundMessage) -> Input {
+        let textType = message.role == "assistant" ? "output_text" : "input_text"
+        var content: [Content] = []
+        if !message.text.isEmpty {
+            content.append(Content(type: textType, text: message.text, imageURL: nil))
+        }
+        for data in message.imageJPEGs {
+            content.append(
+                Content(
+                    type: "input_image",
+                    text: nil,
+                    imageURL: "data:image/jpeg;base64,\(data.base64EncodedString())"
+                )
+            )
+        }
+        if content.isEmpty {
+            content.append(Content(type: textType, text: message.text, imageURL: nil))
+        }
+        let role = message.role == "system" ? "developer" : message.role
+        return Input(role: role, content: content)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -219,5 +291,6 @@ struct ResponsesBody: Encodable {
         try container.encode(store, forKey: .store)
         try container.encode(stream, forKey: .stream)
         try container.encode(reasoning, forKey: .reasoning)
+        try container.encodeIfPresent(tools, forKey: .tools)
     }
 }

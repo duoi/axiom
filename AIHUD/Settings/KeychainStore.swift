@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    static let service = "com.stevenjohns.Axiom"
+    static let service = "com.duoi.axiom"
     static let chatAccount = "api-key"
     static let visionAccount = "vision-api-key"
 

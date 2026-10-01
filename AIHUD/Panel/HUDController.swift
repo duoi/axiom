@@ -19,6 +19,8 @@ final class HUDController: NSObject, NSWindowDelegate {
     private var settledCardHeight: CGFloat = HUDMetrics.minCardHeight
     private var layoutCard: CGFloat = HUDMetrics.minCardHeight
     private var layoutHasLip = false
+    /// Keeps the lip on screen for the shrink that follows a dismiss, so it slides back under the plate.
+    private var retractingLip = false
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var menuBegin: NSObjectProtocol?
@@ -256,7 +258,8 @@ final class HUDController: NSObject, NSWindowDelegate {
         let showsReply = HistoryChromePolicy.showsReplyRegion(
             answer: model.session.displayAnswer,
             phase: model.session.phase,
-            historyExpanded: model.historyExpanded
+            historyExpanded: model.historyExpanded,
+            toolLine: model.toolLine
         )
         let paddedCap = showsReply
             ? baseCap + HUDLayout.replyScrollVerticalPadding
@@ -283,7 +286,8 @@ final class HUDController: NSObject, NSWindowDelegate {
         let showsReply = HistoryChromePolicy.showsReplyRegion(
             answer: model.session.displayAnswer,
             phase: model.session.phase,
-            historyExpanded: model.historyExpanded
+            historyExpanded: model.historyExpanded,
+            toolLine: model.toolLine
         )
         if showsReply, visible > 0 {
             let region = HUDLayout.replyBodyHeight(lines: visible) + HUDLayout.replyScrollVerticalPadding
@@ -317,10 +321,16 @@ final class HUDController: NSObject, NSWindowDelegate {
         let showsReply = HistoryChromePolicy.showsReplyRegion(
             answer: model.session.displayAnswer,
             phase: model.session.phase,
-            historyExpanded: model.historyExpanded
+            historyExpanded: model.historyExpanded,
+            toolLine: model.toolLine
         )
         if showsReply {
             growthChrome += HUDLayout.replyScrollVerticalPadding
+        }
+        if hasLip {
+            retractingLip = false
+        } else if layoutHasLip {
+            retractingLip = true
         }
         panel.resizeForReply(
             to: height,
@@ -349,10 +359,19 @@ final class HUDController: NSObject, NSWindowDelegate {
             origin: .zero,
             size: NSSize(width: HUDMetrics.cardWidth, height: panel.frame.height)
         )
-        chrome?.hasLip = hasLip
+        if !panel.isAnimatingFrame {
+            retractingLip = false
+        }
+        let showLip = hasLip || retractingLip
+        let reveal = HUDLayout.lipPlacement(
+            windowHeight: panel.frame.height,
+            cardHeight: card,
+            cardWidth: HUDMetrics.cardWidth,
+            hasLip: showLip
+        ).revealed
+        chrome?.hasLip = showLip
         if panel.isAnimatingFrame {
-            let lip = hasLip ? HUDLayout.lipVisible : 0
-            chrome?.cardHeight = max(card, panel.frame.height - lip)
+            chrome?.cardHeight = max(card, panel.frame.height - reveal)
         } else {
             chrome?.cardHeight = card
         }
@@ -473,19 +492,31 @@ final class HUDController: NSObject, NSWindowDelegate {
         guard !event.isARepeat else { return false }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard let shortcut = HUDShortcuts.action(
-            characters: event.charactersIgnoringModifiers,
+            keyCode: event.keyCode,
             control: flags.contains(.control),
             command: flags.contains(.command),
             option: flags.contains(.option),
             shift: flags.contains(.shift),
             panelIsKey: panel.isVisible && panel.isKeyWindow,
             menuTracking: panel.menuTracking,
-            hasAttachedSheet: panel.attachedSheet != nil
+            hasAttachedSheet: panel.attachedSheet != nil,
+            isComposing: panel.isComposingInput,
+            bindings: CardShortcutBindings.current()
         ) else {
             return false
         }
         switch shortcut {
+        case .hide:
+            return false
+        case .send:
+            model.submit()
+        case .newline:
+            model.insertLineBreak()
         case .cyclePreset:
+            guard AgentModePolicy.showsPresetControl(
+                experimental: store.experimentalAgent,
+                prefersAgent: store.sendEndpoint(hasImage: false)?.prefersAgent == true
+            ) else { return true }
             model.setPreset(model.session.preset == .agent ? .ask : .agent)
         case .cycleCapture:
             model.cycleCaptureShortcut()

@@ -1,25 +1,48 @@
 import AppKit
 
+struct BoundShortcut: Equatable, Sendable {
+    var keyCode: UInt16
+    var control: Bool
+    var command: Bool
+    var option: Bool
+    var shift: Bool
+}
+
 enum HUDEscape {
     static let keyCode: UInt16 = 53
 
-    /// ESC dismisses whenever the panel is key. The first responder does not matter.
+    /// The hide shortcut dismisses whenever the panel is key. The first responder does not matter.
     static func shouldDismiss(
         keyCode: UInt16,
+        control: Bool = false,
+        command: Bool = false,
+        option: Bool = false,
+        shift: Bool = false,
         panelIsKey: Bool,
         menuTracking: Bool,
         hasAttachedSheet: Bool,
-        isComposing: Bool
+        isComposing: Bool,
+        bindings: [HUDShortcut: [BoundShortcut]] = HUDShortcuts.defaults
     ) -> Bool {
-        keyCode == Self.keyCode
-            && panelIsKey
-            && !menuTracking
-            && !hasAttachedSheet
-            && !isComposing
+        guard !isComposing else { return false }
+        return HUDShortcuts.action(
+            keyCode: keyCode,
+            control: control,
+            command: command,
+            option: option,
+            shift: shift,
+            panelIsKey: panelIsKey,
+            menuTracking: menuTracking,
+            hasAttachedSheet: hasAttachedSheet,
+            bindings: bindings
+        ) == .hide
     }
 }
 
 enum HUDShortcut: Equatable {
+    case hide
+    case send
+    case newline
     case cyclePreset
     case cycleCapture
     case addContext
@@ -28,28 +51,61 @@ enum HUDShortcut: Equatable {
 }
 
 enum HUDShortcuts {
-    /// Control chords while the card is key. Command, Option, and Shift stay with the field.
+    /// Keypad Enter follows Return when Send is still plain Return.
+    private static let keypadEnter: UInt16 = 76
+
+    static let defaults: [HUDShortcut: [BoundShortcut]] = [
+        .hide: [plain(53)],
+        .send: [plain(36)],
+        .newline: [
+            BoundShortcut(keyCode: 36, control: false, command: false, option: true, shift: false),
+            BoundShortcut(keyCode: 36, control: false, command: false, option: false, shift: true),
+        ],
+        .cyclePreset: [control(0)],
+        .cycleCapture: [control(1)],
+        .addContext: [control(8)],
+        .toggleIncognito: [control(15)],
+        .toggleDictation: [control(39)],
+    ]
+
     static func action(
-        characters: String?,
+        keyCode: UInt16,
         control: Bool,
         command: Bool,
         option: Bool,
         shift: Bool,
         panelIsKey: Bool,
         menuTracking: Bool,
-        hasAttachedSheet: Bool
+        hasAttachedSheet: Bool,
+        isComposing: Bool = false,
+        bindings: [HUDShortcut: [BoundShortcut]] = defaults
     ) -> HUDShortcut? {
-        guard panelIsKey, !menuTracking, !hasAttachedSheet, control, !command, !option, !shift else {
-            return nil
+        guard panelIsKey, !menuTracking, !hasAttachedSheet, !isComposing else { return nil }
+        let pressed = BoundShortcut(
+            keyCode: keyCode,
+            control: control,
+            command: command,
+            option: option,
+            shift: shift
+        )
+        let order: [HUDShortcut] = [
+            .newline, .send, .hide, .cyclePreset, .cycleCapture, .addContext, .toggleIncognito, .toggleDictation,
+        ]
+        for kind in order where bindings[kind]?.contains(pressed) == true {
+            return kind
         }
-        switch characters?.lowercased() {
-        case "a": return .cyclePreset
-        case "s": return .cycleCapture
-        case "c": return .addContext
-        case "i": return .toggleIncognito
-        case "'": return .toggleDictation
-        default: return nil
+        if pressed == plain(keypadEnter), bindings[.send]?.contains(plain(36)) == true {
+            return .send
         }
+        return nil
+    }
+
+    private static func plain(_ keyCode: UInt16) -> BoundShortcut {
+        BoundShortcut(keyCode: keyCode, control: false, command: false, option: false, shift: false)
+    }
+
+    private static func control(_ keyCode: UInt16) -> BoundShortcut {
+        BoundShortcut(keyCode: keyCode, control: true, command: false, option: false, shift: false)
     }
 }
 
@@ -210,12 +266,18 @@ final class HUDPanel: NSPanel {
 
     @discardableResult
     func handleEscapeEvent(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard HUDEscape.shouldDismiss(
             keyCode: event.keyCode,
+            control: flags.contains(.control),
+            command: flags.contains(.command),
+            option: flags.contains(.option),
+            shift: flags.contains(.shift),
             panelIsKey: isKeyWindow,
             menuTracking: menuTracking,
             hasAttachedSheet: attachedSheet != nil,
-            isComposing: isComposingInput
+            isComposing: isComposingInput,
+            bindings: CardShortcutBindings.current()
         ) else {
             return false
         }

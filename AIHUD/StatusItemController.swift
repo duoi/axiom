@@ -10,13 +10,13 @@ final class StatusItemController: NSObject {
     func start() {
         item.button?.image = Self.statusImage()
         item.button?.image?.isTemplate = true
-        item.button?.setAccessibilityLabel("Axiom")
+        item.button?.setAccessibilityLabel(String(localized: "Axiom"))
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Show", action: #selector(show), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Settings", action: #selector(settings), keyEquivalent: ","))
-        menu.addItem(NSMenuItem(title: "Debug", action: #selector(debug), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: String(localized: "Show"), action: #selector(show), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: String(localized: "Settings"), action: #selector(settings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: String(localized: "Debug"), action: #selector(debug), keyEquivalent: ""))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: String(localized: "Quit"), action: #selector(quit), keyEquivalent: "q"))
         for entry in menu.items {
             entry.target = self
         }
@@ -39,13 +39,13 @@ final class StatusItemController: NSObject {
         let main = NSMenu()
         let appItem = NSMenuItem()
         main.addItem(appItem)
-        let appMenu = NSMenu(title: "Axiom")
+        let appMenu = NSMenu(title: String(localized: "Axiom"))
         appItem.submenu = appMenu
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(settings), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(title: String(localized: "Settings…"), action: #selector(settings), keyEquivalent: ",")
         settingsItem.target = self
         appMenu.addItem(settingsItem)
         appMenu.addItem(.separator())
-        let quitItem = NSMenuItem(title: "Quit Axiom", action: #selector(quit), keyEquivalent: "")
+        let quitItem = NSMenuItem(title: String(localized: "Quit Axiom"), action: #selector(quit), keyEquivalent: "")
         quitItem.target = self
         appMenu.addItem(quitItem)
 

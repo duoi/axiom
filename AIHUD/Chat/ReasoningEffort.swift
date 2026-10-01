@@ -16,11 +16,11 @@ enum ReasoningEffort: String, CaseIterable, Identifiable, Equatable, Sendable {
 
     var title: String {
         switch self {
-        case .none: "None"
-        case .minimal: "Minimal"
-        case .low: "Low"
-        case .medium: "Medium"
-        case .high: "High"
+        case .none: String(localized: "None")
+        case .minimal: String(localized: "Minimal")
+        case .low: String(localized: "Low")
+        case .medium: String(localized: "Medium")
+        case .high: String(localized: "High")
         }
     }
 

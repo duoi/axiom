@@ -1,6 +1,6 @@
 # Liquid Glass review (Axiom)
 
-Installed skill (load this in later sessions): `/Users/stevenjohns/.agents/skills/ios-liquid-glass/SKILL.md`
+Installed skill to load in later sessions: `ios-liquid-glass`.
 
 Companion docs in the same folder: `adopting-liquid-glass.md`, `applying-to-custom-views.md`, `reference.md`, `landmarks-toolbar-glass.md`.
 

@@ -72,10 +72,47 @@ enum PromptLayout {
     }
 }
 
+enum PromptShortcut {
+    static func handle(
+        event: NSEvent?,
+        multiline: Bool,
+        insertNewline: () -> Void,
+        submit: () -> Void
+    ) -> Bool {
+        guard let event else { return false }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        switch HUDShortcuts.action(
+            keyCode: event.keyCode,
+            control: flags.contains(.control),
+            command: flags.contains(.command),
+            option: flags.contains(.option),
+            shift: flags.contains(.shift),
+            panelIsKey: true,
+            menuTracking: false,
+            hasAttachedSheet: false,
+            bindings: CardShortcutBindings.current()
+        ) {
+        case .newline:
+            if multiline { insertNewline() }
+            return true
+        case .send:
+            submit()
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 @MainActor
 protocol PromptEditing: AnyObject {
     func applyPrompt(_ text: String)
+    func insertLineBreak()
     var promptFocusView: NSView { get }
+}
+
+extension PromptEditing {
+    func insertLineBreak() {}
 }
 
 struct PromptField: NSViewRepresentable {
@@ -167,7 +204,7 @@ final class PromptHostView: NSView, PromptEditing {
     weak var delegate: PromptHostDelegate?
     private var installed = false
 
-    var placeholder: String = "Ask anything..." {
+    var placeholder: String = String(localized: "Ask anything...") {
         didSet { applyPlaceholder() }
     }
 
@@ -260,6 +297,11 @@ final class PromptHostView: NSView, PromptEditing {
         } else {
             field.applyPrompt(text)
         }
+    }
+
+    func insertLineBreak() {
+        guard isMultiline else { return }
+        textView.insertNewlineIgnoringFieldEditor(nil)
     }
 
     var promptFocusView: NSView {
@@ -560,12 +602,12 @@ final class ClickThroughTextField: NSTextField, NSTextFieldDelegate, PromptEditi
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
             if textView.hasMarkedText() { return false }
-            if NSEvent.modifierFlags.contains(.shift) {
-                textView.insertNewlineIgnoringFieldEditor(nil)
-                return true
-            }
-            onSubmit()
-            return true
+            return PromptShortcut.handle(
+                event: NSApp.currentEvent,
+                multiline: false,
+                insertNewline: { textView.insertNewlineIgnoringFieldEditor(nil) },
+                submit: onSubmit
+            )
         }
         return false
     }
@@ -586,7 +628,7 @@ final class ClickThroughScrollView: NSScrollView {
 }
 
 final class PromptTextView: NSTextView, NSTextViewDelegate, PromptEditing {
-    var placeholder = "Ask anything..." {
+    var placeholder = String(localized: "Ask anything...") {
         didSet { needsDisplay = true }
     }
     var onChange: (String) -> Void = { _ in }
@@ -672,12 +714,12 @@ final class PromptTextView: NSTextView, NSTextViewDelegate, PromptEditing {
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
             if textView.hasMarkedText() { return false }
-            if NSEvent.modifierFlags.contains(.option) || NSEvent.modifierFlags.contains(.shift) {
-                textView.insertNewlineIgnoringFieldEditor(nil)
-                return true
-            }
-            onSubmit()
-            return true
+            return PromptShortcut.handle(
+                event: NSApp.currentEvent,
+                multiline: true,
+                insertNewline: { textView.insertNewlineIgnoringFieldEditor(nil) },
+                submit: onSubmit
+            )
         }
         return false
     }

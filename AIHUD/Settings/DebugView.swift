@@ -21,7 +21,7 @@ struct DebugView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                labeled("Chat and vision") {
+                labeled(String(localized: "Chat and vision")) {
                     debugCard {
                         Text(chatLine)
                         Text(visionLine)
@@ -43,7 +43,7 @@ struct DebugView: View {
                     }
                 }
 
-                labeled("Provider mark") {
+                labeled(String(localized: "Provider mark")) {
                     debugCard {
                         Text("Display-only. Does not change chat.defaultEndpointID, chat.chatModelID, or vision ids. The waveform still wins while listening.")
                             .font(.callout)
@@ -64,7 +64,7 @@ struct DebugView: View {
                     }
                 }
 
-                labeled("Phase") {
+                labeled(String(localized: "Phase")) {
                     debugCard {
                         HStack {
                             Button("Empty") { send(.composingEmpty) }
@@ -104,7 +104,7 @@ struct DebugView: View {
                     }
                 }
 
-                labeled("Focus") {
+                labeled(String(localized: "Focus")) {
                     debugCard {
                         HStack {
                             Button("Make card key") { send(.makeKey) }
@@ -116,7 +116,7 @@ struct DebugView: View {
                     }
                 }
 
-                labeled("Toolbar") {
+                labeled(String(localized: "Toolbar")) {
                     debugCard {
                         HStack {
                             Button("Ask") { send(.ask) }
@@ -147,15 +147,15 @@ struct DebugView: View {
                     }
                 }
 
-                labeled("Intelligence Glow") {
+                labeled(String(localized: "Intelligence Glow")) {
                     intelligenceGlowDebug
                 }
 
-                labeled("Thinking orb") {
+                labeled(String(localized: "Thinking orb")) {
                     thinkingOrbDebug
                 }
 
-                labeled("Status") {
+                labeled(String(localized: "Status")) {
                     debugCard {
                         Button("Mic denied") { send(.micDenied) }
                         Button("Speech denied") { send(.speechDenied) }
@@ -181,34 +181,34 @@ struct DebugView: View {
     private var statusLine: String {
         let phase: String
         switch model.session.phase {
-        case .composing: phase = "composing"
-        case .waiting: phase = "waiting"
-        case .streaming: phase = "streaming"
-        case .finished: phase = "finished"
-        case .failed: phase = "failed"
+        case .composing: phase = String(localized: "composing")
+        case .waiting: phase = String(localized: "waiting")
+        case .streaming: phase = String(localized: "streaming")
+        case .finished: phase = String(localized: "finished")
+        case .failed: phase = String(localized: "failed")
         }
-        let focus = model.cardIsKey ? "key" : "resigned"
-        let listening = model.dictating ? "listening" : "idle mic"
-        let mark = model.logoOverride?.accessibilityName ?? "live mark"
-        return "\(phase) · \(focus) · \(listening) · \(mark)"
+        let focus = model.cardIsKey ? String(localized: "key") : String(localized: "resigned")
+        let listening = model.dictating ? String(localized: "listening") : String(localized: "idle mic")
+        let mark = model.logoOverride?.accessibilityName ?? String(localized: "live mark")
+        return String(localized: "\(phase) · \(focus) · \(listening) · \(mark)")
     }
 
     private var chatLine: String {
-        let name = model.store.selectedEndpoint?.name ?? "none"
+        let name = model.store.selectedEndpoint?.name ?? String(localized: "none")
         let modelID = model.store.chatModelID.trimmingCharacters(in: .whitespacesAndNewlines)
         if modelID.isEmpty {
-            return "Chat: \(name)"
+            return String(localized: "Chat: \(name)")
         }
-        return "Chat: \(name) · \(modelID)"
+        return String(localized: "Chat: \(name) · \(modelID)")
     }
 
     private var visionLine: String {
-        let name = model.store.visionEndpoint?.name ?? "none"
+        let name = model.store.visionEndpoint?.name ?? String(localized: "none")
         let modelID = model.store.visionModelID.trimmingCharacters(in: .whitespacesAndNewlines)
         if modelID.isEmpty {
-            return "Vision: \(name)"
+            return String(localized: "Vision: \(name)")
         }
-        return "Vision: \(name) · \(modelID)"
+        return String(localized: "Vision: \(name) · \(modelID)")
     }
 
     private var readyChatItems: [HUDModelMenu.Item] {
@@ -257,7 +257,7 @@ struct DebugView: View {
             }
             VStack(alignment: .leading, spacing: 6) {
                 InFlightPromptShimmer(
-                    text: "Locked draft while the reply streams in.",
+                    text: String(localized: "Locked draft while the reply streams in."),
                     style: preview.shimmerStyle
                 )
                 Text(preview.shimmerStyle.summary)
@@ -295,19 +295,19 @@ struct DebugView: View {
                 preview.notify()
             }
 
-            sliderRow("Padding", value: $preview.activePreset.padding, range: 2...40)
-            sliderRow("Line width scale", value: $preview.activePreset.lineWidthScale, range: 0.2...2)
-            sliderRow("Blur scale", value: $preview.activePreset.blurScale, range: 0.2...2.5)
-            sliderRow("Opacity", value: $preview.activePreset.opacity, range: 0.1...1)
-            sliderRow("Update interval", value: $preview.activePreset.updateInterval, range: 0.15...1.2)
-            sliderRow("Animation speed", value: $preview.activePreset.animationSpeed, range: 0.25...3)
+            sliderRow(String(localized: "Padding"), value: $preview.activePreset.padding, range: 2...40)
+            sliderRow(String(localized: "Line width scale"), value: $preview.activePreset.lineWidthScale, range: 0.2...2)
+            sliderRow(String(localized: "Blur scale"), value: $preview.activePreset.blurScale, range: 0.2...2.5)
+            sliderRow(String(localized: "Opacity"), value: $preview.activePreset.opacity, range: 0.1...1)
+            sliderRow(String(localized: "Update interval"), value: $preview.activePreset.updateInterval, range: 0.15...1.2)
+            sliderRow(String(localized: "Animation speed"), value: $preview.activePreset.animationSpeed, range: 0.25...3)
 
             Text("Sweep")
                 .font(.subheadline.weight(.semibold))
-            sliderRow("blurRadius", value: $preview.activePreset.blurRadius, range: 2...60)
-            sliderRow("lineWidth", value: $preview.activePreset.sweepLineWidth, range: 0.3...4)
-            sliderRow("sweepSpan", value: $preview.activePreset.sweepSpan, range: 20...220)
-            sliderRow("sweepOffset", value: $preview.activePreset.sweepOffset, range: 0...320)
+            sliderRow(String(localized: "blurRadius"), value: $preview.activePreset.blurRadius, range: 2...60)
+            sliderRow(String(localized: "lineWidth"), value: $preview.activePreset.sweepLineWidth, range: 0.3...4)
+            sliderRow(String(localized: "sweepSpan"), value: $preview.activePreset.sweepSpan, range: 20...220)
+            sliderRow(String(localized: "sweepOffset"), value: $preview.activePreset.sweepOffset, range: 0...320)
 
             HStack {
                 Button("Reset active preset") { preview.resetActivePreset() }

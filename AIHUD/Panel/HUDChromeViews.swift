@@ -56,12 +56,18 @@ final class HUDChromeWrapper: NSView {
 
     override func layout() {
         super.layout()
-        let width = bounds.width
-        let card = max(HUDMetrics.minCardHeight, min(cardHeight, bounds.height))
-        let plateY = hasLip ? HUDLayout.lipVisible : 0
-        lip?.isHidden = !hasLip
-        lip?.frame = HUDLayout.lipFrame(cardWidth: width)
-        if hasLip {
+        let placed = HUDLayout.lipPlacement(
+            windowHeight: bounds.height,
+            cardHeight: cardHeight,
+            cardWidth: bounds.width,
+            hasLip: hasLip
+        )
+        let showing = placed.revealed > 0.5
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        lip?.isHidden = !showing
+        lip?.frame = placed.lip
+        if showing {
             layer?.cornerRadius = 0
             layer?.masksToBounds = false
         } else {
@@ -70,8 +76,9 @@ final class HUDChromeWrapper: NSView {
             layer?.cornerCurve = .continuous
             layer?.masksToBounds = true
         }
-        plate?.frame = NSRect(x: 0, y: plateY, width: width, height: card)
-        (plate as? CardGlassView)?.includeNarrowLip = hasLip
+        plate?.frame = placed.plate
+        (plate as? CardGlassView)?.lipRevealed = placed.revealed
+        CATransaction.commit()
         plate?.layoutSubtreeIfNeeded()
         (plate as? CardGlassView)?.containKeyFringe()
     }
@@ -186,7 +193,7 @@ final class PromptAnchorView: NSView {
 
 /// Keeps the window frame from painting a square behind the rounded plate.
 final class CardGlassView: NSGlassEffectView {
-    var includeNarrowLip = false
+    var lipRevealed: CGFloat = 0
     override var isOpaque: Bool { false }
 
     override func layout() {
@@ -244,8 +251,8 @@ final class CardGlassView: NSGlassEffectView {
         view.focusRingType = .none
         view.layer?.isOpaque = false
         view.layer?.backgroundColor = NSColor.clear.cgColor
-        if includeNarrowLip, view !== self {
-            HUDLayout.applyLipWindowMask(to: view, hasLip: true)
+        if lipRevealed > 0.5, view !== self {
+            HUDLayout.applyLipWindowMask(to: view, revealed: lipRevealed)
             return
         }
         view.layer?.mask = nil

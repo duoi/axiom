@@ -49,4 +49,4 @@ After any change that affects the running app, rebuild the Debug Axiom.app, quit
 
 ## Out of this version
 
-No tool calls, no markdown renderer. The Agent preset only changes the system prompt.
+Ask is the default. The Ask/Agent control stays hidden until Settings, Models, Experimental is checked and that provider's Agent box is checked. The checkbox defaults off. Agent mode shows the control and turns on tools. Ask does not call tools. On-device Agent does not call tools.

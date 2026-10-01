@@ -13,11 +13,11 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .general: "General"
-        case .appearance: "Appearance"
-        case .chat: "Models"
-        case .history: "History"
-        case .about: "About"
+        case .general: String(localized: "General")
+        case .appearance: String(localized: "Appearance")
+        case .chat: String(localized: "Models")
+        case .history: String(localized: "History")
+        case .about: String(localized: "About")
         }
     }
 
@@ -49,6 +49,13 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+private struct ModelSettingsRowHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct SettingsView: View {
     @Bindable var store: EndpointStore
     @Bindable var model: HUDModel
@@ -58,6 +65,8 @@ struct SettingsView: View {
     @State private var historySelection: HistoryEntry.ID?
     @State private var historyDetail: HistoryEntry?
     @State private var permissionRefresh = 0
+    @State private var modelGridTopHeight: CGFloat = 0
+    @State private var modelGridBottomHeight: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 0) {
@@ -95,22 +104,22 @@ struct SettingsView: View {
         settingsPane {
             SettingsCard {
                 Toggle("Keep the card up", isOn: $store.keepHovering)
-                Text("When this is on, clicking another window leaves the card in place. Escape or the hotkey still dismisses it.")
+                Text("A click outside leaves the card up. Escape or the hotkey still hides it.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Toggle("Multiline prompt", isOn: $store.usesMultilinePrompt)
-                Text("Wrap the prompt and grow the card up to 10 lines. Return still sends. Option-Return inserts a line break.")
+                Text("The field wraps and the card grows, up to 10 lines. Return sends. Option-Return or Shift-Return starts a new line.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Toggle("Wake on Axiom", isOn: Binding(
                     get: { store.wakeOnAxiom },
                     set: { model.onSetWake($0) }
                 ))
-                Text("Listen for Axiom and show the card. Permission is requested here, not from the card.")
+                Text("Listens for \"Axiom\" or \"Hey Axiom\", then shows the card with the rest of the sentence.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Toggle("Pause to send", isOn: $store.pauseToSend)
-                Text("About 2 seconds of silence after a non-empty draft sends. Return still sends.")
+                Text("About 2 seconds of silence sends the prompt once it has text. Return still sends. It waits while a reply is in progress.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 if let status = model.voiceStatus, !status.isEmpty {
@@ -118,9 +127,6 @@ struct SettingsView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
-                Text(VoiceStatusCopy.adHocPermission)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
             }
             SettingsCard {
                 Text("Permissions")
@@ -141,15 +147,105 @@ struct SettingsView: View {
                         .disabled(row.isGranted)
                     }
                 }
-                Text("Ask macOS for access from here. If you already denied a prompt, the button opens System Settings. Window capture needs Accessibility.")
+                Text("The button requests access. If you already denied it, the button opens System Settings.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
             .id(permissionRefresh)
             SettingsCard {
-                KeyboardShortcuts.Recorder("Hotkey", name: .toggleHUD)
+                shortcutRow(String(localized: "Show and hide"), .toggleHUD)
+                Text("Shows and hides the card from anywhere.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Text("On the card")
+                    .font(.headline)
+                shortcutRow(String(localized: "Hide"), .hideCard)
+                shortcutRow(String(localized: "Send"), .send)
+                shortcutRow(String(localized: "New line"), .newline)
+                shortcutRow(String(localized: "New line"), .newlineShift)
+                Text("Either new-line shortcut works when multiline is on.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                shortcutRow(String(localized: "Ask and Agent"), .cyclePreset)
+                Text("Switches when that control is showing.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                shortcutRow(String(localized: "Capture"), .cycleCapture)
+                Text("Arms capture, switches Screen and Window, then turns it off.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                shortcutRow(String(localized: "Add context"), .addContext)
+                shortcutRow(String(localized: "Recording"), .toggleIncognito)
+                Text("Skips saving this chat.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                shortcutRow(String(localized: "Dictation"), .toggleDictation)
             }
         }
+    }
+
+    private func shortcutRow(_ title: String, _ name: KeyboardShortcuts.Name) -> some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: 16)
+            KeyboardShortcuts.Recorder(for: name)
+                .fixedSize()
+        }
+    }
+
+    private var experimentalBinding: Binding<Bool> {
+        Binding(
+            get: { store.experimentalAgent },
+            set: { on in
+                store.experimentalAgent = on
+                model.applyModelPreset()
+            }
+        )
+    }
+
+    private func agentBinding(_ row: ChatEndpoint) -> Binding<Bool> {
+        Binding(
+            get: { store.endpoints.first { $0.id == row.id }?.prefersAgent ?? false },
+            set: { on in
+                store.setAgentMode(id: row.id, on: on)
+                if row.id == store.defaultEndpointID {
+                    model.applyModelPreset()
+                }
+            }
+        )
+    }
+
+    /// One row per provider, capped at five. The 43 covers the header and the table's own padding so two rows do not grow a scrollbar.
+    private var providerTableHeight: CGFloat {
+        let visible = min(max(store.endpoints.count, 1), 5)
+        return 43 + CGFloat(visible) * 24
+    }
+
+    private func modelSettingsCell<Content: View>(minHeight: CGFloat, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
+            content()
+        }
+        .padding(HUDMetrics.inset)
+        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: HUDMetrics.cornerRadius, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: ModelSettingsRowHeight.self, value: proxy.size.height)
+            }
+        }
+    }
+
+    private func chooseAgentFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = String(localized: "Choose")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        store.saveAgentFolder(url)
     }
 
     private var appearancePane: some View {
@@ -160,7 +256,7 @@ struct SettingsView: View {
                     Text("Matte").tag(true)
                 }
                 .pickerStyle(.segmented)
-                Text("Glass is the clear card. Matte is the heavier glass. Neither is a solid fill.")
+                Text("Glass is clear. Matte is the heavier glass.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -170,7 +266,7 @@ struct SettingsView: View {
                 Text("\(Int(store.glassPercent.rounded()))%")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                Text("100% leaves the glass clear. Lower values add a quiet veil.")
+                Text("100% is clear. Lower values tint the card.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -179,6 +275,30 @@ struct SettingsView: View {
 
     private var chatPane: some View {
         settingsPane {
+            SettingsCard {
+                Toggle("Experimental", isOn: experimentalBinding)
+                    .toggleStyle(.checkbox)
+                Text("Shows an Agent checkbox on each provider. Checking it shows Ask and Agent on the card and lets a cloud model use tools.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                if store.experimentalAgent {
+                    HStack {
+                        Text(store.agentFolderPath ?? String(localized: "No folder selected"))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button("Choose Folder") { chooseAgentFolder() }
+                        if store.agentFolderPath != nil {
+                            Button("Clear") { store.clearAgentFolder() }
+                        }
+                    }
+                    Text("Agent can list, search, and read files here, and it stays inside this folder.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
             SettingsCard {
                 Table(store.endpoints, selection: $endpointSelection) {
                     TableColumn("Name") { endpoint in
@@ -204,8 +324,16 @@ struct SettingsView: View {
                         Text(endpoint.hostLabel.isEmpty ? "—" : endpoint.hostLabel)
                             .foregroundStyle(.secondary)
                     }
+                    if store.experimentalAgent {
+                        TableColumn("Agent") { endpoint in
+                            Toggle("Agent mode", isOn: agentBinding(endpoint))
+                                .toggleStyle(.checkbox)
+                                .labelsHidden()
+                        }
+                        .width(64)
+                    }
                 }
-                .frame(minHeight: 280)
+                .frame(height: providerTableHeight)
                 .contextMenu(forSelectionType: ChatEndpoint.ID.self) { ids in
                     if let id = ids.first, let endpoint = store.endpoints.first(where: { $0.id == id }) {
                         if EndpointTablePolicy.allowsEdit(id) {
@@ -243,86 +371,104 @@ struct SettingsView: View {
                     .disabled(selectedRow.map(ChatEndpointCatalog.isOnDevice) ?? store.endpoints.isEmpty)
                     Spacer()
                 }
-                Text("Click a row to select it. Edit opens the details. On-device cannot be edited or deleted.")
+                Text(store.experimentalAgent
+                    ? String(localized: "Check Agent to show Ask and Agent on the card and turn tools on. On-device cannot use tools.")
+                    : String(localized: "On-device cannot be edited or deleted."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            SettingsCard {
-                ModelRoleSection(
-                    title: "Chat model",
-                    detail: "Used for text sends.",
-                    store: store,
-                    providerID: Binding(
-                        get: { store.defaultEndpointID },
-                        set: { id in
-                            if let id { store.setDefault(id) }
-                        }
-                    ),
-                    modelID: Binding(
-                        get: { store.chatModelID },
-                        set: { store.chatModelID = $0; store.save() }
-                    ),
-                    allowsUnset: false
-                )
-            }
-            SettingsCard {
-                ModelRoleSection(
-                    title: "Vision model",
-                    detail: "Used when a send includes an image. Leave unset to use the chat model.",
-                    store: store,
-                    providerID: Binding(
-                        get: { store.visionEndpointID },
-                        set: { id in
-                            if let id {
-                                store.setVision(id)
-                            } else {
-                                store.clearVisionSelection()
+            VStack(spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    modelSettingsCell(minHeight: modelGridTopHeight) {
+                        ModelRoleSection(
+                            title: String(localized: "Chat model"),
+                            detail: String(localized: "Prompts with no image."),
+                            store: store,
+                            providerID: Binding(
+                                get: { store.defaultEndpointID },
+                                set: { id in
+                                    if let id {
+                                        store.setDefault(id)
+                                        model.applyModelPreset()
+                                    }
+                                }
+                            ),
+                            modelID: Binding(
+                                get: { store.chatModelID },
+                                set: { store.chatModelID = $0; store.save() }
+                            ),
+                            allowsUnset: false
+                        )
+                    }
+                    modelSettingsCell(minHeight: modelGridTopHeight) {
+                        Text("Reasoning effort")
+                            .font(.headline)
+                        Picker("Reasoning effort", selection: $store.reasoningEffort) {
+                            ForEach(ReasoningEffort.allCases) { effort in
+                                Text(effort.title).tag(effort)
                             }
                         }
-                    ),
-                    modelID: Binding(
-                        get: { store.visionModelID },
-                        set: { store.visionModelID = $0; store.save() }
-                    ),
-                    allowsUnset: true
-                )
-            }
-            SettingsCard {
-                Text("Reasoning effort")
-                    .font(.headline)
-                Picker("Reasoning effort", selection: $store.reasoningEffort) {
-                    ForEach(ReasoningEffort.allCases) { effort in
-                        Text(effort.title).tag(effort)
+                        .labelsHidden()
+                        Text("Default is Medium. OpenAI and ChatGPT send this value. Anthropic thinks unless this is None.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .labelsHidden()
-                Text("OpenAI-compatible sends reasoning_effort (none, minimal, low, medium, high). ChatGPT Responses sends reasoning.effort the same way. Anthropic enables thinking.budget_tokens only when effort is not None. Default is Medium.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            SettingsCard {
-                Text("Request timeout")
-                    .font(.headline)
-                HStack {
-                    TextField(
-                        "Seconds",
-                        value: $store.requestTimeoutSeconds,
-                        format: .number.precision(.fractionLength(0))
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 88)
-                    Text("seconds")
-                        .foregroundStyle(.secondary)
-                    Spacer()
+                .onPreferenceChange(ModelSettingsRowHeight.self) { measured in
+                    guard measured > 1, abs(modelGridTopHeight - measured) > 0.5 else { return }
+                    modelGridTopHeight = measured
                 }
-                Text("\(Int(ChatTimeoutSettings.minimumSeconds)) to \(Int(ChatTimeoutSettings.maximumSeconds)) seconds. Default \(Int(ChatTimeoutSettings.defaultSeconds)).")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 12) {
+                    modelSettingsCell(minHeight: modelGridBottomHeight) {
+                        ModelRoleSection(
+                            title: String(localized: "Vision model"),
+                            detail: String(localized: "Prompts that include an image. Same as chat uses the chat model."),
+                            store: store,
+                            providerID: Binding(
+                                get: { store.visionEndpointID },
+                                set: { id in
+                                    if let id {
+                                        store.setVision(id)
+                                    } else {
+                                        store.clearVisionSelection()
+                                    }
+                                }
+                            ),
+                            modelID: Binding(
+                                get: { store.visionModelID },
+                                set: { store.visionModelID = $0; store.save() }
+                            ),
+                            allowsUnset: true
+                        )
+                    }
+                    modelSettingsCell(minHeight: modelGridBottomHeight) {
+                        Text("Request timeout")
+                            .font(.headline)
+                        HStack {
+                            TextField(
+                                "Seconds",
+                                value: $store.requestTimeoutSeconds,
+                                format: .number.precision(.fractionLength(0))
+                            )
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 72)
+                            Text("seconds")
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("How long one reply can run. \(Int(ChatTimeoutSettings.minimumSeconds)) to \(Int(ChatTimeoutSettings.maximumSeconds)) seconds. Default is \(Int(ChatTimeoutSettings.defaultSeconds)).")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .onPreferenceChange(ModelSettingsRowHeight.self) { measured in
+                    guard measured > 1, abs(modelGridBottomHeight - measured) > 0.5 else { return }
+                    modelGridBottomHeight = measured
+                }
             }
             SettingsCard {
                 Text("Default prompt")
                     .font(.headline)
-                Text("Used when an endpoint leaves its system prompt blank. %datetime% is replaced with the current local date and time when you send.")
+                Text("Used when a provider leaves its own prompt blank. %datetime% becomes the local date and time when you send.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 TextEditor(text: $store.defaultSystemPrompt)
@@ -364,12 +510,12 @@ struct SettingsView: View {
         settingsPane {
             SettingsCard {
                 Toggle("Save chat history", isOn: $store.savesHistory)
-                Text("When on, completed chats are stored on this Mac. Nothing is uploaded.")
+                Text("A finished conversation is saved on this Mac. Nothing is uploaded.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Toggle("Also save screenshots", isOn: $store.savesHistoryScreenshots)
                     .disabled(!store.savesHistory)
-                Text("Stores the Screen/Window JPEG with that chat. Off by default. Does not save your original files.")
+                Text("Saves the Screen or Window capture with that chat.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -424,7 +570,7 @@ struct SettingsView: View {
                     .disabled(historySelection == nil)
                     Spacer()
                 }
-                Text("One row is one conversation. Double-click to read the full thread. Delete removes that chat and its stored screenshot. Your original files are not touched.")
+                Text("Double-click a row to open the thread. Delete removes that chat and its saved screenshot.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

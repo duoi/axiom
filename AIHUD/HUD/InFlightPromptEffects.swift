@@ -11,14 +11,14 @@ enum InFlightShimmerStyle: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .whiteSweep: "White sweep"
+        case .whiteSweep: String(localized: "White sweep")
         }
     }
 
     var summary: String {
         switch self {
         case .whiteSweep:
-            "Dim white letters with a brighter highlight moving through them."
+            String(localized: "Dim white letters with a brighter highlight moving through them.")
         }
     }
 

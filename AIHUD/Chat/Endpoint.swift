@@ -21,14 +21,18 @@ enum CloudSendKind: String, Equatable, Sendable {
 }
 
 enum EndpointURLWarning {
-    static let message =
-        "This looks like a chat URL. Use the API base https://host/v1."
-    static let openaiHint =
-        "Base URL only, for example https://host/v1."
-    static let anthropicHint =
-        "Base URL only, for example https://host/v1."
-    static let customHint =
-        "Base URL only, for example https://host/v1. OpenAI chat is /v1/chat/completions; Anthropic messages are /v1/messages."
+    static let message = String(
+        localized: "This looks like a chat URL. Use the API base https://host/v1."
+    )
+    static let openaiHint = String(
+        localized: "Base URL only, for example https://host/v1."
+    )
+    static let anthropicHint = String(
+        localized: "Base URL only, for example https://host/v1."
+    )
+    static let customHint = String(
+        localized: "Base URL only, for example https://host/v1. OpenAI chat is /v1/chat/completions; Anthropic messages are /v1/messages."
+    )
 
     static func message(for configured: String) -> String? {
         looksLikeChatEndpointURL(configured) ? message : nil
@@ -79,6 +83,16 @@ enum EndpointURLWarning {
 
 enum EndpointResolver {
     static let loopbackHosts: Set<String> = ["localhost", "127.0.0.1", "::1"]
+
+    /// Loopback, plus the host from the gitignored dev endpoint when that file is bundled.
+    static func cleartextHosts(devHost: String?) -> Set<String> {
+        var hosts = loopbackHosts
+        let host = devHost?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        if !host.isEmpty {
+            hosts.insert(host)
+        }
+        return hosts
+    }
 
     /// `configured` is either a base URL or a full chat completions URL.
     /// Cleartext is allowed for loopback and for `allowedCleartextHosts`.
@@ -208,6 +222,8 @@ struct ChatEndpoint: Equatable, Identifiable, Codable, Hashable, Sendable {
     var kind: EndpointKind
     var presetID: String?
     var availableModels: [String]
+    var enablesTools: Bool
+    var prefersAgent: Bool
 
     init(
         id: UUID,
@@ -217,7 +233,9 @@ struct ChatEndpoint: Equatable, Identifiable, Codable, Hashable, Sendable {
         systemPrompt: String,
         kind: EndpointKind = .openaiCompatible,
         presetID: String? = nil,
-        availableModels: [String] = []
+        availableModels: [String] = [],
+        enablesTools: Bool = false,
+        prefersAgent: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -227,6 +245,8 @@ struct ChatEndpoint: Equatable, Identifiable, Codable, Hashable, Sendable {
         self.kind = kind
         self.presetID = presetID
         self.availableModels = availableModels
+        self.enablesTools = enablesTools
+        self.prefersAgent = prefersAgent
     }
 
     init(from decoder: Decoder) throws {
@@ -238,6 +258,10 @@ struct ChatEndpoint: Equatable, Identifiable, Codable, Hashable, Sendable {
         systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? ""
         presetID = try container.decodeIfPresent(String.self, forKey: .presetID)
         availableModels = try container.decodeIfPresent([String].self, forKey: .availableModels) ?? []
+        let savedTools = try container.decodeIfPresent(Bool.self, forKey: .enablesTools) ?? false
+        let savedAgent = try container.decodeIfPresent(Bool.self, forKey: .prefersAgent) ?? false
+        prefersAgent = savedAgent || savedTools
+        enablesTools = prefersAgent
         if let kind = try container.decodeIfPresent(EndpointKind.self, forKey: .kind) {
             self.kind = kind
         } else if id == ChatEndpointCatalog.onDeviceID {
@@ -249,14 +273,14 @@ struct ChatEndpoint: Equatable, Identifiable, Codable, Hashable, Sendable {
 
     var hostLabel: String {
         if kind == .onDevice || ChatEndpointCatalog.isOnDevice(self) {
-            return "On this Mac"
+            return String(localized: "On this Mac")
         }
         return URL(string: completionsURL)?.host ?? ""
     }
 
     var modelLabel: String {
         if kind == .onDevice || ChatEndpointCatalog.isOnDevice(self) {
-            return "Apple Intelligence"
+            return String(localized: "Apple Intelligence")
         }
         return model
     }
@@ -288,15 +312,15 @@ enum EndpointSavePolicy {
             return nil
         case .chatgptSubscription:
             if draft.isNew && !draft.hasChatGPTToken {
-                return "Sign in to ChatGPT."
+                return String(localized: "Sign in to ChatGPT.")
             }
             if name.isEmpty {
-                return "Add a name."
+                return String(localized: "Add a name.")
             }
             return nil
         case .openaiCompatible, .anthropic:
-            if name.isEmpty { return "Add a name." }
-            if url.isEmpty { return "Add a base URL." }
+            if name.isEmpty { return String(localized: "Add a name.") }
+            if url.isEmpty { return String(localized: "Add a base URL.") }
             return nil
         }
     }
@@ -383,7 +407,7 @@ struct ChatEndpointCatalog: Equatable, Sendable {
     static let chatModelIDKey = "chat.chatModelID"
     static let visionModelIDKey = "chat.visionModelID"
     static let migratedName = "Default"
-    static let missingEndpointMessage = "Choose a chat model in Settings"
+    static let missingEndpointMessage = String(localized: "Choose a chat model in Settings")
     static let onDeviceID = UUID(uuidString: "00000000-0000-4000-A1D0-000000000001")!
     static let onDeviceName = "On-device"
 
@@ -744,7 +768,7 @@ struct ChatEndpointCatalog: Equatable, Sendable {
         modelID: String? = nil
     ) -> SendTarget {
         if hasImage, ModelChoice.visionIsIncomplete(vision) {
-            return .blocked("Finish the vision model in Settings")
+            return .blocked(String(localized: "Finish the vision model in Settings"))
         }
         guard let endpoint, !isOnDevice(endpoint) else {
             if hasImage, vision.isComplete {
@@ -794,18 +818,24 @@ struct ChatEndpointCatalog: Equatable, Sendable {
         case .success(let url):
             let modelID = credentials.model.trimmingCharacters(in: .whitespacesAndNewlines)
             if modelID.isEmpty {
-                return .blocked(usingVision ? "Finish the vision model in Settings" : "Add a model id in Settings")
+                return .blocked(usingVision
+                    ? String(localized: "Finish the vision model in Settings")
+                    : String(localized: "Add a model id in Settings"))
             }
             if credentials.kind == .chatgptSubscription {
                 guard ChatGPTAuth.parse(credentials.apiKey) != nil else {
-                    return .blocked("Sign in to ChatGPT in Settings")
+                    return .blocked(String(localized: "Sign in to ChatGPT in Settings"))
                 }
             } else if requiresSecret(credentials), credentials.apiKey.isEmpty {
-                return .blocked(usingVision ? "Finish the vision model in Settings" : "Add an API key in Settings")
+                return .blocked(usingVision
+                    ? String(localized: "Finish the vision model in Settings")
+                    : String(localized: "Add an API key in Settings"))
             }
             return .ready(url: url, model: modelID, apiKey: credentials.apiKey, kind: kind)
         case .failure:
-            return .blocked(usingVision ? "Check the vision URL in Settings" : "Check the base URL in Settings")
+            return .blocked(usingVision
+                ? String(localized: "Check the vision URL in Settings")
+                : String(localized: "Check the base URL in Settings"))
         }
     }
 

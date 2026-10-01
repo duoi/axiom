@@ -30,8 +30,8 @@ enum IntelligenceGlowContext: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .listening: "Listening"
-        case .capture: "Capture"
+        case .listening: String(localized: "Listening")
+        case .capture: String(localized: "Capture")
         }
     }
 }
@@ -50,11 +50,11 @@ enum IntelligenceGlowVariation: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .overlay: "Intelligence Glow Overlay"
-        case .sweep: "Intelligence Sweep"
-        case .background: "Intelligence Glow Background"
-        case .glassBackground: "Intelligence Glow Glass Background"
-        case .sweepPlusGlow: "Intelligence Sweep + Intelligence Glow"
+        case .overlay: String(localized: "Intelligence Glow Overlay")
+        case .sweep: String(localized: "Intelligence Sweep")
+        case .background: String(localized: "Intelligence Glow Background")
+        case .glassBackground: String(localized: "Intelligence Glow Glass Background")
+        case .sweepPlusGlow: String(localized: "Intelligence Sweep + Intelligence Glow")
         }
     }
 

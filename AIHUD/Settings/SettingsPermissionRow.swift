@@ -18,7 +18,7 @@ enum SettingsPermissionRows {
         return [
             SettingsPermissionRow(
                 id: "voice",
-                title: "Microphone & Speech",
+                title: String(localized: "Microphone & Speech"),
                 status: voiceStatus,
                 buttonTitle: voiceButtonTitle,
                 isGranted: VoicePermission.isGranted,
@@ -26,17 +26,25 @@ enum SettingsPermissionRows {
             ),
             SettingsPermissionRow(
                 id: "screen",
-                title: "Screen Recording",
-                status: screenGranted ? "Allowed" : "Not granted — request or open System Settings",
-                buttonTitle: screenGranted ? "Allowed" : "Request Access…",
+                title: String(localized: "Screen Recording"),
+                status: screenGranted
+                    ? String(localized: "Allowed")
+                    : String(localized: "Not granted. Request access or open System Settings."),
+                buttonTitle: screenGranted
+                    ? String(localized: "Allowed")
+                    : String(localized: "Request Access…"),
                 isGranted: screenGranted,
                 prompt: { model.promptScreenPrivacyFromSettings() }
             ),
             SettingsPermissionRow(
                 id: "accessibility",
-                title: "Accessibility",
-                status: accessibilityGranted ? "Allowed" : "Not granted — needed for Window capture",
-                buttonTitle: accessibilityGranted ? "Allowed" : "Request Access…",
+                title: String(localized: "Accessibility"),
+                status: accessibilityGranted
+                    ? String(localized: "Allowed")
+                    : String(localized: "Not granted. Window capture needs this."),
+                buttonTitle: accessibilityGranted
+                    ? String(localized: "Allowed")
+                    : String(localized: "Request Access…"),
                 isGranted: accessibilityGranted,
                 prompt: { model.promptAccessibilityPrivacyFromSettings() }
             ),
@@ -47,24 +55,24 @@ enum SettingsPermissionRows {
         let mic = AVCaptureDevice.authorizationStatus(for: .audio)
         let speech = SFSpeechRecognizer.authorizationStatus()
         if mic == .authorized && speech == .authorized {
-            return "Allowed"
+            return String(localized: "Allowed")
         }
         if mic == .denied || mic == .restricted || speech == .denied || speech == .restricted {
-            return "Denied — open System Settings"
+            return String(localized: "Denied. Open System Settings.")
         }
-        return "Not requested yet"
+        return String(localized: "Not requested yet")
     }
 
     private static var voiceButtonTitle: String {
-        if VoicePermission.isGranted { return "Allowed" }
+        if VoicePermission.isGranted { return String(localized: "Allowed") }
         let mic = VoicePermission.settingsDecision(for: AVCaptureDevice.authorizationStatus(for: .audio))
         let speech = VoicePermission.settingsDecision(forSpeech: SFSpeechRecognizer.authorizationStatus())
         if mic == .openSettings || speech == .openSettings {
             if mic == .request || speech == .request {
-                return "Request Access…"
+                return String(localized: "Request Access…")
             }
-            return "Open System Settings…"
+            return String(localized: "Open System Settings…")
         }
-        return "Request Access…"
+        return String(localized: "Request Access…")
     }
 }

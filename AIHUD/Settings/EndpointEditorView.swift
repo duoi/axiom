@@ -51,7 +51,7 @@ struct EndpointEditorView: View {
         VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
             ScrollView {
                 VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
-                    Text("Endpoint")
+                    Text("Provider")
                         .font(.headline)
                     TextField("Name", text: $name)
                         .textFieldStyle(.roundedBorder)
@@ -80,8 +80,8 @@ struct EndpointEditorView: View {
                             SecureField("API key", text: $apiKey)
                                 .textFieldStyle(.roundedBorder)
                             Text(endpoint.kind == .anthropic
-                                 ? "Anthropic Messages."
-                                 : "OpenAI-compatible Chat Completions.")
+                                 ? String(localized: "Sent with the Anthropic Messages API.")
+                                 : String(localized: "Sent with the OpenAI Chat Completions API."))
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                         }
@@ -103,21 +103,13 @@ struct EndpointEditorView: View {
                     if !isOnDevice {
                         Text("System prompt")
                             .font(.headline)
-                        Text("Leave blank to use the default prompt in Settings. %datetime% is replaced with the current local date and time when you send.")
+                        Text("Leave this blank to use the default prompt. %datetime% becomes the local date and time when you send.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
-                        ZStack(alignment: .topLeading) {
-                            if systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Text("Blank uses the default prompt.")
-                                    .foregroundStyle(.tertiary)
-                                    .padding(.top, 8)
-                                    .padding(.leading, 5)
-                            }
-                            TextEditor(text: $systemPrompt)
-                                .font(.body)
-                                .scrollContentBackground(.hidden)
-                                .frame(minHeight: 140)
-                        }
+                        TextEditor(text: $systemPrompt)
+                            .font(.body)
+                            .scrollContentBackground(.hidden)
+                            .frame(minHeight: 140)
                         .padding(8)
                         .background(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -156,7 +148,9 @@ struct EndpointEditorView: View {
     @ViewBuilder
     private var chatgptAuth: some View {
         HStack {
-            Text(chatgptConnected ? "Connected" : "Not connected")
+            Text(chatgptConnected
+                 ? String(localized: "Connected")
+                 : String(localized: "Not connected"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -165,7 +159,9 @@ struct EndpointEditorView: View {
                     store.clearChatSecret(id: endpoint.id)
                 }
             } else {
-                Button(isConnecting ? "Connecting…" : "Connect") {
+                Button(isConnecting
+                       ? String(localized: "Connecting…")
+                       : String(localized: "Connect")) {
                     Task { await connectChatGPT() }
                 }
                 .disabled(isConnecting)
@@ -179,7 +175,7 @@ struct EndpointEditorView: View {
             }
             .disabled(pasteURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        Text("ChatGPT subscription uses Codex OAuth. Tokens stay in the Keychain.")
+        Text("Sign in with a ChatGPT subscription. The token stays in the Keychain.")
             .font(.callout)
             .foregroundStyle(.secondary)
     }
@@ -234,20 +230,20 @@ struct EndpointEditorView: View {
             let url = try await server.listen()
             try await finish(url: url, session: session)
         } catch is CancellationError {
-            saveError = "Could not listen for ChatGPT sign-in. Paste the redirect URL."
+            saveError = String(localized: "Could not listen for ChatGPT sign-in. Paste the redirect URL.")
         } catch let error as ChatGPTAuthError {
             if case .message(let message) = error {
                 saveError = message
             }
         } catch {
-            saveError = "Could not connect ChatGPT subscription."
+            saveError = String(localized: "Could not connect ChatGPT subscription.")
         }
         callbackServer = nil
     }
 
     private func finishPastedURL() async {
         guard let session = connectSession else {
-            saveError = "Press Connect first, then paste the redirect URL."
+            saveError = String(localized: "Press Connect first, then paste the redirect URL.")
             return
         }
         do {
@@ -260,7 +256,7 @@ struct EndpointEditorView: View {
                 saveError = message
             }
         } catch {
-            saveError = "Could not connect ChatGPT subscription."
+            saveError = String(localized: "Could not connect ChatGPT subscription.")
         }
     }
 

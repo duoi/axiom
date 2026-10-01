@@ -32,15 +32,15 @@ enum EditCommands {
     }
 
     static func menu() -> NSMenu {
-        let menu = NSMenu(title: "Edit")
-        menu.addItem(item("Undo", Selector(("undo:")), "z"))
-        menu.addItem(item("Redo", Selector(("redo:")), "Z"))
+        let menu = NSMenu(title: String(localized: "Edit"))
+        menu.addItem(item(String(localized: "Undo"), Selector(("undo:")), "z"))
+        menu.addItem(item(String(localized: "Redo"), Selector(("redo:")), "Z"))
         menu.addItem(.separator())
-        menu.addItem(item("Cut", #selector(NSText.cut(_:)), "x"))
-        menu.addItem(item("Copy", #selector(NSText.copy(_:)), "c"))
-        menu.addItem(item("Paste", #selector(NSText.paste(_:)), "v"))
-        menu.addItem(item("Delete", #selector(NSText.delete(_:)), ""))
-        menu.addItem(item("Select All", #selector(NSText.selectAll(_:)), "a"))
+        menu.addItem(item(String(localized: "Cut"), #selector(NSText.cut(_:)), "x"))
+        menu.addItem(item(String(localized: "Copy"), #selector(NSText.copy(_:)), "c"))
+        menu.addItem(item(String(localized: "Paste"), #selector(NSText.paste(_:)), "v"))
+        menu.addItem(item(String(localized: "Delete"), #selector(NSText.delete(_:)), ""))
+        menu.addItem(item(String(localized: "Select All"), #selector(NSText.selectAll(_:)), "a"))
         return menu
     }
 

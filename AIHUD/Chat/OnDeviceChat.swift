@@ -85,7 +85,7 @@ enum OnDeviceChat {
                 } catch is CancellationError {
                     continuation.finish()
                 } catch {
-                    continuation.yield(.failure("The on-device model failed."))
+                    continuation.yield(.failure(String(localized: "The on-device model failed.")))
                     continuation.finish()
                 }
             }

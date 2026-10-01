@@ -1,6 +1,7 @@
 name: Axiom
 options:
-  bundleIdPrefix: com.stevenjohns
+  bundleIdPrefix: com.duoi
+  developmentLanguage: en
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
@@ -8,6 +9,8 @@ settings:
   SWIFT_VERSION: "6.0"
   MACOSX_DEPLOYMENT_TARGET: "26.0"
   SWIFT_STRICT_CONCURRENCY: complete
+  LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+  SWIFT_EMIT_LOC_STRINGS: YES
 packages:
   KeyboardShortcuts:
     url: https://github.com/sindresorhus/KeyboardShortcuts
@@ -32,28 +35,25 @@ targets:
       - name: Copy dev endpoint
         basedOnDependencyAnalysis: false
         script: |
-          if [ -f "$SRCROOT/Config/dev-endpoint.json" ]; then
-            cp "$SRCROOT/Config/dev-endpoint.json" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/dev-endpoint.json"
-          fi
+          /bin/sh "$SRCROOT/Scripts/copy-dev-endpoint.sh"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.stevenjohns.Axiom
+        PRODUCT_BUNDLE_IDENTIFIER: com.duoi.axiom
         PRODUCT_NAME: Axiom
         INFOPLIST_FILE: AIHUD/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_ENTITLEMENTS: AIHUD/AIHUD.entitlements
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "-"
         ENABLE_TESTABILITY: YES
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
         Debug:
-          CODE_SIGN_STYLE: Manual
-          CODE_SIGN_IDENTITY: "Apple Development: steven@sjohns.net (6V6MHJBVWL)"
-          DEVELOPMENT_TEAM: S7D8Q56TGV
+          xcconfig: Config/Signing.xcconfig
+        Release:
+          CODE_SIGN_IDENTITY: "-"
   AxiomTests:
     type: bundle.unit-test
     platform: macOS
@@ -64,16 +64,15 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.stevenjohns.AxiomTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.duoi.axiomTests
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Axiom.app/Contents/MacOS/Axiom"
         BUNDLE_LOADER: "$(TEST_HOST)"
         CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "-"
       configs:
         Debug:
-          CODE_SIGN_STYLE: Manual
-          CODE_SIGN_IDENTITY: "Apple Development: steven@sjohns.net (6V6MHJBVWL)"
-          DEVELOPMENT_TEAM: S7D8Q56TGV
+          xcconfig: Config/Signing.xcconfig
+        Release:
+          CODE_SIGN_IDENTITY: "-"
 schemes:
   Axiom:
     build:

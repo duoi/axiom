@@ -83,12 +83,39 @@ enum HUDLayout {
         CGRect(x: lipInset, y: 0, width: lipWidth(cardWidth: cardWidth), height: lipVisible)
     }
 
+    struct LipPlacement: Equatable, Sendable {
+        var plate: CGRect
+        var lip: CGRect
+        var revealed: CGFloat
+    }
+
+    /// Plate stays on the window top. `revealed` is only the gap the window has already opened,
+    /// so the card does not jump up to reserve the lip before that gap exists.
+    static func lipPlacement(
+        windowHeight: CGFloat,
+        cardHeight: CGFloat,
+        cardWidth: CGFloat,
+        hasLip: Bool
+    ) -> LipPlacement {
+        let card = max(HUDMetrics.minCardHeight, cardHeight)
+        let revealed = hasLip ? min(lipVisible, max(0, windowHeight - card)) : 0
+        let plateHeight = min(card, max(0, windowHeight - revealed))
+        let plateY = hasLip ? max(0, windowHeight - plateHeight) : 0
+        let lip = lipFrame(cardWidth: cardWidth).offsetBy(dx: 0, dy: revealed - lipVisible)
+        return LipPlacement(
+            plate: CGRect(x: 0, y: plateY, width: cardWidth, height: plateHeight),
+            lip: lip,
+            revealed: revealed
+        )
+    }
+
     /// Lets the warning show under the plate without clipping or reshaping the plate's continuous corner.
-    static func applyLipWindowMask(to view: NSView, hasLip: Bool) {
+    static func applyLipWindowMask(to view: NSView, revealed: CGFloat) {
         view.wantsLayer = true
         view.layer?.isOpaque = false
         view.layer?.backgroundColor = NSColor.clear.cgColor
-        guard hasLip, view.bounds.width > 1, view.bounds.height > 1 else {
+        let peek = min(lipVisible, max(0, revealed))
+        guard peek > 0.5, view.bounds.width > 1, view.bounds.height > 1 else {
             view.layer?.mask = nil
             return
         }
@@ -96,11 +123,11 @@ enum HUDLayout {
         view.layer?.masksToBounds = false
         let mask = CALayer()
         mask.frame = view.bounds
-        let cardHeight = max(HUDMetrics.minCardHeight, view.bounds.height - lipVisible)
+        let cardHeight = view.bounds.height - peek
         let plate = CALayer()
         plate.frame = CGRect(
             x: view.bounds.minX,
-            y: view.bounds.minY + lipVisible,
+            y: view.bounds.minY + peek,
             width: view.bounds.width,
             height: cardHeight
         )
@@ -110,7 +137,10 @@ enum HUDLayout {
         plate.masksToBounds = true
         let band = CALayer()
         let lip = lipFrame(cardWidth: view.bounds.width)
-        band.frame = lip.offsetBy(dx: view.bounds.minX, dy: view.bounds.minY)
+        var bandFrame = lip.offsetBy(dx: view.bounds.minX, dy: view.bounds.minY)
+        bandFrame.size.height = peek
+        bandFrame.origin.y = view.bounds.minY
+        band.frame = bandFrame
         band.backgroundColor = NSColor.white.cgColor
         band.cornerRadius = lipCorner
         band.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
@@ -310,6 +340,11 @@ enum HUDLayout {
         var atBottom: Bool
     }
 
+    struct TailFollow: Equatable, Sendable {
+        var following: Bool
+        var scroll: Bool
+    }
+
     /// Overlay scroller fade. Fast enough to read as a fade, not a pop.
     static let scrollerFadeDuration: TimeInterval = 0.16
     /// Wait after the last scroll phase before fading the overlay scroller out.
@@ -352,6 +387,22 @@ enum HUDLayout {
         }
         let leftover = contentHeight - offset - viewport
         return ScrollPin(fits: false, atBottom: leftover < 24)
+    }
+
+    /// A taller reply is not a scroll. Only a finger on the scroller lets go of the tail.
+    static func tailFollow(
+        following: Bool,
+        fits: Bool,
+        atBottom: Bool,
+        userScrolling: Bool = false
+    ) -> TailFollow {
+        if fits || atBottom {
+            return TailFollow(following: true, scroll: false)
+        }
+        if userScrolling || !following {
+            return TailFollow(following: false, scroll: false)
+        }
+        return TailFollow(following: true, scroll: true)
     }
 
     static func wrappedReplyLines(_ text: String) -> Int {
@@ -445,9 +496,9 @@ enum HUDErrorLip {
         var dismissed: Bool
     }
 
-    static let screenPermission = "Allow Screen Recording in System Settings"
-    static let screenFailed = "The screen capture failed."
-    static let accessibilityPermission = "Allow Accessibility in System Settings"
+    static let screenPermission = String(localized: "Allow Screen Recording in System Settings")
+    static let screenFailed = String(localized: "The screen capture failed.")
+    static let accessibilityPermission = String(localized: "Allow Accessibility in System Settings")
 
     static func message(
         phase: Phase,

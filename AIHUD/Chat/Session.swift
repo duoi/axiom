@@ -82,11 +82,60 @@ You are a helpful AI assistant inside a HUD on a MacOS machine. Assist users wit
         preset: Preset,
         now: Date,
         locale: Locale = .current,
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
+        toolsEnabled: Bool = false
     ) -> String {
-        resolve(override: override, global: global, now: now, locale: locale, timeZone: timeZone)
+        if toolsEnabled, preset == .agent {
+            let base = agentToolBase(
+                override: override,
+                global: global,
+                now: now,
+                locale: locale,
+                timeZone: timeZone
+            )
+            return base + "\n\n" + preset.toolSystemPrompt
+        }
+        return resolve(override: override, global: global, now: now, locale: locale, timeZone: timeZone)
             + "\n\n"
             + preset.systemPrompt
+    }
+
+    /// Agent tools skip the built-in 80-word block. A custom endpoint or global prompt still leads.
+    private static func agentToolBase(
+        override: String,
+        global: String,
+        now: Date,
+        locale: Locale,
+        timeZone: TimeZone
+    ) -> String {
+        let trimmedOverride = override.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedGlobal = global.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clock = formattedDateTime(now, locale: locale, timeZone: timeZone)
+        if !trimmedOverride.isEmpty {
+            return override.replacingOccurrences(of: datetimeToken, with: clock)
+        }
+        if !trimmedGlobal.isEmpty, trimmedGlobal != defaultTemplate {
+            return global.replacingOccurrences(of: datetimeToken, with: clock)
+        }
+        return """
+        The current time and date is \(clock).
+
+        You are a helpful AI assistant inside a HUD on a MacOS machine.
+        """
+    }
+}
+
+enum AgentModePolicy {
+    static func preset(experimental: Bool, prefersAgent: Bool) -> Preset {
+        experimental && prefersAgent ? .agent : .ask
+    }
+
+    static func toolsEnabled(experimental: Bool, preset: Preset, prefersAgent: Bool) -> Bool {
+        experimental && preset == .agent && prefersAgent
+    }
+
+    static func showsPresetControl(experimental: Bool, prefersAgent: Bool) -> Bool {
+        experimental && prefersAgent
     }
 }
 
@@ -96,8 +145,8 @@ enum Preset: String, Equatable, Sendable, CaseIterable {
 
     var title: String {
         switch self {
-        case .ask: "Ask"
-        case .agent: "Agent"
+        case .ask: String(localized: "Ask")
+        case .agent: String(localized: "Agent")
         }
     }
 
@@ -108,6 +157,14 @@ enum Preset: String, Equatable, Sendable, CaseIterable {
         case .agent:
             "Give a concrete plan or steps. You cannot run tools, browse, or change the computer. Say so if asked to act."
         }
+    }
+
+    var toolSystemPrompt: String {
+        """
+        You can fetch a page with fetch_url and open a link with open_url. fetch_url runs immediately. open_url asks the user before it opens.
+        You can search the folder selected in Settings with glob, grep, and read. glob matches file paths. grep searches file contents for literal text. read returns a line window from one file. Paths stay inside that folder.
+        After a tool result, answer from that result. If a tool fails, say so.
+        """
     }
 
     var symbolName: String {
@@ -153,6 +210,9 @@ struct OutboundMessage: Equatable, Sendable {
     var role: String
     var text: String
     var imageJPEGs: [Data]
+    var toolCalls: [ToolCall] = []
+    var toolCallID: String? = nil
+    var toolIsError = false
 }
 
 enum SendOutcome: Equatable, Sendable {
@@ -161,7 +221,7 @@ enum SendOutcome: Equatable, Sendable {
 }
 
 struct Session: Equatable, Sendable {
-    var preset: Preset = .agent
+    var preset: Preset = .ask
     var draft: String = ""
     var chips: [Chip] = []
     var turns: [Turn] = []
@@ -196,7 +256,7 @@ struct Session: Equatable, Sendable {
 
     mutating func send(
         attachedJPEG: Data? = nil,
-        attachmentName: String = "Screen",
+        attachmentName: String = String(localized: "Screen"),
         systemPrompt: String = ""
     ) -> SendOutcome {
         guard !showsStop else { return .ignored }

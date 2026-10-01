@@ -20,7 +20,7 @@ struct DebugTranscriptView: View {
 
             ScrollView {
                 ScrollViewReader { proxy in
-                    Text(store.text.isEmpty ? "Waiting for a chat send…" : store.text)
+                    Text(store.text.isEmpty ? String(localized: "Waiting for a chat send…") : store.text)
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)

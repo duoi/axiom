@@ -1,14 +1,14 @@
 import Foundation
 
 enum ModelList {
-    static let failureMessage = "Could not list models."
+    static let failureMessage = String(localized: "Could not list models.")
 
     static func failureMessage(triedPath: String?, guidance: String? = nil) -> String {
         var parts: [String] = [failureMessage]
         if let raw = triedPath?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
             let path = sanitizedTriedPath(raw)
             if !path.isEmpty {
-                parts.append("Tried \(path).")
+                parts.append(String(localized: "Tried \(path)."))
             }
         }
         if let guidance = guidance?.trimmingCharacters(in: .whitespacesAndNewlines), !guidance.isEmpty {

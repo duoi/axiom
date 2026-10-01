@@ -52,7 +52,7 @@ enum DebugHTTPTranscript: Sendable {
 
     nonisolated static func recordErrorBody(_ data: Data) {
         guard isArmed else { return }
-        let text = String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>"
+        let text = String(data: data, encoding: .utf8) ?? String(localized: "<\(data.count) bytes>")
         append(DebugTranscriptRedaction.redactJSONObjectText(text) + "\n")
     }
 
@@ -63,7 +63,8 @@ enum DebugHTTPTranscript: Sendable {
 
     nonisolated static func recordFailure(_ message: String) {
         guard isArmed else { return }
-        append("-- failure: \(DebugTranscriptRedaction.redactText(message)) --\n\n")
+        let banner = String(localized: "-- failure: \(DebugTranscriptRedaction.redactText(message)) --")
+        append(banner + "\n\n")
     }
 
     private nonisolated static func append(_ chunk: String) {
@@ -212,7 +213,7 @@ enum DebugTranscriptRedaction: Sendable {
                 if isSecretJSONKey(key) {
                     out[key] = placeholder
                 } else if let string = nested as? String, looksLikeImageDataURL(string) {
-                    out[key] = "[image omitted \(string.count) chars]"
+                    out[key] = String(localized: "[image omitted \(string.count) chars]")
                 } else {
                     out[key] = redactJSONValue(nested)
                 }
@@ -223,7 +224,7 @@ enum DebugTranscriptRedaction: Sendable {
             return array.map(redactJSONValue)
         }
         if let string = value as? String, looksLikeImageDataURL(string) {
-            return "[image omitted \(string.count) chars]"
+            return String(localized: "[image omitted \(string.count) chars]")
         }
         return value
     }
@@ -257,7 +258,7 @@ enum DebugTranscriptRedaction: Sendable {
 enum DebugTranscriptFormatting: Sendable {
     nonisolated static func requestDump(_ request: URLRequest) -> String {
         var lines: [String] = []
-        lines.append("======== REQUEST ========")
+        lines.append(String(localized: "======== REQUEST ========"))
         let method = request.httpMethod ?? "GET"
         if let url = request.url {
             lines.append("\(method) \(DebugTranscriptRedaction.displayURL(url))")
@@ -275,14 +276,14 @@ enum DebugTranscriptFormatting: Sendable {
             if let text = String(data: body, encoding: .utf8) {
                 lines.append(prettyBody(text))
             } else {
-                lines.append("<\(body.count) binary bytes>")
+                lines.append(String(localized: "<\(body.count) binary bytes>"))
             }
         }
         return lines.joined(separator: "\n")
     }
 
     nonisolated static func statusDump(_ response: URLResponse) -> String {
-        var lines: [String] = ["======== RESPONSE ========"]
+        var lines: [String] = [String(localized: "======== RESPONSE ========")]
         if let http = response as? HTTPURLResponse {
             lines.append("HTTP \(http.statusCode)")
             if let url = http.url {

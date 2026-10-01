@@ -67,28 +67,28 @@ enum ProviderLogoKind: String, Equatable, Sendable {
 
     var accessibilityName: String {
         switch self {
-        case .axiom: return "Axiom"
-        case .appleIntelligence: return "Apple Intelligence"
-        case .anthropic: return "Anthropic"
-        case .openai: return "OpenAI"
-        case .openrouter: return "OpenRouter"
-        case .venice: return "Venice"
-        case .moonshot: return "Moonshot"
-        case .zai: return "Z.AI"
-        case .deepseek: return "DeepSeek"
-        case .alibaba: return "Alibaba Cloud"
-        case .siliconflow: return "SiliconFlow"
-        case .cohere: return "Cohere"
-        case .groq: return "Groq"
-        case .xai: return "xAI"
-        case .together: return "Together AI"
-        case .fireworks: return "Fireworks"
-        case .cerebras: return "Cerebras"
-        case .mistral: return "Mistral"
-        case .meta: return "Meta"
-        case .lmstudio: return "LM Studio"
-        case .ollama: return "Ollama"
-        case .unsloth: return "Unsloth"
+        case .axiom: return String(localized: "Axiom")
+        case .appleIntelligence: return String(localized: "Apple Intelligence")
+        case .anthropic: return String(localized: "Anthropic")
+        case .openai: return String(localized: "OpenAI")
+        case .openrouter: return String(localized: "OpenRouter")
+        case .venice: return String(localized: "Venice")
+        case .moonshot: return String(localized: "Moonshot")
+        case .zai: return String(localized: "Z.AI")
+        case .deepseek: return String(localized: "DeepSeek")
+        case .alibaba: return String(localized: "Alibaba Cloud")
+        case .siliconflow: return String(localized: "SiliconFlow")
+        case .cohere: return String(localized: "Cohere")
+        case .groq: return String(localized: "Groq")
+        case .xai: return String(localized: "xAI")
+        case .together: return String(localized: "Together AI")
+        case .fireworks: return String(localized: "Fireworks")
+        case .cerebras: return String(localized: "Cerebras")
+        case .mistral: return String(localized: "Mistral")
+        case .meta: return String(localized: "Meta")
+        case .lmstudio: return String(localized: "LM Studio")
+        case .ollama: return String(localized: "Ollama")
+        case .unsloth: return String(localized: "Unsloth")
         }
     }
 }
@@ -276,7 +276,7 @@ enum HUDModelMenu {
         }
         let stored = storedModelID(for: endpoint, chatID: chatID, chatModelID: chatModelID)
         if stored.isEmpty {
-            return [ModelRow(id: "", title: "No models", enabled: false)]
+            return [ModelRow(id: "", title: String(localized: "No models"), enabled: false)]
         }
         return [ModelRow(id: stored, title: stored, enabled: true)]
     }

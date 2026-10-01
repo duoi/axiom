@@ -29,7 +29,8 @@ struct HUDView: View {
             if HistoryChromePolicy.showsReplyRegion(
                 answer: model.session.displayAnswer,
                 phase: model.session.phase,
-                historyExpanded: model.historyExpanded
+                historyExpanded: model.historyExpanded,
+                toolLine: model.toolLine
             ) {
                 history
             }
@@ -69,8 +70,8 @@ struct HUDView: View {
                                 popModelMenu(from: view)
                             }
                         }
-                        .help("Change model")
-                        .accessibilityLabel("Change model")
+                        .help("Choose the chat model")
+                        .accessibilityLabel("Choose the chat model")
                 }
             }
             .id(model.logoOverride)
@@ -80,7 +81,9 @@ struct HUDView: View {
                     get: { model.session.draft },
                     set: { model.setDraft($0) }
                 ),
-                placeholder: model.dictating && model.session.draft.isEmpty ? "Listening..." : "Ask anything...",
+                placeholder: model.dictating && model.session.draft.isEmpty
+                    ? String(localized: "Listening...")
+                    : String(localized: "Ask anything..."),
                 multiline: model.displayedMultiline,
                 isEditable: PromptInFlightPolicy.isEditable(phase: model.session.phase),
                 showsInFlightShimmer: showsInFlightShimmer,
@@ -120,6 +123,9 @@ struct HUDView: View {
             .contentShape(Rectangle())
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .help(model.session.showsStop
+                  ? String(localized: "Stop")
+                  : String(localized: "Send. \(shortcutKeys(.send))"))
             .opacity(model.session.canSend || model.captureArmed || model.session.showsStop ? 0.9 : 0.35)
             .disabled(!model.session.canSend && !model.captureArmed && !model.session.showsStop)
         }
@@ -156,6 +162,7 @@ struct HUDView: View {
                                 .font(.system(size: 9, weight: .bold))
                         }
                         .buttonStyle(.plain)
+                        .help("Remove \(chip.name)")
                     }
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -197,7 +204,8 @@ struct HUDView: View {
                 answer: model.session.displayAnswer,
                 phase: model.session.phase,
                 historyExpanded: model.historyExpanded,
-                hasUserTurns: model.session.turns.contains(where: { $0.role == .user })
+                hasUserTurns: model.session.turns.contains(where: { $0.role == .user }),
+                toolLine: model.toolLine
             ) {
                 Button(action: model.toggleHistory) {
                     Image(systemName: model.historyExpanded ? "chevron.up" : "chevron.down")
@@ -207,6 +215,9 @@ struct HUDView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help(model.historyExpanded
+                      ? String(localized: "Show the reply")
+                      : String(localized: "Show the thread"))
                 .padding(.top, 8)
                 .padding(.trailing, HUDMetrics.inset)
                 .opacity(HUDLayout.expandChevronOpacity(scrollerVisible: scrollerVisible))
@@ -224,18 +235,30 @@ struct HUDView: View {
         let text = model.session.displayAnswer
         let lines = HUDLayout.wrappedReplyLines(text)
         let bodyHeight = HUDLayout.replyBodyHeight(lines: lines)
-        let content = compactReplyText(text)
         return Group {
-            if model.session.phase == .waiting, text.isEmpty {
+            if model.session.phase == .waiting, text.isEmpty, !showsToolStatus {
                 EmptyView()
             } else if lines > HUDLayout.replyMaxLines {
-                middleScroll(height: bodyHeight, tailID: "reply-tail", tracked: text) {
-                    content
+                VStack(alignment: .leading, spacing: 6) {
+                    middleScroll(height: bodyHeight, tailID: "reply-tail", tracked: text) {
+                        compactReplyText(text)
+                    }
+                    if showsToolStatus {
+                        toolStatus
+                            .padding(.leading, HUDMetrics.inset)
+                            .padding(.trailing, HUDMetrics.inset + HUDMetrics.controlSize)
+                            .padding(.bottom, 12)
+                    }
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
-                    content
-                        .frame(height: bodyHeight, alignment: .top)
+                    if !text.isEmpty {
+                        compactReplyText(text)
+                            .frame(height: bodyHeight, alignment: .top)
+                    }
+                    if showsToolStatus {
+                        toolStatus
+                    }
                 }
                 .padding(.leading, HUDMetrics.inset)
                 .padding(.trailing, HUDMetrics.inset + HUDMetrics.controlSize)
@@ -244,6 +267,30 @@ struct HUDView: View {
             }
         }
         .font(Font(HUDLayout.replyFont))
+    }
+
+    private var showsToolStatus: Bool {
+        if let line = model.toolLine, !line.isEmpty { return true }
+        return model.hasPendingOpen
+    }
+
+    private var toolStatus: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let line = model.toolLine, !line.isEmpty {
+                Text(line)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            if model.hasPendingOpen {
+                HStack(spacing: 12) {
+                    Button("Yes") { model.allowPendingOpen() }
+                        .help("Open this link")
+                    Button("No") { model.denyPendingOpen() }
+                        .help("Skip this link")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
     }
 
     private func compactReplyText(_ text: String) -> some View {
@@ -281,6 +328,9 @@ struct HUDView: View {
             ForEach(Array(Transcript.rows(in: model.session, expanded: true).enumerated()), id: \.offset) { _, row in
                 transcriptRow(row)
             }
+            if showsToolStatus {
+                toolStatus
+            }
         }
     }
 
@@ -313,7 +363,12 @@ struct HUDView: View {
     private var toolbar: some View {
         HStack(alignment: .center, spacing: 0) {
             HStack(spacing: HUDMetrics.controlSpacing) {
-                presetToggle
+                if AgentModePolicy.showsPresetControl(
+                    experimental: store.experimentalAgent,
+                    prefersAgent: store.sendEndpoint(hasImage: false)?.prefersAgent == true
+                ) {
+                    presetToggle
+                }
                 captureControl
                 Button(action: model.addContext) {
                     HStack(spacing: 6) {
@@ -324,6 +379,7 @@ struct HUDView: View {
                     .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .help("Attach a file. Up to 4 files, 4 MB each. \(shortcutKeys(.addContext))")
             }
             Spacer(minLength: HUDMetrics.controlSpacing)
             HStack(spacing: HUDMetrics.controlSpacing) {
@@ -349,7 +405,9 @@ struct HUDView: View {
                 .frame(width: HUDMetrics.controlSize, height: HUDMetrics.controlSize)
         }
         .buttonStyle(.plain)
-        .help(model.dictating ? "Stop dictation" : "Dictate")
+        .help(model.dictating
+              ? String(localized: "Stop dictation. \(shortcutKeys(.toggleDictation))")
+              : String(localized: "Dictate into the prompt. \(shortcutKeys(.toggleDictation))"))
     }
 
     private var presetToggle: some View {
@@ -371,6 +429,9 @@ struct HUDView: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
+        .help(model.session.preset == .agent
+              ? String(localized: "Agent can use tools. \(shortcutKeys(.cyclePreset)) switches to Ask.")
+              : String(localized: "Ask answers without tools. \(shortcutKeys(.cyclePreset)) switches to Agent."))
     }
 
     private func togglePreset() {
@@ -399,18 +460,33 @@ struct HUDView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help(captureHelp)
                 Spacer(minLength: 6)
                 Button(action: popCaptureMenu) {
                     toolbarChevron
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help("Choose Screen or Window")
             }
         }
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(tint)
         .hudCapsule(highlighted: model.captureArmed)
         .fixedSize()
+    }
+
+    private var captureHelp: String {
+        let window = model.displayedCaptureTarget == .window
+        let keys = shortcutKeys(.cycleCapture)
+        if model.captureArmed {
+            return window
+                ? String(localized: "The next send includes the front window. \(keys)")
+                : String(localized: "The next send includes the display. \(keys)")
+        }
+        return window
+            ? String(localized: "Include the front window on the next send. \(keys)")
+            : String(localized: "Include the display on the next send. \(keys)")
     }
 
     private var toolbarChevron: some View {
@@ -468,7 +544,7 @@ struct HUDView: View {
             menu.addItem(row)
         }
         menu.addItem(.separator())
-        let reasoning = NSMenuItem(title: "Reasoning", action: nil, keyEquivalent: "")
+        let reasoning = NSMenuItem(title: String(localized: "Reasoning"), action: nil, keyEquivalent: "")
         let reasoningMenu = NSMenu()
         for effort in ReasoningEffort.allCases {
             let item = NSMenuItem(
@@ -515,8 +591,12 @@ struct HUDView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(model.historyExcluded ? "Record this chat" : "Don't record this chat")
-        .accessibilityLabel(model.historyExcluded ? "Recording off" : "Recording on")
+        .help(model.historyExcluded
+              ? String(localized: "This chat is not saved. \(shortcutKeys(.toggleIncognito)) saves it.")
+              : String(localized: "This chat is saved. \(shortcutKeys(.toggleIncognito)) skips it."))
+        .accessibilityLabel(model.historyExcluded
+            ? String(localized: "Recording off")
+            : String(localized: "Recording on"))
     }
 
     private var shortcutBadge: some View {
@@ -533,6 +613,11 @@ struct HUDView: View {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.5)
             )
+            .help("Show or hide the card. \(shortcutKeys(.hideCard)) hides it.")
+    }
+
+    private func shortcutKeys(_ name: KeyboardShortcuts.Name) -> String {
+        CardShortcutBindings.label(for: name)
     }
 
     private var shortcutLabel: String {
@@ -552,7 +637,7 @@ private struct ReplyScroll<Content: View>: View {
     @ViewBuilder var content: Content
     @State private var fade = HUDLayout.ScrollFadeEdges.none
     @State private var hideTask: Task<Void, Never>?
-    @State private var didReachBottom = false
+    @State private var userScrolling = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -562,7 +647,10 @@ private struct ReplyScroll<Content: View>: View {
                     ScrollView {
                         content
                             .background {
-                                OverlayScrollerInstaller(active: scrollerVisible)
+                                OverlayScrollerInstaller(
+                                    active: scrollerVisible,
+                                    pinToBottom: stickToBottom
+                                )
                             }
                         Color.clear
                             .frame(height: 1)
@@ -577,6 +665,7 @@ private struct ReplyScroll<Content: View>: View {
                         default:
                             live = false
                         }
+                        userScrolling = live
                         if live {
                             hideTask?.cancel()
                             scrollerVisible = true
@@ -613,27 +702,33 @@ private struct ReplyScroll<Content: View>: View {
                             viewport: geometry.containerSize.height
                         )
                     } action: { _, next in
-                        if next.fits {
-                            return
-                        }
-                        if next.atBottom {
-                            didReachBottom = true
-                            stickToBottom = true
-                        } else if didReachBottom {
-                            stickToBottom = false
-                        } else {
-                            proxy.scrollTo(tailID, anchor: .bottom)
+                        let decision = HUDLayout.tailFollow(
+                            following: stickToBottom,
+                            fits: next.fits,
+                            atBottom: next.atBottom,
+                            userScrolling: userScrolling
+                        )
+                        stickToBottom = decision.following
+                        if decision.scroll {
+                            followTail(proxy)
                         }
                     }
                     .onChange(of: tracked) {
                         guard stickToBottom else { return }
-                        proxy.scrollTo(tailID, anchor: .bottom)
+                        followTail(proxy)
                     }
                     .onAppear {
-                        proxy.scrollTo(tailID, anchor: .bottom)
+                        followTail(proxy)
                     }
                 }
                 .clipShape(Rectangle())
+        }
+    }
+
+    private func followTail(_ proxy: ScrollViewProxy) {
+        DispatchQueue.main.async {
+            guard stickToBottom else { return }
+            proxy.scrollTo(tailID, anchor: .bottom)
         }
     }
 
@@ -659,20 +754,27 @@ private struct ReplyScroll<Content: View>: View {
 
 private struct OverlayScrollerInstaller: NSViewRepresentable {
     var active: Bool
+    var pinToBottom: Bool
 
     func makeNSView(context: Context) -> Probe {
         let view = Probe()
         view.active = active
+        view.pinToBottom = pinToBottom
         return view
     }
 
     func updateNSView(_ nsView: Probe, context: Context) {
         nsView.active = active
+        if !pinToBottom {
+            nsView.releasePinHold()
+        }
+        nsView.pinToBottom = pinToBottom
         nsView.install()
     }
 
     final class Probe: NSView {
         var active = false
+        var pinToBottom = false
         private var configured = false
         private var applied: Bool?
         private var fading = false
@@ -694,6 +796,7 @@ private struct OverlayScrollerInstaller: NSViewRepresentable {
 
         func install() {
             guard let scroll = enclosingScrollView ?? nearestScrollView() else { return }
+            observe(scroll)
             if !configured {
                 scroll.scrollerStyle = .overlay
                 scroll.autohidesScrollers = true
@@ -702,30 +805,105 @@ private struct OverlayScrollerInstaller: NSViewRepresentable {
                 scroll.horizontalScrollElasticity = .none
                 configured = true
             }
-            guard let scroller = scroll.verticalScroller else { return }
-            scroller.isHidden = false
-            let target: CGFloat = active ? 1 : 0
-            if applied == nil {
-                scroller.alphaValue = target
-                applied = active
-                return
-            }
-            if applied != active {
-                applied = active
-                fading = true
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = HUDLayout.scrollerFadeDuration
-                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    scroller.animator().alphaValue = target
-                }, completionHandler: { [weak self] in
-                    self?.fading = false
+            if let scroller = scroll.verticalScroller {
+                scroller.isHidden = false
+                let target: CGFloat = active ? 1 : 0
+                if applied == nil {
                     scroller.alphaValue = target
-                })
+                    applied = active
+                } else if applied != active {
+                    applied = active
+                    fading = true
+                    NSAnimationContext.runAnimationGroup({ context in
+                        context.duration = HUDLayout.scrollerFadeDuration
+                        context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                        scroller.animator().alphaValue = target
+                    }, completionHandler: { [weak self] in
+                        self?.fading = false
+                        scroller.alphaValue = target
+                    })
+                } else if !fading, abs(scroller.alphaValue - target) > 0.02 {
+                    scroller.alphaValue = target
+                }
+            }
+            if pinToBottom, !suppressPin {
+                pinBottom(scroll)
+            }
+        }
+
+        private var pinning = false
+        private var suppressPin = false
+        private var userDragging = false
+        private weak var observedScroll: NSScrollView?
+
+        func releasePinHold() {
+            guard !userDragging else { return }
+            suppressPin = false
+        }
+
+        private func observe(_ scroll: NSScrollView) {
+            guard observedScroll !== scroll else { return }
+            if observedScroll != nil {
+                NotificationCenter.default.removeObserver(self)
+            }
+            observedScroll = scroll
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(liveScrollStarted(_:)),
+                name: NSScrollView.willStartLiveScrollNotification,
+                object: scroll
+            )
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(liveScrollEnded(_:)),
+                name: NSScrollView.didEndLiveScrollNotification,
+                object: scroll
+            )
+        }
+
+        @objc private func liveScrollStarted(_ note: Notification) {
+            userDragging = true
+            suppressPin = true
+        }
+
+        @objc private func liveScrollEnded(_ note: Notification) {
+            userDragging = false
+            guard let scroll = note.object as? NSScrollView else {
+                suppressPin = false
                 return
             }
-            if !fading, abs(scroller.alphaValue - target) > 0.02 {
-                scroller.alphaValue = target
+            if clipIsAtBottom(scroll) {
+                suppressPin = false
+                if pinToBottom {
+                    pinBottom(scroll)
+                }
             }
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        private func pinBottom(_ scroll: NSScrollView) {
+            guard !pinning, let document = scroll.documentView else { return }
+            pinning = true
+            defer { pinning = false }
+            let clip = scroll.contentView
+            let overflow = document.bounds.height - clip.bounds.height
+            guard overflow > 1 else { return }
+            let y = clip.isFlipped ? overflow : 0
+            guard abs(clip.bounds.origin.y - y) > 1 else { return }
+            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
+            scroll.reflectScrolledClipView(clip)
+        }
+
+        private func clipIsAtBottom(_ scroll: NSScrollView) -> Bool {
+            guard let document = scroll.documentView else { return true }
+            let clip = scroll.contentView
+            let overflow = document.bounds.height - clip.bounds.height
+            if overflow <= 1 { return true }
+            let y = clip.isFlipped ? overflow : 0
+            return abs(clip.bounds.origin.y - y) < 24
         }
 
         private func nearestScrollView() -> NSScrollView? {

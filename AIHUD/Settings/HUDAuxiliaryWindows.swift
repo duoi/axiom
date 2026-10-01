@@ -88,7 +88,7 @@ extension HUDController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Settings"
+        window.title = String(localized: "Settings")
         window.contentView = host
         window.contentMinSize = NSSize(width: 680, height: 500)
         window.isReleasedWhenClosed = false
@@ -107,7 +107,7 @@ extension HUDController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Debug"
+        window.title = String(localized: "Debug")
         window.contentView = host
         window.contentMinSize = HUDMetrics.debugSize
         window.isReleasedWhenClosed = false
@@ -124,7 +124,7 @@ extension HUDController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Axiom transcript"
+        window.title = String(localized: "Axiom transcript")
         window.contentView = host
         window.contentMinSize = NSSize(width: 480, height: 320)
         window.isReleasedWhenClosed = false

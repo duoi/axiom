@@ -31,12 +31,33 @@ import Testing
     let joined = EndpointResolver.completionsURL(configured: "https://api.openai.com/v1")
     #expect(joined == .success(URL(string: "https://api.openai.com/v1/chat/completions")!))
     let full = EndpointResolver.completionsURL(
-        configured: "http://100.93.227.31:8080/v1/chat/completions",
-        allowedCleartextHosts: ["100.93.227.31"]
+        configured: "http://192.0.2.1:8080/v1/chat/completions",
+        allowedCleartextHosts: ["192.0.2.1"]
     )
-    #expect(full == .success(URL(string: "http://100.93.227.31:8080/v1/chat/completions")!))
+    #expect(full == .success(URL(string: "http://192.0.2.1:8080/v1/chat/completions")!))
     let slashed = EndpointResolver.completionsURL(configured: "https://api.openai.com/v1/")
     #expect(slashed == .success(URL(string: "https://api.openai.com/v1/chat/completions")!))
+}
+
+@Test func cleartextAllowsLoopbackAndTheDevHostOnly() {
+    let hosts = EndpointResolver.cleartextHosts(devHost: "192.0.2.1")
+    #expect(hosts.contains("localhost"))
+    #expect(hosts.contains("127.0.0.1"))
+    #expect(hosts.contains("::1"))
+    #expect(hosts.contains("192.0.2.1"))
+    #expect(!hosts.contains("evil.example"))
+    #expect(
+        EndpointResolver.completionsURL(
+            configured: "http://evil.example/v1",
+            allowedCleartextHosts: hosts
+        ) == .failure(.insecureHost)
+    )
+    #expect(
+        EndpointResolver.completionsURL(
+            configured: "http://192.0.2.1:8080/v1",
+            allowedCleartextHosts: hosts
+        ) == .success(URL(string: "http://192.0.2.1:8080/v1/chat/completions")!)
+    )
 }
 
 @Test func cleartextPolicyAllowsLoopbackAndDevHostOnly() {
@@ -1082,10 +1103,10 @@ import Testing
     )
     #expect(
         EndpointResolver.modelsURL(
-            configured: "http://100.93.227.31:8080/v1/chat/completions",
-            allowedCleartextHosts: ["100.93.227.31"]
+            configured: "http://192.0.2.1:8080/v1/chat/completions",
+            allowedCleartextHosts: ["192.0.2.1"]
         )
-            == .success(URL(string: "http://100.93.227.31:8080/v1/models")!)
+            == .success(URL(string: "http://192.0.2.1:8080/v1/models")!)
     )
     #expect(
         EndpointResolver.modelsURL(configured: "https://api.anthropic.com/v1")
@@ -1101,10 +1122,10 @@ import Testing
     )
     #expect(
         EndpointResolver.completionsURL(
-            configured: "http://100.93.227.31:8080/v1/chat/completions",
-            allowedCleartextHosts: ["100.93.227.31"]
+            configured: "http://192.0.2.1:8080/v1/chat/completions",
+            allowedCleartextHosts: ["192.0.2.1"]
         )
-            == .success(URL(string: "http://100.93.227.31:8080/v1/chat/completions")!)
+            == .success(URL(string: "http://192.0.2.1:8080/v1/chat/completions")!)
     )
     #expect(
         EndpointResolver.messagesURL(configured: "https://api.anthropic.com/v1/messages")
@@ -1115,7 +1136,7 @@ import Testing
 @Test func endpointURLWarnsOnChatEndpointPathsNotOnAPIBase() {
     let warning = EndpointURLWarning.message
     #expect(
-        EndpointURLWarning.message(for: "http://100.93.227.31:8080/v1/chat/completions") == warning
+        EndpointURLWarning.message(for: "http://192.0.2.1:8080/v1/chat/completions") == warning
     )
     #expect(
         EndpointURLWarning.message(for: "https://api.openai.com/v1/chat/completions/") == warning
@@ -1127,9 +1148,9 @@ import Testing
     #expect(EndpointURLWarning.message(for: "https://api.anthropic.com/v1/messages") == warning)
     #expect(EndpointURLWarning.message(for: "https://api.anthropic.com/v1/messages/") == warning)
     #expect(EndpointURLWarning.message(for: "HTTPS://HOST/V1/MESSAGES") == warning)
-    #expect(EndpointURLWarning.message(for: "http://100.93.227.31:8080") == nil)
-    #expect(EndpointURLWarning.message(for: "http://100.93.227.31:8080/v1") == nil)
-    #expect(EndpointURLWarning.message(for: "http://100.93.227.31:8080/v1/") == nil)
+    #expect(EndpointURLWarning.message(for: "http://192.0.2.1:8080") == nil)
+    #expect(EndpointURLWarning.message(for: "http://192.0.2.1:8080/v1") == nil)
+    #expect(EndpointURLWarning.message(for: "http://192.0.2.1:8080/v1/") == nil)
     #expect(EndpointURLWarning.message(for: "https://api.openai.com/v1/models") == nil)
     #expect(EndpointURLWarning.message(for: "https://api.openai.com/v1/models/") == nil)
     #expect(EndpointURLWarning.hint(for: .openaiCompatible, presetID: "openai")
@@ -1147,7 +1168,7 @@ import Testing
         ModelList.failureMessage(triedPath: "/v1/models", guidance: EndpointURLWarning.message)
             == "Could not list models. Tried /v1/models. This looks like a chat URL. Use the API base https://host/v1."
     )
-    let withQuery = "http://100.93.227.31:8080/v1/models?api_key=sk-secret&token=bearer-xyz"
+    let withQuery = "http://192.0.2.1:8080/v1/models?api_key=sk-secret&token=bearer-xyz"
     let copy = ModelList.failureMessage(triedPath: withQuery, guidance: EndpointURLWarning.message)
     #expect(copy.hasPrefix("Could not list models. Tried /v1/models."))
     #expect(copy.contains(EndpointURLWarning.message))
@@ -2340,7 +2361,7 @@ import Testing
     let custom = ChatEndpoint(
         id: UUID(),
         name: "Hermes",
-        completionsURL: "http://100.93.227.31:8080/v1",
+        completionsURL: "http://192.0.2.1:8080/v1",
         model: "local",
         systemPrompt: ""
     )
@@ -2445,7 +2466,7 @@ import Testing
     let custom = ChatEndpoint(
         id: UUID(),
         name: "Hermes",
-        completionsURL: "http://100.93.227.31:8080/v1",
+        completionsURL: "http://192.0.2.1:8080/v1",
         model: "local",
         systemPrompt: ""
     )
@@ -2553,6 +2574,66 @@ import Testing
     #expect(band.width == card - 2 * HUDLayout.lipInset)
     #expect(band.height == HUDLayout.lipVisible)
     #expect(band.maxY == HUDLayout.lipVisible)
+}
+
+@Test func errorLipRevealKeepsTheCardTopWhileTheWindowGrows() {
+    let card = HUDMetrics.minCardHeight
+    let width = HUDMetrics.cardWidth
+    let idle = HUDLayout.lipPlacement(
+        windowHeight: card,
+        cardHeight: card,
+        cardWidth: width,
+        hasLip: true
+    )
+    #expect(idle.revealed == 0)
+    #expect(idle.plate.minY == 0)
+    #expect(idle.plate.height == card)
+    #expect(idle.plate.maxY == card)
+
+    let halfway = card + HUDLayout.lipVisible / 2
+    let mid = HUDLayout.lipPlacement(
+        windowHeight: halfway,
+        cardHeight: card,
+        cardWidth: width,
+        hasLip: true
+    )
+    #expect(mid.revealed == HUDLayout.lipVisible / 2)
+    #expect(mid.plate.height == card)
+    #expect(mid.plate.maxY == halfway)
+    #expect(mid.lip.height == HUDLayout.lipVisible)
+    #expect(mid.lip.maxY == mid.plate.minY)
+
+    let fullHeight = card + HUDLayout.lipVisible
+    let full = HUDLayout.lipPlacement(
+        windowHeight: fullHeight,
+        cardHeight: card,
+        cardWidth: width,
+        hasLip: true
+    )
+    #expect(full.revealed == HUDLayout.lipVisible)
+    #expect(full.plate.minY == HUDLayout.lipVisible)
+    #expect(full.plate.maxY == fullHeight)
+    #expect(full.lip == HUDLayout.lipFrame(cardWidth: width))
+
+    let hidden = HUDLayout.lipPlacement(
+        windowHeight: card,
+        cardHeight: card,
+        cardWidth: width,
+        hasLip: false
+    )
+    #expect(hidden.revealed == 0)
+    #expect(hidden.plate.minY == 0)
+    #expect(hidden.plate.height == card)
+
+    let catchingUp = HUDLayout.lipPlacement(
+        windowHeight: 200,
+        cardHeight: 250,
+        cardWidth: width,
+        hasLip: true
+    )
+    #expect(catchingUp.revealed == 0)
+    #expect(catchingUp.plate.minY == 0)
+    #expect(catchingUp.plate.maxY == 200)
 }
 
 @Test func errorLipMessageFollowsPriorityAndDismiss() {
@@ -3014,6 +3095,33 @@ import Testing
     let pinBottom = HUDLayout.scrollPin(offset: 200, contentHeight: 400, viewport: 200)
     #expect(!pinBottom.fits)
     #expect(pinBottom.atBottom)
+}
+
+@Test func streamedReplyFollowsTheTailUntilTheUserScrollsUp() {
+    let grown = HUDLayout.tailFollow(following: true, fits: false, atBottom: false)
+    #expect(grown.following)
+    #expect(grown.scroll)
+
+    let parked = HUDLayout.tailFollow(following: true, fits: false, atBottom: true)
+    #expect(parked.following)
+    #expect(!parked.scroll)
+
+    let userUp = HUDLayout.tailFollow(
+        following: true,
+        fits: false,
+        atBottom: false,
+        userScrolling: true
+    )
+    #expect(!userUp.following)
+    #expect(!userUp.scroll)
+
+    let stayUp = HUDLayout.tailFollow(following: false, fits: false, atBottom: false)
+    #expect(!stayUp.following)
+    #expect(!stayUp.scroll)
+
+    let back = HUDLayout.tailFollow(following: false, fits: false, atBottom: true)
+    #expect(back.following)
+    #expect(!back.scroll)
 }
 
 @Test func pinningKeepsTheTopEdgeFixedWhenHeightGrows() {

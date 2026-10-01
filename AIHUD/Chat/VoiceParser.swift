@@ -22,13 +22,13 @@ enum VoiceSettings {
 }
 
 enum VoiceStatusCopy {
-    static let micDenied = "Allow the microphone in System Settings."
-    static let speechDenied = "Allow speech recognition in System Settings."
-    static let adHocPermission = "An ad-hoc rebuild can forget the microphone permission until you allow it again."
-    static let missingModel = "The speech model is not installed."
-    static let unsupportedModel = "This Mac does not support the speech model."
-    static let downloading = "The speech model is still downloading."
-    static let captureFailed = "The microphone capture failed."
+    static let micDenied = String(localized: "Allow the microphone in System Settings.")
+    static let speechDenied = String(localized: "Allow speech recognition in System Settings.")
+    static let adHocPermission = String(localized: "An ad-hoc rebuild can forget the microphone permission until you allow it again.")
+    static let missingModel = String(localized: "The speech model is not installed.")
+    static let unsupportedModel = String(localized: "This Mac does not support the speech model.")
+    static let downloading = String(localized: "The speech model is still downloading.")
+    static let captureFailed = String(localized: "The microphone capture failed.")
 
     static func systemSettingsURL(for status: String) -> URL? {
         switch status {
