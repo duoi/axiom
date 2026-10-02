@@ -257,7 +257,12 @@ import Testing
     defaults.removePersistentDomain(forName: suite)
 }
 
-@Test @MainActor func synthesizedAxiomSentenceFillsTheQuestion() async throws {
+@Test(
+    .disabled("This Mac does not support the speech model.") {
+        await VoiceCapture.assetStatus() == .unsupported
+    }
+)
+@MainActor func synthesizedAxiomSentenceFillsTheQuestion() async throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("axiom-hud-\(UUID().uuidString).aiff")
     defer { try? FileManager.default.removeItem(at: url) }
     let synth = NSSpeechSynthesizer()
