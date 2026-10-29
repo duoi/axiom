@@ -4,10 +4,9 @@ Native macOS menu-bar app. A hotkey shows a Liquid Glass prompt card and streams
 
 ## Read first
 
-- `README.md` is the user-facing description. Update it in the same change when behavior, install, or publishing changes. See `.cursor/rules/readme.mdc`.
-- `notes/README.md` is the running log.
-- `notes/references/launcher-hud.jpg` is the visual spec.
-- `notes/plan.md` points at the canonical plan. Do not paste a second copy of that plan into the repo.
+- `README.md` is the user-facing overview. The details live in `docs/` (`using-axiom.md`, `providers.md`, `agent-mode.md`, `privacy-and-data.md`) and `CONTRIBUTING.md`.
+- When a change alters what a person can do (the card, hotkey, voice, capture, attachments, history, Settings, providers, keys) or how the app is installed or published, update the matching page in the same change. Leave the docs alone for a comment, rename, or fix that changes none of those facts.
+- `notes/` is a local, gitignored working folder: a running log in `notes/README.md`, captures, and visual references. It may not exist in a fresh clone.
 
 ## Red, then green
 
@@ -21,13 +20,13 @@ Run:
 xcodebuild test -scheme Axiom -destination 'platform=macOS'
 ```
 
-Glass, focus, and layout are not snapshot tests. After a visual change, capture the live panel and compare it with `notes/references/launcher-hud.jpg`. Record the capture path in `notes/README.md`.
+Glass, focus, and layout are not snapshot tests. After a visual change, capture the live panel and look at it. `CONTRIBUTING.md` (Captures) has the steps; keep personal windows out of anything committed to `docs/images/`.
 
 ```bash
-python3 ~/.codex/skills/screenshot/scripts/take_screenshot.py --app "Axiom" --path notes/captures/<name>.png
+mkdir -p notes/captures && screencapture -x -R<x>,<y>,<width>,<height> notes/captures/<name>.png
 ```
 
-Screen Recording permission is required once. Use `--list-windows` and `--window-id` for the panel alone. Do not commit `notes/captures/`.
+Screen Recording permission is required once.
 
 ## Secrets
 
@@ -41,7 +40,7 @@ The HUD is a nonactivating panel. Do not call `NSApp.activate` to show it or to 
 
 `.nonactivatingPanel` belongs in the panel initializer.
 
-Center on the screen that contains `NSEvent.mouseLocation`, inside `visibleFrame`. Later height changes pin the top edge.
+Open on the screen that contains `NSEvent.mouseLocation`, centered horizontally and a third of the way down `visibleFrame`. A growing reply pins the top edge and grows down to the floor; only what does not fit lifts the top.
 
 ## Rebuild after app changes
 
@@ -49,4 +48,4 @@ After any change that affects the running app, rebuild the Debug Axiom.app, quit
 
 ## Out of this version
 
-Ask is the default. The Ask/Agent control stays hidden until Settings, Models, Experimental is checked and that provider's Agent box is checked. The checkbox defaults off. Agent mode shows the control and turns on tools. Ask does not call tools. On-device Agent does not call tools.
+Ask is the default. The Ask/Agent control stays hidden until Settings, Models, Experimental is checked, that provider's Agent box is checked, and that provider is the chat provider. The checkbox defaults off. Agent mode shows the control and turns on tools. Ask does not call tools. On-device Agent does not call tools.

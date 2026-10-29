@@ -6,4 +6,8 @@ xcuserdata/
 .env
 Config/dev-endpoint.json
 Config/Signing.local.xcconfig
-notes/captures/
+notes/
+.cursor/
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
