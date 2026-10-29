@@ -8,6 +8,7 @@ Config/dev-endpoint.json
 Config/Signing.local.xcconfig
 notes/
 .cursor/
-.claude/settings.local.json
-.claude/worktrees/
+.claude/
+.agents/
+skills-lock.json
 CLAUDE.local.md
