@@ -57,8 +57,8 @@ text. Release builds are ad-hoc signed by CI.
 
 ## Captures
 
-`notes/captures/` holds development screenshots and is gitignored; record their paths in `notes/README.md`. Images
-for the docs live in `docs/images/` and are committed. To make one:
+`notes/` is a local, gitignored working folder for development screenshots and a running log. Images for the docs live
+in `docs/images/` and are committed. To make one:
 
 1. Cover the desktop with a neutral backdrop, so no personal windows end up in the image.
 2. Launch with `--debug --debug-state=<state>`, or `--show --demo-prompt=<text>` for a real exchange.
@@ -68,10 +68,12 @@ for the docs live in `docs/images/` and are committed. To make one:
 ## Changes and commits
 
 - Update `README.md` or the matching page in `docs/` in the same change when what a person can do changes.
-- `notes/README.md` is the running development log.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `feat:`, `fix:`, `docs:`,
   `refactor:`, `test:`, `ci:`, `chore:`.
-- A push to `main` runs the tests, builds a Release, and publishes it as a GitHub release tagged `build-<commit>`. A
-  `v*` tag publishes that version. The test and build steps can only read the repository; a separate job publishes.
+- A push to `main` runs the tests only when app code, tests, the project, signing config or the workflow changed. Docs
+  and media pushes run nothing.
+- Releases are deliberate: push a `v*` tag to publish that version, or run the **Build** workflow by hand from the
+  Actions tab to publish `build-<commit>`. The test and build steps can only read the repository; a separate job
+  publishes.
 
 [← Privacy and data](docs/privacy-and-data.md) · [Docs home](README.md)

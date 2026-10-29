@@ -1,14 +1,27 @@
 name: Build
 
+# Releases are intentional: a v* tag or a manual run. Pushes to main only run the tests, and only when code changed.
+# (Path filters are not applied to tag pushes, so a v* tag always runs.)
 on:
   push:
     branches: [main]
     tags: ["v*"]
+    paths:
+      - "AIHUD/**"
+      - "AIHUDTests/**"
+      - "Axiom.xcodeproj/**"
+      - "Config/*.xcconfig"
+      - "Scripts/**"
+      - "project.yml"
+      - ".github/workflows/build.yml"
   workflow_dispatch:
 
 # Tests and the build compile third-party packages, so they only get read access.
 permissions:
   contents: read
+
+env:
+  RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
 
 jobs:
   build:
@@ -35,6 +48,7 @@ jobs:
             DEVELOPMENT_TEAM=""
 
       - name: Build Release
+        if: env.RELEASE == 'true'
         run: |
           xcodebuild build \
             -scheme Axiom \
@@ -49,12 +63,14 @@ jobs:
             Axiom-macOS.zip
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: env.RELEASE == 'true'
         with:
           name: Axiom-macOS
           path: Axiom-macOS.zip
 
   publish:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write

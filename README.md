@@ -97,7 +97,7 @@ Every shortcut can be changed in Settings → General.
 | On-device, OpenAI-compatible, Anthropic, ChatGPT subscription | working |
 | Agent mode (tools) | experimental, off until turned on in Settings |
 | New UI | experimental, off by default |
-| Release builds | published from every push to `main`; ad-hoc signed, not notarized |
+| Release builds | published for each `v*` tag or a manual run; ad-hoc signed, not notarized |
 
 ## Repository layout
 
@@ -107,7 +107,6 @@ Every shortcut can be changed in Settings → General.
 | `AIHUDTests/` | the Swift Testing suite |
 | `Config/` | signing settings and the gitignored dev endpoint ([Contributing](CONTRIBUTING.md#signing-and-the-dev-endpoint)) |
 | `docs/` | the pages above, and `images/` |
-| `notes/` | the development log and the visual reference |
 | `.github/workflows/build.yml` | tests, builds and publishes a release |
 
 ## License
