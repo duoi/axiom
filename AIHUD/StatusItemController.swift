@@ -2,10 +2,11 @@ import AppKit
 import KeyboardShortcuts
 
 @MainActor
-final class StatusItemController: NSObject {
+final class StatusItemController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let store = EndpointStore()
     private lazy var hud = HUDController(store: store)
+    private let debugItem = NSMenuItem(title: String(localized: "Debug"), action: #selector(debug), keyEquivalent: "")
 
     func start() {
         item.button?.image = Self.statusImage()
@@ -14,7 +15,8 @@ final class StatusItemController: NSObject {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: String(localized: "Show"), action: #selector(show), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: String(localized: "Settings"), action: #selector(settings), keyEquivalent: ","))
-        menu.addItem(NSMenuItem(title: String(localized: "Debug"), action: #selector(debug), keyEquivalent: ""))
+        menu.addItem(debugItem)
+        menu.delegate = self
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: String(localized: "Quit"), action: #selector(quit), keyEquivalent: "q"))
         for entry in menu.items {
@@ -93,6 +95,10 @@ final class StatusItemController: NSObject {
     @objc private func settings() {
         hud.statusItemFrame = item.button?.window?.frame
         hud.openSettings()
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        debugItem.isHidden = !store.showsDebug()
     }
 
     @objc private func debug() {

@@ -68,9 +68,17 @@ final class HUDController: NSObject, NSWindowDelegate {
                 MainActor.assumeIsolated { self?.restackAuxiliaryWindows() }
             })
         }
-        DebugPreviewStore.shared.setDebugEnabled(
-            HUDCardMenu.debugEnabled(arguments: CommandLine.arguments, defaults: .standard)
-        )
+        DebugPreviewStore.shared.setDebugEnabled(store.showsDebug())
+        store.onDebugToolsChange = { [weak self] on in
+            guard let self else { return }
+            DebugPreviewStore.shared.setDebugEnabled(on)
+            if !on {
+                DebugHTTPTranscript.setArmed(false)
+                model.debugDriven = false
+                debugWindow?.close()
+                transcriptWindow?.close()
+            }
+        }
         DebugPreviewStore.shared.onChange = { [weak self] in
             self?.refreshActiveGlow()
         }
@@ -691,10 +699,7 @@ final class HUDController: NSObject, NSWindowDelegate {
 
     private func popCardMenu(at locationInWindow: NSPoint) {
         guard panel.isVisible, !panel.menuTracking else { return }
-        let debugOn = HUDCardMenu.debugEnabled(
-            arguments: CommandLine.arguments,
-            defaults: .standard
-        )
+        let debugOn = store.showsDebug()
         let proxy = CardMenuProxy(
             onSettings: { [weak self] in self?.openSettings() },
             onDebug: { [weak self] in self?.openDebug() }

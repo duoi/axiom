@@ -191,20 +191,24 @@ import Testing
     #expect(HUDCardMenu.title(for: .debug) == "Debug")
 }
 
-@Test func cardMenuDebugFollowsTheExistingDevGate() {
-    let suite = "aihud.tests.card-menu-debug"
-    let defaults = UserDefaults(suiteName: suite)!
-    defaults.removePersistentDomain(forName: suite)
-    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom"], defaults: defaults) == false)
-    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom", "--show"], defaults: defaults) == false)
-    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom", "--debug-state=reply-overflow"], defaults: defaults) == false)
-    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom", "--debug"], defaults: defaults))
-    DebugSettings.saveEnabled(true, to: defaults)
-    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom"], defaults: defaults))
-    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom", "--show"], defaults: defaults))
-    DebugSettings.saveEnabled(false, to: defaults)
-    #expect(HUDCardMenu.debugEnabled(arguments: ["Axiom"], defaults: defaults) == false)
-    defaults.removePersistentDomain(forName: suite)
+@Test @MainActor func debugToolsStayOffUntilTurnedOnInAbout() {
+    let store = EndpointStore.isolated()
+    #expect(store.debugToolsEnabled == false)
+    #expect(store.showsDebug(arguments: ["Axiom"]) == false)
+    #expect(store.showsDebug(arguments: ["Axiom", "--show", "--debug-state=reply-overflow"]) == false)
+    // A developer launch still opens Debug.
+    #expect(store.showsDebug(arguments: ["Axiom", "--debug"]))
+    store.debugToolsEnabled = true
+    #expect(store.showsDebug(arguments: ["Axiom"]))
+}
+
+@Test @MainActor func debugDoesNotOpenOrTurnItselfOnWhileOff() {
+    let store = EndpointStore.isolated()
+    let hud = HUDController(store: store)
+    defer { hud.panel.orderOut(nil) }
+    hud.openDebug()
+    #expect(hud.debugWindow == nil)
+    #expect(store.debugToolsEnabled == false)
 }
 
 @Test func debugLaunchFlagIsOffUnlessRequested() {

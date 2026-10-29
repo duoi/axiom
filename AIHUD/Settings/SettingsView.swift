@@ -560,6 +560,13 @@ struct SettingsView: View {
             Text("MIT License")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            Toggle(isOn: $store.debugToolsEnabled) {
+                Text("Debug tools")
+                Text("Adds Debug to the menu bar and the card menu: card states, glow, and a live HTTP transcript.")
+            }
+            .toggleStyle(.switch)
+            .frame(maxWidth: 400)
+            .padding(.top, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

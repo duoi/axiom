@@ -130,6 +130,19 @@ final class EndpointStore {
             }
         }
     }
+    var debugToolsEnabled: Bool {
+        didSet {
+            DebugSettings.saveEnabled(debugToolsEnabled, to: defaults)
+            onDebugToolsChange(debugToolsEnabled)
+        }
+    }
+    var onDebugToolsChange: (Bool) -> Void = { _ in }
+
+    /// Debug shows when it is turned on in Settings, About, or for a `--debug` developer launch.
+    func showsDebug(arguments: [String] = CommandLine.arguments) -> Bool {
+        debugToolsEnabled || DebugRouting.enabled(by: arguments)
+    }
+
     var reasoningEffort: ReasoningEffort {
         didSet { ReasoningEffort.save(reasoningEffort, to: defaults) }
     }
@@ -322,6 +335,7 @@ final class EndpointStore {
         if !historyOn {
             HistorySettings.saveSaveScreenshots(false, to: defaults)
         }
+        debugToolsEnabled = DebugSettings.loadEnabled(from: defaults)
         reasoningEffort = ReasoningEffort.load(from: defaults)
         requestTimeoutSeconds = ChatTimeoutSettings.load(from: defaults)
         historyStore = HistoryStore(root: historyRoot)

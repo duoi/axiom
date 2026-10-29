@@ -22,7 +22,8 @@ flowchart LR
 
 ## Open and dismiss
 
-Control-Option-K shows and hides the card. The menu-bar icon also has Show, Settings, Debug and Quit.
+Control-Option-K shows and hides the card. The menu-bar icon also has Show, Settings and Quit, and Debug once
+**Debug tools** is on in Settings → About.
 
 - The card opens on the screen under the pointer, centred left to right and a third of the way down.
 - A reply grows the card downward from where it opened. Only when it reaches the bottom of the screen does the top move

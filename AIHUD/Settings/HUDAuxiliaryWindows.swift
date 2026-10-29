@@ -7,7 +7,7 @@ extension HUDController {
     }
 
     func openDebug() {
-        DebugSettings.saveEnabled(true, to: .standard)
+        guard store.showsDebug() else { return }
         DebugPreviewStore.shared.setDebugEnabled(true)
         DebugHTTPTranscript.setArmed(true)
         model.debugDriven = true
@@ -22,7 +22,7 @@ extension HUDController {
     }
 
     func openTranscript() {
-        DebugSettings.saveEnabled(true, to: .standard)
+        guard store.showsDebug() else { return }
         DebugPreviewStore.shared.setDebugEnabled(true)
         DebugHTTPTranscript.setArmed(true)
         let window = transcriptWindow ?? makeTranscriptWindow()

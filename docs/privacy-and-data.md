@@ -91,7 +91,8 @@ A list of chats, newest first.
 
 ## Debug transcript
 
-The menu-bar **Debug** item can show a live transcript of HTTP traffic. It redacts authorization headers, API keys,
+Debug is hidden until **Debug tools** is turned on in Settings → About. Its window can show a live transcript of HTTP
+traffic. It redacts authorization headers, API keys,
 bearer tokens and secret query parameters; prompt text stays visible.
 
 [← Agent mode](agent-mode.md) · [Docs home](../README.md) · [Next: Contributing →](../CONTRIBUTING.md)

@@ -51,7 +51,7 @@ text. Release builds are ad-hoc signed by CI.
 | `--edit-preset=<id>` | open the editor for the provider made from that preset, for example `openai` |
 | `--edit-endpoint` | open the editor for the current chat provider (not On-device, which cannot be edited) |
 | `--new-ui` | use New UI for this launch without changing the saved setting |
-| `--debug` | open the Debug window, for phases, glow, shimmer and the HTTP transcript |
+| `--debug` | open the Debug window, for phases, glow, shimmer and the HTTP transcript, even with **Debug tools** off in Settings → About |
 | `--debug-state=<state>` | with `--debug`, put the card in a state, for example `markdown-reply`, `dictate-on`, `missing-key`, `arm-screen` |
 | `--demo-prompt=<text>` | Debug builds, with `--show`: type that prompt into the card and send it |
 

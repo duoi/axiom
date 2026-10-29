@@ -68,7 +68,8 @@ struct DebugSnapshot: Equatable, Sendable {
 }
 
 enum DebugSettings {
-    static let enabledKey = "debug.enabled"
+    /// Set only by the switch in Settings, About. The old `debug.enabled` turned itself on whenever Debug opened.
+    static let enabledKey = "debug.toolsEnabled"
 
     static func loadEnabled(from defaults: UserDefaults) -> Bool {
         defaults.bool(forKey: enabledKey)
@@ -99,9 +100,6 @@ enum HUDCardMenu {
         }
     }
 
-    static func debugEnabled(arguments: [String], defaults: UserDefaults) -> Bool {
-        DebugRouting.enabled(by: arguments) || DebugSettings.loadEnabled(from: defaults)
-    }
 }
 
 struct DebugCommandPlan: Equatable, Sendable {
