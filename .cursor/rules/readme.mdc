@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Keep README.md current
 
-`README.md` at the repo root is the user-facing description of Axiom. When a change alters what a person can do, how they install the app, or how a build is published, update that file in the same change.
+`README.md` at the repo root is the user-facing overview of Axiom; the details live in `docs/` (using-axiom, providers, agent-mode, privacy-and-data) and `CONTRIBUTING.md`. When a change alters what a person can do, how they install the app, or how a build is published, update the matching page in the same change.
 
 Update the matching section when you change:
 
