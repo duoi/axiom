@@ -778,3 +778,40 @@ private func click(_ hud: HUDController, at view: NSView, x: CGFloat) async thro
     #expect(AuxiliaryWindowLevel.level(appActive: false, isKey: true, ownsFocus: false, cardLevel: card) == .normal)
     #expect(AuxiliaryWindowLevel.level(appActive: false, isKey: true, ownsFocus: true, cardLevel: card) == .normal)
 }
+
+@Test @MainActor func focusingAPromptWithTextPutsTheCaretAtTheEnd() {
+    // AppKit selects a field's whole text when it takes focus, so the next key would replace a restored draft.
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 60), styleMask: [.titled], backing: .buffered, defer: false)
+    let field = ClickThroughTextField(frame: NSRect(x: 0, y: 0, width: 380, height: 40))
+    window.contentView?.addSubview(field)
+    field.stringValue = "What is the total mass of the sun?"
+    #expect(window.makeFirstResponder(field))
+    let selection = field.currentEditor()?.selectedRange
+    #expect(selection?.length == 0)
+    #expect(selection?.location == (field.stringValue as NSString).length)
+}
+
+@Test @MainActor func fillingTheFocusedPromptLeavesNothingSelected() {
+    // Dictation and the demo prompt fill the field while it has focus; the text must not end up selected.
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 60), styleMask: [.titled], backing: .buffered, defer: false)
+    let field = ClickThroughTextField(frame: NSRect(x: 0, y: 0, width: 380, height: 40))
+    window.contentView?.addSubview(field)
+    #expect(window.makeFirstResponder(field))
+    field.applyPrompt("Write a haiku")
+    field.applyPrompt("Write a haiku about coffee")
+    let selection = field.currentEditor()?.selectedRange
+    #expect(selection?.length == 0)
+    #expect(selection?.location == ("Write a haiku about coffee" as NSString).length)
+}
+
+@Test @MainActor func refreshingThePromptKeepsTheCaretWhereYouPutIt() {
+    // SwiftUI pushes the same text back on every update; that must not move the caret you placed mid-text.
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 60), styleMask: [.titled], backing: .buffered, defer: false)
+    let field = ClickThroughTextField(frame: NSRect(x: 0, y: 0, width: 380, height: 40))
+    window.contentView?.addSubview(field)
+    field.applyPrompt("What is the mass of the sun?")
+    #expect(window.makeFirstResponder(field))
+    field.currentEditor()?.selectedRange = NSRange(location: 8, length: 0)
+    field.applyPrompt("What is the mass of the sun?")
+    #expect(field.currentEditor()?.selectedRange == NSRange(location: 8, length: 0))
+}

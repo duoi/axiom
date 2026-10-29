@@ -568,14 +568,20 @@ final class ClickThroughTextField: NSTextField, NSTextFieldDelegate, PromptEditi
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     func applyPrompt(_ text: String) {
+        var replaced = false
         if stringValue != text {
             stringValue = text
+            replaced = true
         }
         guard let editor = currentEditor() else { return }
         if editor.string != text {
             editor.string = text
-            let end = (text as NSString).length
-            editor.selectedRange = NSRange(location: end, length: 0)
+            replaced = true
+        }
+        // Replacing the text of a focused field selects all of it, so put the caret at the end. The same text
+        // (pushed back on every SwiftUI update) leaves the caret where the user put it.
+        if replaced {
+            editor.selectedRange = NSRange(location: (text as NSString).length, length: 0)
         }
         lockSingleLineEditor()
     }
@@ -584,6 +590,10 @@ final class ClickThroughTextField: NSTextField, NSTextFieldDelegate, PromptEditi
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
+        // AppKit selects all text on focus, so the next key would replace a restored draft. Caret to the end.
+        if let editor = currentEditor() {
+            editor.selectedRange = NSRange(location: (editor.string as NSString).length, length: 0)
+        }
         lockSingleLineEditor()
         return accepted
     }
