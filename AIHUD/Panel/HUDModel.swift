@@ -181,6 +181,20 @@ final class HUDModel {
         }
     }
 
+    #if DEBUG
+    /// Types `text` into the field a few characters at a time, then sends it as Return would.
+    func typeDemoPrompt(_ text: String) async {
+        var typed = ""
+        for character in text {
+            typed.append(character)
+            setDraft(typed)
+            try? await Task.sleep(for: .milliseconds(45))
+        }
+        try? await Task.sleep(for: .milliseconds(350))
+        submit()
+    }
+    #endif
+
     func pushDraftToField(_ text: String) {
         promptEditor?.applyPrompt(text)
     }

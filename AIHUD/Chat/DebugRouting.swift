@@ -224,6 +224,13 @@ func greet() {
         return rows
     }()
 
+    /// `--demo-prompt=<text>` types that prompt into the card and sends it, for repeatable captures.
+    static func demoPrompt(from arguments: [String]) -> String? {
+        guard let paired = arguments.first(where: { $0.hasPrefix("--demo-prompt=") }) else { return nil }
+        let text = String(paired.dropFirst("--demo-prompt=".count))
+        return text.isEmpty ? nil : text
+    }
+
     static func enabled(by arguments: [String]) -> Bool {
         arguments.contains("--debug")
     }

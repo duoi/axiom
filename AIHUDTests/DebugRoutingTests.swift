@@ -575,3 +575,9 @@ import Testing
         Issue.record("stream-line should be a live stream")
     }
 }
+
+@Test func demoPromptComesFromItsLaunchArgument() {
+    #expect(DebugRouting.demoPrompt(from: ["Axiom", "--demo-prompt=What is Liquid Glass?"]) == "What is Liquid Glass?")
+    #expect(DebugRouting.demoPrompt(from: ["Axiom", "--demo-prompt="]) == nil)
+    #expect(DebugRouting.demoPrompt(from: ["Axiom", "--show"]) == nil)
+}

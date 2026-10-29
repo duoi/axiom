@@ -57,6 +57,11 @@ final class StatusItemController: NSObject {
 
     func showFromLaunch() {
         show()
+        #if DEBUG
+        if let prompt = DebugRouting.demoPrompt(from: CommandLine.arguments) {
+            Task { await hud.model.typeDemoPrompt(prompt) }
+        }
+        #endif
         if let command = DebugRouting.initialCommand(from: CommandLine.arguments),
            let parsed = DebugRouting.parse(command),
            DebugRouting.liveStreamText(for: parsed) != nil {
