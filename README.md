@@ -14,13 +14,15 @@ Download `Axiom-macOS.zip` from the [latest GitHub release](https://github.com/d
 
 The published build is ad-hoc signed and not notarized. The first time you open it, right-click the app and choose Open. macOS will remember that choice.
 
+An ad-hoc build cannot use the data-protection keychain, so it keeps keys in the login keychain. Each new build has a new signature, so after an update macOS may ask once per saved key whether Axiom can use it. Choose Always Allow.
+
 ## Open the card
 
 Control-Option-K shows and hides the card. Change that shortcut in Settings. The menu-bar icon also has Show, Settings, Debug, and Quit.
 
 The card is a nonactivating panel. Showing it does not steal focus from the app you were using. Opening Settings does activate Axiom, and the card stays up.
 
-The card centers on the screen under the pointer, inside the visible frame. When a reply grows the card, the top edge stays put.
+The card opens on the screen under the pointer, centered horizontally and a third of the way down the visible frame. When a reply grows the card, the top edge stays put and the card grows down. Only when the bottom reaches the edge of the screen does the card grow upward, by just the part that does not fit.
 
 Escape dismisses the card. A click outside dismisses it unless Settings has "Keep the card up" on, and the reply has already finished. Stopping a stream puts the prompt back in the field.
 
@@ -30,11 +32,11 @@ Type a prompt and press Return to send. The field is one line by default and sta
 
 While a request is in flight, the field keeps the exact text you sent and cannot be edited. That locked text shows a white highlight moving through the letters. Dictation cannot rewrite it. Success clears the field. Failure puts the text back and unlocks it.
 
-The card opens in Ask. Ask appends a short-answer instruction to the endpoint system prompt. The Ask/Agent control stays hidden until Experimental is checked and that provider's Agent box is checked in the Models table. That checkbox defaults off. Agent mode shows the control, starts the card in Agent, and turns on tools for a cloud provider. The model can fetch a page, open a link, and search one folder chosen in that same card. glob lists paths, grep searches file contents, and read returns a line window. Those three stay inside the folder. Opening a link asks on the card first. Ask does not call tools. On-device Agent still does not call tools.
+The card opens in Ask. Ask appends a short-answer instruction to the endpoint system prompt. The Ask/Agent control stays hidden until Experimental is checked and that provider's Agent box is checked in the Providers list. That checkbox defaults off. Agent mode shows the control, starts the card in Agent, and turns on tools for a cloud provider. The model can fetch a page, open a link, and search one folder chosen in that same card. glob lists paths, grep searches file contents, and read returns a line window. Those three stay inside the folder. Fetching a page and opening a link each ask on the card first, showing the whole URL. Ask does not call tools. On-device Agent still does not call tools.
 
 The logo menu lists saved providers and models, and a Reasoning submenu. The choice is the same value as Settings.
 
-Screen and Window arm the next send. Screen captures the display. Window captures the front window and needs Accessibility. The capture is not a chip. A highlight tracks the target. A screen shot hides the card with no close animation, then fades it back in. A window shot leaves the card up, because that shot is the other window.
+Screen and Window arm the next send. Screen captures the display. Window captures the front window and needs Accessibility. The capture is not a chip. A highlight tracks the target. A screen shot hides the card with no close animation, then fades it back in. If Screen Recording is off, the card stays up and the error shows under it. A window shot leaves the card up, because that shot is the other window.
 
 Add context attaches up to 4 files, 4 MB each. Text files go in as text. Images are sent as JPEG. Anything else is refused.
 
@@ -50,9 +52,9 @@ Errors sit on a lip under the card so the toolbar stays inside the glass. A time
 
 ## Models
 
-Settings, Models starts with Experimental. It is off until you check it. With it on, the provider table has an Agent checkbox. Checking it shows the Ask/Agent control and turns on tools for that provider. Keys live in the data-protection keychain, one item per endpoint. They are not written into the endpoint list.
+Settings looks like System Settings: a sidebar of pages and grouped switches. While you are using Settings it sits above the card; when you go back to the card or another app, it drops back like any other window. Settings, Models ends with Experimental. It is off until you turn it on. With it on, each provider row has an Agent checkbox. Checking it shows the Ask/Agent control and turns on tools for that provider. Keys live in the data-protection keychain, one item per endpoint. They are not written into the endpoint list. Clearing the key field and saving removes that endpoint's key. If the keychain refuses a key, the editor says so: the key works until Axiom quits.
 
-A fresh launch shows the on-device row only. Add fills a draft from a preset, or a custom host. Clicking a row selects it. Edit opens the sheet. Make default and Set as vision model are explicit.
+A fresh launch shows the on-device row only. Add Provider… lists the presets and Custom; picking one fills a draft from a preset, or a custom host. Edit… on a row opens the sheet; Control-click a row to delete it. The Chat and Vision sections pick which provider and model each one uses.
 
 Chat and vision can be different endpoints. A send that includes an image uses the vision endpoint. If that endpoint is incomplete, the send stops instead of falling back to the chat model.
 
@@ -101,7 +103,7 @@ Each endpoint can have its own system prompt. A blank one uses the default promp
 
 Wake on Axiom is off until you turn it on in Settings. The app listens for "Axiom" or "Hey Axiom" at the start of a phrase, then opens the card with the rest of the sentence. Permission is requested from Settings, not from the card.
 
-Pause to send waits about two seconds of silence after a non-empty draft, then sends. Return still sends. Nothing sends while a reply is waiting or streaming.
+Pause to send is on by default. It waits about two seconds of silence after a non-empty draft, then sends. Return still sends. Nothing sends while a reply is waiting or streaming.
 
 ## Permissions
 
@@ -111,13 +113,13 @@ Settings lists each permission. If macOS has not asked yet, the button requests 
 
 ## History
 
-History is off by default. When it is on, a finished conversation is stored on this Mac under Application Support `com.duoi.axiom/History`. Nothing is uploaded.
+History is off by default. When it is on, a finished conversation is stored on this Mac under Application Support `com.duoi.axiom/History`. Nothing is uploaded. The newest 500 chats are kept. If the history file cannot be read, it is renamed `history.corrupt-<time>.json` instead of being overwritten.
 
-Settings shows the time and title. Double-click opens the thread. Screenshot saving is a separate switch, off by default. It stores the Screen or Window JPEG with that chat. It does not copy your original files. Delete removes that chat and its stored screenshot.
+Settings lists each chat's title and time. Click one to open the thread; Control-click to delete it. Screenshot saving is a separate switch, off by default. It stores the Screen or Window JPEG with that chat. It does not copy your original files. Turning screenshot saving off, or turning history off, deletes the screenshots already saved; the chats stay. Delete removes that chat and its stored screenshot.
 
 ## Appearance
 
-Glass is the clear card. Matte is the heavier glass. The amount slider adds a veil. At 100% the glass stays clear. Highlighted Agent and Screen use a quiet capsule fill on the plate.
+Glass is the clear card. Matte is the heavier glass. The amount slider adds a veil. At 100% the glass stays clear. Highlighted Agent and Screen use a quiet capsule fill on the plate. New UI, off by default, splits the card into a prompt capsule and separate buttons, with the desktop showing in the gaps. On open the buttons pour out of the capsule, and a press highlights the capsule and the buttons.
 
 ## Debug
 
@@ -125,7 +127,7 @@ The menu-bar Debug item opens a panel for phases, glow, shimmer, and a live HTTP
 
 ## Build
 
-The Xcode project is `Axiom.xcodeproj`. The scheme is Axiom. GitHub Actions builds it on the `xcode-27` runner, runs the tests, and uploads `Axiom-macOS.zip` to a release. A push to `main` publishes a release tagged with that commit. A `v*` tag publishes that version. The newest of those is the latest release.
+The Xcode project is `Axiom.xcodeproj`. The scheme is Axiom. GitHub Actions builds it on the `xcode-27` runner, runs the tests, and uploads `Axiom-macOS.zip` to a release. Only the publish job can write to the repository; the test and build steps get read access. A push to `main` publishes a release tagged with that commit. A `v*` tag publishes that version. The newest of those is the latest release.
 
 Local tests:
 

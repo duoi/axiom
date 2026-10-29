@@ -12,8 +12,9 @@ enum VoiceSettings {
         defaults.set(value, forKey: wakeOnAxiomKey)
     }
 
+    /// On until the user turns it off.
     static func loadPauseToSend(from defaults: UserDefaults) -> Bool {
-        defaults.bool(forKey: pauseToSendKey)
+        defaults.object(forKey: pauseToSendKey) as? Bool ?? true
     }
 
     static func savePauseToSend(_ value: Bool, to defaults: UserDefaults) {

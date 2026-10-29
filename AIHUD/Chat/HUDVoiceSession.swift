@@ -109,9 +109,6 @@ extension HUDController {
         session.onTranscript = { [weak self] text, isFinal in
             self?.handleTranscript(text, isFinal: isFinal)
         }
-        session.onSpeechDetected = { [weak self] detected in
-            self?.handleSpeechDetected(detected)
-        }
         session.onFailure = { [weak self] message in
             self?.handleCaptureFailure(message)
         }
@@ -168,14 +165,6 @@ extension HUDController {
         let applied = VoiceParser.applyTranscript(base: dictationBase, transcript: tail, isFinal: isFinal)
         dictationBase = applied.base
         model.setDraft(applied.display)
-    }
-
-    func handleSpeechDetected(_ detected: Bool) {
-        if detected {
-            silentSince = nil
-        } else if silentSince == nil {
-            silentSince = Date()
-        }
     }
 
     func handleSendBegan() {

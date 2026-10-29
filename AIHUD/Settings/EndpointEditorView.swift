@@ -48,73 +48,80 @@ struct EndpointEditorView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
-                    Text("Provider")
-                        .font(.headline)
+        VStack(spacing: 0) {
+            Form {
+                Section {
                     TextField("Name", text: $name)
-                        .textFieldStyle(.roundedBorder)
                     if !isOnDevice && !endpoint.urlIsFixed {
-                        TextField("Base URL", text: $completionsURL)
-                            .textFieldStyle(.roundedBorder)
-                        if let hint = EndpointURLWarning.hint(for: endpoint.kind, presetID: endpoint.presetID) {
-                            Text(hint)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                        if let warning = EndpointURLWarning.message(for: completionsURL) {
-                            Text(warning)
-                                .font(.callout)
-                                .foregroundStyle(.orange)
+                        TextField("Base URL", text: $completionsURL, prompt: Text("https://host/v1"))
+                    }
+                } header: {
+                    Text(isNew ? String(localized: "Add \(endpoint.name)") : endpoint.name)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
+                } footer: {
+                    if !isOnDevice && !endpoint.urlIsFixed {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let hint = EndpointURLWarning.hint(for: endpoint.kind, presetID: endpoint.presetID) {
+                                note(hint)
+                            }
+                            if let warning = EndpointURLWarning.message(for: completionsURL) {
+                                Text(warning)
+                                    .font(.callout)
+                                    .foregroundStyle(.orange)
+                            }
                         }
                     }
-                    if isOnDevice {
-                        Text("Apple Intelligence on this Mac.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    } else {
+                }
+                if isOnDevice {
+                    Section {
+                        note(String(localized: "Apple Intelligence on this Mac."))
+                    }
+                } else {
+                    Section {
                         if isChatGPT {
                             chatgptAuth
                         } else {
                             SecureField("API key", text: $apiKey)
-                                .textFieldStyle(.roundedBorder)
-                            Text(endpoint.kind == .anthropic
-                                 ? String(localized: "Sent with the Anthropic Messages API.")
-                                 : String(localized: "Sent with the OpenAI Chat Completions API."))
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
                         }
-                        Button("Refresh") {
-                            Task { await refreshModels() }
+                        LabeledContent {
+                            Button(isListing ? String(localized: "Refreshing…") : String(localized: "Refresh")) {
+                                Task { await refreshModels() }
+                            }
+                            .disabled(isListing || isNew)
+                        } label: {
+                            Text("Models")
+                            if isNew {
+                                Text("Save first, then refresh the list.")
+                            } else if availableModels.isEmpty {
+                                Text("No models listed yet.")
+                            } else {
+                                Text("\(availableModels.count) available")
+                            }
                         }
-                        .disabled(isListing || isNew)
+                    } header: {
+                        Text(isChatGPT ? String(localized: "ChatGPT account") : String(localized: "Authentication"))
+                    } footer: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if isChatGPT {
+                                note(String(localized: "Sign in with a ChatGPT subscription. The token stays in the Keychain."))
+                            } else {
+                                note(endpoint.kind == .anthropic
+                                     ? String(localized: "Sent with the Anthropic Messages API. Stored in the Keychain.")
+                                     : String(localized: "Sent with the OpenAI Chat Completions API. Stored in the Keychain."))
+                            }
+                            if let listError, !listError.isEmpty {
+                                Text(listError)
+                                    .font(.callout)
+                                    .foregroundStyle(.red)
+                            }
+                        }
                     }
-                    if let saveError, !saveError.isEmpty {
-                        Text(saveError)
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                    }
-                    if let listError, !listError.isEmpty {
-                        Text(listError)
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                    }
-                    if !isOnDevice {
-                        Text("System prompt")
-                            .font(.headline)
-                        Text("Leave this blank to use the default prompt. %datetime% becomes the local date and time when you send.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                    Section {
                         TextEditor(text: $systemPrompt)
                             .font(.body)
                             .scrollContentBackground(.hidden)
-                            .frame(minHeight: 140)
-                        .padding(8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                        )
+                            .frame(minHeight: 90)
                         DisclosureGroup("Default prompt") {
                             Text(store.defaultSystemPrompt)
                                 .font(.callout)
@@ -122,38 +129,54 @@ struct EndpointEditorView: View {
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                    } header: {
+                        Text("System prompt")
+                    } footer: {
+                        note(String(localized: "Leave blank to use the default prompt. %datetime% becomes the local date and time when you send."))
                     }
                 }
             }
+            .formStyle(.grouped)
+            Divider()
             HStack {
-                Button("Delete", role: .destructive) {
-                    store.deleteEndpoint(endpoint.id)
-                    dismiss()
+                if !isOnDevice && !isNew {
+                    Button("Delete", role: .destructive) {
+                        store.deleteEndpoint(endpoint.id)
+                        dismiss()
+                    }
                 }
-                .disabled(isOnDevice || isNew)
+                if let saveError, !saveError.isEmpty {
+                    Text(saveError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                }
                 Spacer()
                 Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
                 if !isOnDevice {
-                    Button("Save") {
+                    Button(isNew ? String(localized: "Add") : String(localized: "Save")) {
                         save()
                     }
                     .keyboardShortcut(.defaultAction)
                 }
             }
+            .controlSize(.large)
+            .padding(.horizontal, HUDMetrics.inset)
+            .padding(.vertical, 14)
         }
-        .padding(HUDMetrics.inset)
-        .frame(width: 520, height: 560)
+        .frame(width: 500, height: 470)
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
     }
 
     @ViewBuilder
     private var chatgptAuth: some View {
-        HStack {
-            Text(chatgptConnected
-                 ? String(localized: "Connected")
-                 : String(localized: "Not connected"))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Spacer()
+        LabeledContent {
             if chatgptConnected {
                 Button("Disconnect") {
                     store.clearChatSecret(id: endpoint.id)
@@ -166,18 +189,23 @@ struct EndpointEditorView: View {
                 }
                 .disabled(isConnecting)
             }
+        } label: {
+            Label(
+                chatgptConnected ? String(localized: "Connected") : String(localized: "Not connected"),
+                systemImage: chatgptConnected ? "checkmark.circle.fill" : "circle.dashed"
+            )
         }
         if !chatgptConnected {
-            TextField("Or paste the redirect URL", text: $pasteURL)
-                .textFieldStyle(.roundedBorder)
-            Button("Finish with pasted URL") {
-                Task { await finishPastedURL() }
+            LabeledContent {
+                Button("Finish") {
+                    Task { await finishPastedURL() }
+                }
+                .disabled(pasteURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } label: {
+                TextField("Redirect URL", text: $pasteURL, prompt: Text("Or paste the redirect URL"))
+                    .labelsHidden()
             }
-            .disabled(pasteURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        Text("Sign in with a ChatGPT subscription. The token stays in the Keychain.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
     }
 
     private func drafted() -> ChatEndpoint {

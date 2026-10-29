@@ -88,7 +88,7 @@ import Testing
         #"data: {"choices":[{"finish_reason":"tool_calls"}]}"#,
         "data: [DONE]",
     ]
-    let assembled = ToolCallAssembler.completions(lines: lines)
+    let assembled = ToolCallAssembler.assemble(wire: .completions, lines: lines)
     #expect(assembled.text == "Looking.")
     #expect(assembled.truncated == false)
     #expect(assembled.calls == [
@@ -102,7 +102,7 @@ import Testing
         #"data: {"choices":[{"finish_reason":"length"}]}"#,
         "data: [DONE]",
     ]
-    let assembled = ToolCallAssembler.completions(lines: lines)
+    let assembled = ToolCallAssembler.assemble(wire: .completions, lines: lines)
     #expect(assembled.truncated)
     #expect(assembled.calls.count == 1)
     #expect(assembled.calls[0].id == "call_9")
@@ -117,7 +117,7 @@ import Testing
         #"data: {"type":"message_delta","delta":{"stop_reason":"tool_use"}}"#,
         #"data: {"type":"message_stop"}"#,
     ]
-    let assembled = ToolCallAssembler.anthropic(lines: lines)
+    let assembled = ToolCallAssembler.assemble(wire: .anthropic, lines: lines)
     #expect(assembled.text == "Ok")
     #expect(assembled.truncated == false)
     #expect(assembled.calls == [
@@ -131,7 +131,7 @@ import Testing
         #"data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"}}"#,
         #"data: {"type":"message_stop"}"#,
     ]
-    let assembled = ToolCallAssembler.anthropic(lines: lines)
+    let assembled = ToolCallAssembler.assemble(wire: .anthropic, lines: lines)
     #expect(assembled.truncated)
     #expect(assembled.calls[0].id == "toolu_2")
 }
@@ -143,7 +143,7 @@ import Testing
         #"data: {"type":"response.output_text.delta","delta":"Hi"}"#,
         #"data: {"type":"response.completed"}"#,
     ]
-    let assembled = ToolCallAssembler.responses(lines: lines)
+    let assembled = ToolCallAssembler.assemble(wire: .responses, lines: lines)
     #expect(assembled.text == "Hi")
     #expect(assembled.truncated == false)
     #expect(assembled.calls == [
@@ -156,13 +156,13 @@ import Testing
         #"data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","call_id":"call_4","name":"fetch_url","arguments":""}}"#,
         #"data: {"type":"response.incomplete"}"#,
     ]
-    let assembled = ToolCallAssembler.responses(lines: lines)
+    let assembled = ToolCallAssembler.assemble(wire: .responses, lines: lines)
     #expect(assembled.truncated)
     #expect(assembled.calls[0].id == "call_4")
 }
 
-@Test func agentLoopStopsWhenTheModelDoesNotCallATool() {
-    let outcome = AgentLoop.run(
+@Test func agentLoopStopsWhenTheModelDoesNotCallATool() async {
+    let outcome = await AgentLoop.run(
         sample: { _ in
             AgentLoop.Turn(text: "Just text.", calls: [], truncated: false)
         },
@@ -177,8 +177,8 @@ import Testing
     #expect(outcome.stoppedForCap == false)
 }
 
-@Test func agentLoopContinuesAfterAToolResult() {
-    let outcome = AgentLoop.run(
+@Test func agentLoopContinuesAfterAToolResult() async {
+    let outcome = await AgentLoop.run(
         sample: { results in
             if results.isEmpty {
                 return AgentLoop.Turn(
@@ -199,8 +199,8 @@ import Testing
     #expect(outcome.text == "Done.")
 }
 
-@Test func agentLoopStopsAtTheStepCap() {
-    let outcome = AgentLoop.run(
+@Test func agentLoopStopsAtTheStepCap() async {
+    let outcome = await AgentLoop.run(
         sample: { _ in
             AgentLoop.Turn(
                 text: "again",
@@ -218,9 +218,9 @@ import Testing
     #expect(outcome.stoppedForCap)
 }
 
-@Test func agentLoopDoesNotExecuteTruncatedCalls() {
+@Test func agentLoopDoesNotExecuteTruncatedCalls() async {
     var ran = 0
-    let outcome = AgentLoop.run(
+    let outcome = await AgentLoop.run(
         sample: { results in
             if results.isEmpty {
                 return AgentLoop.Turn(
@@ -244,9 +244,9 @@ import Testing
     #expect(outcome.text == "retry")
 }
 
-@Test func unknownToolIsAnErrorResultTheLoopKeeps() {
+@Test func unknownToolIsAnErrorResultTheLoopKeeps() async {
     let call = ToolCall(id: "u", name: "nope", arguments: "{}")
-    let outcome = AgentLoop.run(
+    let outcome = await AgentLoop.run(
         sample: { results in
             if results.isEmpty {
                 return AgentLoop.Turn(text: "", calls: [call], truncated: false)
@@ -288,9 +288,9 @@ import Testing
     #expect(!text.contains("secret"))
 }
 
-@Test func openURLAsksAndFetchDoesNot() {
+@Test func openAndFetchBothAsk() {
     #expect(AgentTools.needsApproval("open_url"))
-    #expect(!AgentTools.needsApproval("fetch_url"))
+    #expect(AgentTools.needsApproval("fetch_url"))
 }
 
 @Test func toolBodiesStayOffUntilTheRegistryIsSent() throws {
@@ -499,4 +499,16 @@ import Testing
     #expect(loaded.lastPathComponent == root.lastPathComponent)
     FolderGrant.clear(in: defaults)
     #expect(FolderGrant.url(from: defaults) == nil)
+}
+
+@Test func approvalShowsTheWholeURLSoAQueryCannotHide() {
+    let url = URL(string: "https://script.example.com/exec?d=secret-notes")!
+    #expect(FetchURLPolicy.shown(url) == "https://script.example.com/exec?d=secret-notes")
+    // Very long URLs keep their start and end, with the middle elided.
+    let long = URL(string: "https://example.com/?d=" + String(repeating: "a", count: 400) + "END")!
+    let shown = FetchURLPolicy.shown(long)
+    #expect(shown.count <= 161)
+    #expect(shown.hasPrefix("https://example.com/?d="))
+    #expect(shown.hasSuffix("END"))
+    #expect(shown.contains("…"))
 }

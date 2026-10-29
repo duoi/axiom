@@ -1,3 +1,4 @@
+import SwiftUI
 import AppKit
 import Foundation
 import Testing
@@ -69,13 +70,16 @@ import Testing
     #expect(mid.maxY > compact.maxY)
 }
 
-@Test func windowCaptureLeavesThePanelUp() {
-    #expect(!CapturePanelConceal.hidesPanel(target: .window))
-    #expect(CapturePanelConceal.hidesPanel(target: .screen))
+@Test func screenCaptureDropsEveryAxiomWindowSoTheCardStaysUp() {
+    let own: pid_t = 4242
+    let windows: [(id: CGWindowID, pid: pid_t?)] = [
+        (10, own), (11, 99), (12, own), (13, nil),
+    ]
+    #expect(ScreenGrab.excludedWindowIDs(windows, ownPID: own) == [10, 12])
 }
 
 @Test @MainActor func measurementHostLeavesTheLivePromptEditor() {
-    let store = EndpointStore()
+    let store = EndpointStore.isolated()
     let model = HUDModel(store: store)
     let live = ClickThroughHosting(rootView: HUDView(model: model, store: store))
     live.setFrameSize(NSSize(width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight))
@@ -378,4 +382,407 @@ import Testing
     )
     #expect(backToScreen.armed)
     #expect(backToScreen.target == .screen)
+}
+
+@Test func splitFlagOffKeepsThe108Window() {
+    #expect(HUDSplitChromeLayout.panelHeight(splitEnabled: false, settledCapsuleHeight: 108, hasLip: false) == 108)
+    #expect(
+        HUDSplitChromeLayout.panelHeight(splitEnabled: false, settledCapsuleHeight: 108, hasLip: true)
+            == 108 + HUDLayout.lipVisible
+    )
+    #expect(HUDSplitChromeLayout.panelHeight(splitEnabled: false, settledCapsuleHeight: 52, hasLip: false) == 108)
+    let frames = HUDSplitChromeLayout.frames(
+        splitEnabled: false,
+        settledCapsuleHeight: 108,
+        panelHeight: 108,
+        showLip: false,
+        cardWidth: 560,
+        leadingWidths: [40],
+        trailingWidths: [40]
+    )
+    #expect(frames.pills.isEmpty)
+    #expect(frames.placement.plate.height == 108)
+    #expect(HUDSplitChromeLayout.pointHitsChrome(CGPoint(x: 20, y: 54), frames: frames, splitEnabled: false))
+}
+
+@Test func splitIdleStacksTheCapsuleGapAndPills() {
+    let capsule: CGFloat = 52
+    let height = HUDSplitChromeLayout.panelHeight(
+        splitEnabled: true,
+        settledCapsuleHeight: capsule,
+        hasLip: false
+    )
+    #expect(height == capsule + HUDSplitChromeLayout.pillGap + HUDSplitChromeLayout.pillHeight)
+    let frames = HUDSplitChromeLayout.frames(
+        splitEnabled: true,
+        settledCapsuleHeight: capsule,
+        panelHeight: height,
+        showLip: false,
+        cardWidth: 560,
+        leadingWidths: [80, 90],
+        trailingWidths: [44, 40, 40]
+    )
+    #expect(frames.placement.plate.height == capsule)
+    #expect(frames.placement.plate.maxY == height)
+    #expect(frames.placement.revealed == 0)
+    #expect(frames.pills.count == 5)
+    let rowMax = frames.placement.plate.minY - HUDSplitChromeLayout.pillGap
+    for pill in frames.pills {
+        #expect(pill.maxY == rowMax)
+        #expect(pill.height == HUDSplitChromeLayout.pillHeight)
+    }
+    #expect(frames.pills[0].minX == 0)
+    #expect(frames.pills[1].minX == 80 + HUDSplitChromeLayout.pillSpacing)
+    #expect(frames.pills[4].maxX == 560)
+    #expect(frames.pills[2].minX > frames.pills[1].maxX + 1)
+}
+
+@Test func splitLipPushesPillsDownByTheRevealedAmount() {
+    let capsule: CGFloat = 52
+    let idle = HUDSplitChromeLayout.panelHeight(
+        splitEnabled: true,
+        settledCapsuleHeight: capsule,
+        hasLip: false
+    )
+    let mid = idle + HUDLayout.lipVisible / 2
+    let frames = HUDSplitChromeLayout.frames(
+        splitEnabled: true,
+        settledCapsuleHeight: capsule,
+        panelHeight: mid,
+        showLip: true,
+        cardWidth: 560,
+        leadingWidths: [60],
+        trailingWidths: [40]
+    )
+    #expect(frames.placement.plate.height == capsule)
+    #expect(frames.placement.plate.maxY == mid)
+    #expect(abs(frames.placement.revealed - HUDLayout.lipVisible / 2) < 0.01)
+    #expect(abs(frames.placement.lip.maxY - frames.placement.plate.minY) < 0.01)
+    #expect(frames.pills[0].maxY == frames.placement.plate.minY - frames.placement.revealed - HUDSplitChromeLayout.pillGap)
+    #expect(frames.pills[1].maxY == frames.pills[0].maxY)
+}
+
+@Test func splitHolesMissAndChromeHits() {
+    let capsule: CGFloat = 52
+    let height = HUDSplitChromeLayout.panelHeight(
+        splitEnabled: true,
+        settledCapsuleHeight: capsule,
+        hasLip: false
+    )
+    let frames = HUDSplitChromeLayout.frames(
+        splitEnabled: true,
+        settledCapsuleHeight: capsule,
+        panelHeight: height,
+        showLip: false,
+        cardWidth: 560,
+        leadingWidths: [80, 70],
+        trailingWidths: [40]
+    )
+    let plate = frames.placement.plate
+    #expect(HUDSplitChromeLayout.pointHitsChrome(CGPoint(x: plate.midX, y: plate.midY), frames: frames, splitEnabled: true))
+    let gap = CGPoint(x: plate.midX, y: plate.minY - HUDSplitChromeLayout.pillGap / 2)
+    #expect(!HUDSplitChromeLayout.pointHitsChrome(gap, frames: frames, splitEnabled: true))
+    let left = frames.pills[1]
+    let right = frames.pills[2]
+    let between = CGPoint(x: (left.maxX + right.minX) / 2, y: left.midY)
+    #expect(right.minX > left.maxX + 1)
+    #expect(!HUDSplitChromeLayout.pointHitsChrome(between, frames: frames, splitEnabled: true))
+    #expect(HUDSplitChromeLayout.pointHitsChrome(CGPoint(x: left.midX, y: left.midY), frames: frames, splitEnabled: true))
+}
+
+@Test func splitCapsuleCornerIsAPillUntilTheRowGrows() {
+    let pill = HUDMetrics.rowHeight / 2
+    #expect(HUDSplitChromeLayout.capsuleCornerRadius(height: HUDMetrics.rowHeight) == pill)
+    let line = PromptLayout.lineHeight(for: PromptLayout.font())
+    let mid = HUDSplitChromeLayout.capsuleCornerRadius(height: HUDMetrics.rowHeight + line / 2)
+    #expect(mid < pill)
+    #expect(mid > HUDMetrics.cornerRadius)
+    #expect(HUDSplitChromeLayout.capsuleCornerRadius(height: 140) == HUDMetrics.cornerRadius)
+}
+
+@Test func frameMotionScalarUsesTheSameEase() {
+    #expect(HUDFrameMotion.scalar(from: 52, to: 200, linearProgress: 0) == 52)
+    #expect(HUDFrameMotion.scalar(from: 52, to: 200, linearProgress: 1) == 200)
+    let mid = HUDFrameMotion.scalar(from: 52, to: 200, linearProgress: 0.5)
+    #expect(abs(mid - 126) < 0.01)
+}
+
+@Test func pourSpringStartsAtZeroAndPeaksAboveOne() {
+    #expect(HUDFrameMotion.pourSpring(elapsed: 0) == 0)
+    #expect(HUDFrameMotion.pourSpring(elapsed: 0.35) > 1)
+    #expect(HUDFrameMotion.pourDelay(rank: 0) == 0)
+    #expect(HUDFrameMotion.pourDelay(rank: 5) == HUDFrameMotion.pourStagger * 2)
+    #expect(HUDFrameMotion.pourPresentation(elapsed: 0, delay: 0.032, opening: true) == 0)
+    #expect(HUDFrameMotion.pourPresentation(elapsed: 0, delay: 0.032, opening: false) == 1)
+}
+
+@Test func pourSpacingOpensTheGapWithoutLeavingNeighborsFused() {
+    #expect(HUDFrameMotion.pourSpacing(slowestVerticalGap: -HUDFrameMotion.pourOverlap) == HUDFrameMotion.pourBridge)
+    #expect(HUDFrameMotion.pourSpacing(slowestVerticalGap: HUDSplitChromeLayout.pillGap) == 0)
+    let midway = HUDFrameMotion.pourSpacing(slowestVerticalGap: 8)
+    #expect(midway < HUDSplitChromeLayout.pillSpacing)
+    #expect(midway > 0)
+}
+
+@Test func tuckedPillOverlapsTheCapsuleAndPresentationOneSeatsIt() {
+    let plate = CGRect(x: 0, y: 56, width: 560, height: 52)
+    let rest = CGRect(x: 0, y: 0, width: 80, height: HUDSplitChromeLayout.pillHeight)
+    let tuck = HUDFrameMotion.tuckedPillFrame(rest: rest, plate: plate, cardWidth: 560)
+    #expect(abs((tuck.maxY - plate.minY) - HUDFrameMotion.pourOverlap) < 0.01)
+    #expect(tuck.midX > rest.midX)
+    let seated = HUDFrameMotion.pouredPillFrame(from: tuck, to: rest, presentation: 1)
+    #expect(abs(seated.maxY - (plate.minY - HUDSplitChromeLayout.pillGap)) < 0.5)
+    let neighbor = CGRect(x: 88, y: 0, width: 70, height: HUDSplitChromeLayout.pillHeight)
+    #expect(neighbor.minX - rest.maxX == HUDSplitChromeLayout.pillSpacing)
+}
+
+@Test func chipAndLipOpacityFollowTheDisplayedHeight() {
+    let prompt = HUDSplitChromeLayout.promptBlock(extraLines: 0)
+    #expect(HUDSplitChromeLayout.chipOpacity(displayedCapsule: prompt, promptBlock: prompt) == 0)
+    let full = prompt + HUDSplitChromeLayout.chipBand
+    #expect(HUDSplitChromeLayout.chipOpacity(displayedCapsule: full, promptBlock: prompt) == 1)
+    #expect(HUDSplitChromeLayout.lipCopyOpacity(revealed: 0) == 0)
+    #expect(HUDSplitChromeLayout.lipCopyOpacity(revealed: HUDLayout.lipVisible / 2) == 0.5)
+    #expect(HUDSplitChromeLayout.lipCopyOpacity(revealed: HUDLayout.lipVisible) == 1)
+}
+
+@Test func splitPillsTrackTheLiveCapsule() {
+    let from = HUDMetrics.rowHeight
+    let to: CGFloat = 200
+    let midCapsule = HUDFrameMotion.scalar(from: from, to: to, linearProgress: 0.5)
+    let fromPanel = HUDSplitChromeLayout.panelHeight(
+        splitEnabled: true,
+        settledCapsuleHeight: from,
+        hasLip: false
+    )
+    let toPanel = HUDSplitChromeLayout.panelHeight(
+        splitEnabled: true,
+        settledCapsuleHeight: to,
+        hasLip: false
+    )
+    let midPanel = HUDFrameMotion.scalar(from: fromPanel, to: toPanel, linearProgress: 0.5)
+    let frames = HUDSplitChromeLayout.frames(
+        splitEnabled: true,
+        settledCapsuleHeight: midCapsule,
+        panelHeight: midPanel,
+        showLip: false,
+        cardWidth: 560,
+        leadingWidths: [80],
+        trailingWidths: [40]
+    )
+    let plate = frames.placement.plate
+    #expect(abs(plate.height - midCapsule) < 0.5)
+    #expect(abs(frames.pills[0].maxY - (plate.minY - HUDSplitChromeLayout.pillGap)) < 0.5)
+}
+
+@MainActor
+private func promptReachable(_ hud: HUDController) async -> (focused: Bool, clickable: Bool, detail: String) {
+    hud.show()
+    // Suspend instead of spinning the run loop, so the main-queue focus hop in show() can run.
+    try? await Task.sleep(for: .milliseconds(600))
+    hud.panel.contentView?.layoutSubtreeIfNeeded()
+    guard let focus = hud.model.promptEditor?.promptFocusView else {
+        return (false, false, "no prompt editor")
+    }
+    let responder = hud.panel.firstResponder
+    var focused = false
+    if let view = responder as? NSView {
+        focused = view === focus || view.isDescendant(of: focus)
+    }
+    let center = focus.convert(NSPoint(x: focus.bounds.midX, y: focus.bounds.midY), to: nil)
+    let hit = (hud.panel.contentView?.superview ?? hud.panel.contentView)?.hitTest(center)
+    let clickable = hit.map { $0 === focus || $0.isDescendant(of: focus) } ?? false
+    let detail = "responder=\(String(describing: responder.map { type(of: $0) })) "
+        + "inPanel=\(focus.window === hud.panel) hit=\(String(describing: hit.map { type(of: $0) }))"
+    return (focused, clickable, detail)
+}
+
+@Test @MainActor func newUIKeepsThePromptTypableAndSurvivesTurningItOff() async {
+    let store = EndpointStore.isolated()
+    let saved = store.usesNewUI
+    defer { store.usesNewUI = saved }
+    store.usesNewUI = true
+    let hud = HUDController(store: store)
+    defer { hud.panel.orderOut(nil) }
+
+    let split = await promptReachable(hud)
+    #expect(split.focused, "New UI focus: \(split.detail)")
+    #expect(split.clickable, "New UI click: \(split.detail)")
+
+    hud.panel.orderOut(nil)
+    store.usesNewUI = false
+    let classic = await promptReachable(hud)
+    #expect(classic.focused, "Classic after New UI focus: \(classic.detail)")
+    #expect(classic.clickable, "Classic after New UI click: \(classic.detail)")
+
+    hud.panel.orderOut(nil)
+    store.usesNewUI = true
+    let again = await promptReachable(hud)
+    #expect(again.focused, "New UI after classic focus: \(again.detail)")
+    #expect(again.clickable, "New UI after classic click: \(again.detail)")
+}
+
+
+@Test func dismissTucksWithoutBouncingBeforeTheFadeEnds() {
+    let fadeEnd = HUDFrameMotion.pourDismissFadeDelay + HUDPanelFade.duration
+    for rank in 0...2 {
+        let delay = HUDFrameMotion.pourDelay(rank: rank)
+        var previous: CGFloat = 1
+        for step in 0...100 {
+            let t = fadeEnd * Double(step) / 100
+            let value = HUDFrameMotion.pourPresentation(elapsed: t, delay: delay, opening: false)
+            #expect(value >= 0 && value <= 1, "rank \(rank) t \(t): \(value)")
+            #expect(value <= previous + 0.0001, "rank \(rank) t \(t) moved back out")
+            previous = value
+        }
+        #expect(HUDFrameMotion.pourPresentation(elapsed: fadeEnd, delay: delay, opening: false) == 0)
+    }
+}
+
+@Test @MainActor func agentRowLeavesWallpaperBetweenTheColumns() {
+    let store = EndpointStore.isolated()
+    let model = HUDModel(store: store)
+    func width(_ id: HUDPillID) -> CGFloat {
+        let host = ClickThroughHosting(rootView: HUDView(model: model, store: store, region: .pill(id)))
+        host.layoutSubtreeIfNeeded()
+        return max(HUDSplitChromeLayout.pillHeight, ceil(host.fittingSize.width))
+    }
+    let columns = HUDPillID.columns(showsPreset: true)
+    #expect(columns.leading.contains(.contextIcon))
+    #expect(!HUDPillID.columns(showsPreset: false).leading.contains(.contextIcon))
+    let frames = HUDSplitChromeLayout.frames(
+        splitEnabled: true,
+        settledCapsuleHeight: HUDMetrics.rowHeight,
+        panelHeight: HUDMetrics.minCardHeight,
+        showLip: false,
+        cardWidth: HUDMetrics.cardWidth,
+        leadingWidths: columns.leading.map(width),
+        trailingWidths: columns.trailing.map(width)
+    )
+    let lastLeading = frames.pills[columns.leading.count - 1]
+    let firstTrailing = frames.pills[columns.leading.count]
+    #expect(firstTrailing.minX - lastLeading.maxX >= HUDSplitChromeLayout.pillSpacing)
+}
+
+@Test @MainActor func pillHandsClicksStraightToItsContent() {
+    let pill = PillGlassView(frame: NSRect(x: 0, y: 0, width: 120, height: 40))
+    let inner = NSView(frame: pill.bounds)
+    pill.contentView = inner
+    pill.layoutSubtreeIfNeeded()
+    let hit = pill.hitTest(NSPoint(x: 60, y: 20))
+    #expect(hit === inner || hit?.isDescendant(of: inner) == true)
+}
+
+@MainActor
+private func allViews(_ root: NSView) -> [NSView] {
+    [root] + root.subviews.flatMap(allViews)
+}
+
+@MainActor
+private func clickToggles(_ hud: HUDController, at view: NSView, x: CGFloat) async throws -> Bool {
+    let before = hud.model.captureArmed
+    try await click(hud, at: view, x: x)
+    return hud.model.captureArmed != before
+}
+
+@MainActor
+private func click(_ hud: HUDController, at view: NSView, x: CGFloat) async throws {
+    let point = view.convert(NSPoint(x: x, y: view.bounds.midY), to: nil)
+    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+        let event = try #require(NSEvent.mouseEvent(
+            with: type, location: point, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: hud.panel.windowNumber,
+            context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0
+        ))
+        NSApp.sendEvent(event)
+        try? await Task.sleep(for: .milliseconds(100))
+    }
+    try? await Task.sleep(for: .milliseconds(300))
+}
+
+@Test @MainActor func newUIPillClickRunsItsAction() async throws {
+    let store = EndpointStore.isolated()
+    let saved = store.usesNewUI
+    defer { store.usesNewUI = saved }
+    store.usesNewUI = true
+    let hud = HUDController(store: store)
+    defer { hud.panel.orderOut(nil) }
+    hud.show()
+    try? await Task.sleep(for: .milliseconds(900))
+    let root = try #require(hud.panel.contentView?.superview ?? hud.panel.contentView)
+    let pills = allViews(root).compactMap { $0 as? PillGlassView }.sorted { $0.frame.minX < $1.frame.minX }
+    // Your saved Agent setting decides whether the Agent pill leads the row.
+    let hasAgent = pills.count == 6
+    let capture = pills[hasAgent ? 1 : 0]
+    if hasAgent {
+        let preset = hud.model.session.preset
+        try await click(hud, at: pills[0], x: 30)
+        #expect(hud.model.session.preset != preset, "Agent pill click")
+    }
+    #expect(try await clickToggles(hud, at: capture, x: 30))
+}
+
+
+@Test func splitMarginHoldsTheOpeningOvershoot() {
+    let peak = (1...700).map { HUDFrameMotion.pourSpring(elapsed: Double($0) / 1000) }.max() ?? 1
+    let margin = HUDSplitChromeLayout.windowMargin
+    let card = HUDMetrics.cardWidth
+    let plate = CGRect(x: 0, y: HUDSplitChromeLayout.pillGap + HUDSplitChromeLayout.pillHeight, width: card, height: HUDMetrics.rowHeight)
+    let edges = [
+        CGRect(x: 0, y: 0, width: HUDSplitChromeLayout.pillHeight, height: HUDSplitChromeLayout.pillHeight),
+        CGRect(x: card - HUDSplitChromeLayout.pillHeight, y: 0, width: HUDSplitChromeLayout.pillHeight, height: HUDSplitChromeLayout.pillHeight),
+    ]
+    for rest in edges {
+        let tuck = HUDFrameMotion.tuckedPillFrame(rest: rest, plate: plate, cardWidth: card)
+        let swung = HUDFrameMotion.pouredPillFrame(from: tuck, to: rest, presentation: peak)
+        #expect(swung.minX >= -margin.left)
+        #expect(swung.maxX <= card + margin.right)
+        #expect(swung.minY >= -margin.bottom)
+    }
+}
+
+@Test @MainActor func chromeMarginGrowsTheWindowAroundTheCard() {
+    let panel = HUDPanel()
+    let card = NSRect(x: 300, y: 400, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight)
+    panel.setFrame(card, display: false)
+    let margin = HUDSplitChromeLayout.windowMargin
+    panel.chromeMargin = margin
+    #expect(panel.cardFrame == card)
+    #expect(panel.frame == NSRect(
+        x: card.minX - margin.left,
+        y: card.minY - margin.bottom,
+        width: card.width + margin.left + margin.right,
+        height: card.height + margin.top + margin.bottom
+    ))
+    panel.chromeMargin = NSEdgeInsetsZero
+    #expect(panel.frame == card)
+}
+
+@Test @MainActor func reopeningDuringTheNewUIFadePoursThePillsBackOut() {
+    guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+    let store = EndpointStore.isolated()
+    store.usesNewUI = true
+    let hud = HUDController(store: store)
+    defer { hud.panel.orderOut(nil) }
+    hud.show()
+    hud.userDismiss(clickOutside: false)
+    #expect(hud.panel.isFadingOut)
+    #expect(hud.chrome?.pourOpening == false)
+
+    hud.show()
+    #expect(hud.chrome?.pourOpening == true)
+}
+
+
+
+@Test func settingsRisesAboveTheCardOnlyWhileYouUseIt() {
+    let card = NSWindow.Level.floating
+    #expect(AuxiliaryWindowLevel.level(appActive: true, isKey: true, ownsFocus: false, cardLevel: card) == card)
+    // Its editor sheet or Add Provider popover has focus: still in use.
+    #expect(AuxiliaryWindowLevel.level(appActive: true, isKey: false, ownsFocus: true, cardLevel: card) == card)
+    // You went back to the card.
+    #expect(AuxiliaryWindowLevel.level(appActive: true, isKey: false, ownsFocus: false, cardLevel: card) == .normal)
+    // Another app is in front, or Axiom never became active: other apps must be able to cover it.
+    #expect(AuxiliaryWindowLevel.level(appActive: false, isKey: true, ownsFocus: false, cardLevel: card) == .normal)
+    #expect(AuxiliaryWindowLevel.level(appActive: false, isKey: true, ownsFocus: true, cardLevel: card) == .normal)
 }

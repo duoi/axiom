@@ -18,6 +18,7 @@ final class HUDModel {
     var onLayout: () -> Void = {}
     var historyExpanded = false
     var historyExcluded = false
+    var splitChipOpacity: CGFloat = 1
     var screenNotice: String? {
         didSet {
             if screenNotice != oldValue {
@@ -29,6 +30,7 @@ final class HUDModel {
         }
     }
     var captureArmed = false
+    private var sentArmedCapture = false
     /// Control-S has already switched Screen/Window since capture was armed.
     var captureShortcutToggled = false
     var cardIsKey = true
@@ -76,15 +78,18 @@ final class HUDModel {
     }
 
     private var task: Task<Void, Never>?
-    private var clientSession: URLSession?
+    /// A session holds its delegate and connections until invalidated, so let the old one go.
+    private var clientSession: URLSession? {
+        didSet {
+            if oldValue !== clientSession { oldValue?.finishTasksAndInvalidate() }
+        }
+    }
     private var redirectGuard: RedirectGuard?
+    private var layoutPending = false
 
     init(store: EndpointStore) {
         self.store = store
-        session.preset = AgentModePolicy.preset(
-            experimental: store.experimentalAgent,
-            prefersAgent: store.sendEndpoint(hasImage: false)?.prefersAgent == true
-        )
+        session.preset = store.startingPreset
     }
 
     func simulateIncomingStream(_ text: String, finish: Bool = true) {
@@ -181,19 +186,13 @@ final class HUDModel {
     }
 
     func setPreset(_ preset: Preset) {
-        let showsControl = AgentModePolicy.showsPresetControl(
-            experimental: store.experimentalAgent,
-            prefersAgent: store.sendEndpoint(hasImage: false)?.prefersAgent == true
-        )
+        let showsControl = store.showsPresetControl
         session.preset = showsControl ? preset : .ask
     }
 
     func applyModelPreset() {
         setPreset(
-            AgentModePolicy.preset(
-                experimental: store.experimentalAgent,
-                prefersAgent: store.sendEndpoint(hasImage: false)?.prefersAgent == true
-            )
+            store.startingPreset
         )
     }
 
@@ -291,6 +290,7 @@ final class HUDModel {
                 session.fail(message)
                 onLayout()
             case .ready(let url, let model, let key, let kind):
+                sentArmedCapture = captureArmed
                 captureArmed = false
                 stickToBottom = true
                 onSendBegan()
@@ -303,6 +303,7 @@ final class HUDModel {
                 focusField()
             }
         case .onDevice:
+            sentArmedCapture = captureArmed
             captureArmed = false
             stickToBottom = true
             onSendBegan()
@@ -318,6 +319,9 @@ final class HUDModel {
         applySession { $0.stop() }
         if session.phase == .finished {
             persistHistoryIfNeeded()
+        } else if session.phase == .composing, sentArmedCapture {
+            // Nothing came back, so the prompt goes back to the composer. Its screenshot goes with it.
+            captureArmed = true
         }
         task?.cancel()
         task = nil
@@ -614,7 +618,7 @@ final class HUDModel {
                     switch event {
                     case .token(let token):
                         self.applySession { $0.receiveToken(token) }
-                        self.onLayout()
+                        self.layoutSoon()
                     case .toolCalls:
                         break
                     case .done:
@@ -658,6 +662,16 @@ final class HUDModel {
 
     var hasPendingOpen: Bool { openContinuation != nil }
 
+    /// Each layout re-measures the whole reply. Tokens can arrive many per main-loop turn, so lay out once.
+    private func layoutSoon() {
+        guard !layoutPending else { return }
+        layoutPending = true
+        DispatchQueue.main.async { [weak self] in
+            self?.layoutPending = false
+            self?.onLayout()
+        }
+    }
+
     func allowPendingOpen() {
         resolveOpen(true)
     }
@@ -694,37 +708,32 @@ final class HUDModel {
         task = Task { [weak self] in
             guard let self else { return }
             var messages = initial
-            var modelCalls = 0
+            // ChatGPT refresh tokens are single use, so each step must start from the last refreshed secret.
+            var apiKey = apiKey
             do {
-                while modelCalls < AgentLoop.stepCap {
-                    try Task.checkCancellation()
-                    self.toolLine = nil
-                    let events = try await self.cloudEvents(
-                        url: url,
-                        model: model,
-                        apiKey: apiKey,
-                        kind: kind,
-                        messages: messages,
-                        tools: AgentTools.definitions
-                    )
-                    let sample = try await self.collectSample(events)
-                    modelCalls += 1
-                    if sample.truncated {
-                        let results = sample.calls.map(AgentTools.truncatedResult)
-                        messages.append(contentsOf: self.toolExchange(text: sample.text, calls: sample.calls, results: results))
-                        continue
-                    }
-                    if sample.calls.isEmpty {
-                        self.finishAgentTurn()
-                        return
-                    }
-                    var results: [ToolResult] = []
-                    for call in sample.calls {
+                _ = try await AgentLoop.run(
+                    sample: { _ in
                         try Task.checkCancellation()
-                        results.append(try await self.executeTool(call))
+                        self.toolLine = nil
+                        let events = try await self.cloudEvents(
+                            url: url,
+                            model: model,
+                            apiKey: &apiKey,
+                            kind: kind,
+                            messages: messages,
+                            tools: AgentTools.definitions
+                        )
+                        let sample = try await self.collectSample(events)
+                        return AgentLoop.Turn(text: sample.text, calls: sample.calls, truncated: sample.truncated)
+                    },
+                    execute: { call in
+                        try Task.checkCancellation()
+                        return try await self.executeTool(call)
+                    },
+                    record: { turn, results in
+                        messages.append(contentsOf: self.toolExchange(text: turn.text, calls: turn.calls, results: results))
                     }
-                    messages.append(contentsOf: self.toolExchange(text: sample.text, calls: sample.calls, results: results))
-                }
+                )
                 self.finishAgentTurn()
             } catch is CancellationError {
                 return
@@ -754,7 +763,7 @@ final class HUDModel {
     private func cloudEvents(
         url: URL,
         model: String,
-        apiKey: String,
+        apiKey: inout String,
         kind: CloudSendKind,
         messages: [OutboundMessage],
         tools: [AgentToolDefinition]
@@ -784,6 +793,7 @@ final class HUDModel {
             if let id = store.endpoints.first(where: { store.apiKey(for: $0.id) == apiKey })?.id {
                 store.replaceChatSecret(secret, id: id)
             }
+            apiKey = secret
             return ChatGPTClient(session: session).stream(
                 ChatRequest(
                     url: url,
@@ -810,7 +820,7 @@ final class HUDModel {
                 text += token
                 toolLine = nil
                 applySession { $0.receiveToken(token) }
-                onLayout()
+                layoutSoon()
             case .toolCalls(let found, let cut):
                 calls = found
                 truncated = cut
@@ -856,44 +866,43 @@ final class HUDModel {
                 isError: true
             )
         }
-        if call.name == AgentTools.openName {
-            guard FetchURLPolicy.allowsOpen(url) else {
+        let opens = call.name == AgentTools.openName
+        let permitted = opens
+            ? FetchURLPolicy.allowsOpen(url)
+            : FetchURLPolicy.allows(url, allowedCleartextHosts: store.allowedCleartextHosts)
+        guard permitted else {
+            return ToolResult(
+                toolCallID: call.id,
+                name: call.name,
+                text: opens
+                    ? String(localized: "That URL cannot be opened.")
+                    : String(localized: "That URL is not allowed."),
+                isError: true
+            )
+        }
+        // A fetched page or a file can tell the model to send folder text to any URL, often hidden in the
+        // query string. Show the whole URL and ask.
+        if AgentTools.needsApproval(call.name) {
+            let shown = FetchURLPolicy.shown(url)
+            let question = opens ? String(localized: "Open \(shown)?") : String(localized: "Fetch \(shown)?")
+            guard try await approve(question) else {
                 return ToolResult(
                     toolCallID: call.id,
                     name: call.name,
-                    text: String(localized: "That URL cannot be opened."),
+                    text: opens
+                        ? String(localized: "The user declined to open that link.")
+                        : String(localized: "The user declined to fetch that URL."),
                     isError: true
                 )
             }
-            let host = url.host ?? url.absoluteString
-            toolLine = String(localized: "Open \(host)?")
-            onLayout()
-            let allowed = await waitForOpenApproval()
-            try Task.checkCancellation()
-            toolLine = nil
-            onLayout()
-            guard allowed else {
-                return ToolResult(
-                    toolCallID: call.id,
-                    name: call.name,
-                    text: String(localized: "The user declined to open that link."),
-                    isError: true
-                )
-            }
+        }
+        if opens {
             NSWorkspace.shared.open(url)
             return ToolResult(
                 toolCallID: call.id,
                 name: call.name,
                 text: String(localized: "Opened \(url.absoluteString)."),
                 isError: false
-            )
-        }
-        guard FetchURLPolicy.allows(url, allowedCleartextHosts: store.allowedCleartextHosts) else {
-            return ToolResult(
-                toolCallID: call.id,
-                name: call.name,
-                text: String(localized: "That URL is not allowed."),
-                isError: true
             )
         }
         let host = url.host ?? url.absoluteString
@@ -955,10 +964,17 @@ final class HUDModel {
         return ToolResult(toolCallID: call.id, name: call.name, text: hit.text, isError: hit.isError)
     }
 
-    private func waitForOpenApproval() async -> Bool {
-        await withCheckedContinuation { continuation in
+    /// Shows `question` on the card and waits for Allow or Deny.
+    private func approve(_ question: String) async throws -> Bool {
+        toolLine = question
+        onLayout()
+        let allowed = await withCheckedContinuation { continuation in
             openContinuation = continuation
         }
+        try Task.checkCancellation()
+        toolLine = nil
+        onLayout()
+        return allowed
     }
 
     private func resolveOpen(_ allowed: Bool) {

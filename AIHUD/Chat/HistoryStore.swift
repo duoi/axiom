@@ -65,8 +65,6 @@ struct HistoryEntry: Codable, Equatable, Sendable, Identifiable {
         if trimmed.count <= 72 { return trimmed }
         return String(trimmed.prefix(72)) + "…"
     }
-
-    var promptSnippet: String { title }
 }
 
 enum HistoryPolicy {
@@ -143,10 +141,6 @@ enum HistoryPolicy {
         }
         return result
     }
-
-    static func screenJPEG(from turns: [Turn]) -> Data? {
-        screenJPEGs(from: turns).first?.data
-    }
 }
 
 @Observable
@@ -155,14 +149,16 @@ final class HistoryStore {
     private let fileManager: FileManager
     private let indexURL: URL
     private let screenshotsURL: URL
+    private let maxEntries: Int
     private(set) var entries: [HistoryEntry]
 
-    init(root: URL, fileManager: FileManager = .default) {
+    init(root: URL, fileManager: FileManager = .default, maxEntries: Int = 500) {
         self.root = root
         self.fileManager = fileManager
+        self.maxEntries = maxEntries
         self.indexURL = root.appendingPathComponent("history.json")
         self.screenshotsURL = root.appendingPathComponent("screenshots", isDirectory: true)
-        self.entries = Self.loadEntries(from: indexURL)
+        self.entries = Self.loadEntries(from: indexURL, fileManager: fileManager)
     }
 
     static func defaultRoot(fileManager: FileManager = .default) -> URL {
@@ -198,6 +194,19 @@ final class HistoryStore {
             ?? entries.first(where: { $0.startedAt == startedAt })?.id
             ?? UUID()
         let existingIndex = entries.firstIndex { $0.id == id }
+        let shots = saveScreenshots ? HistoryPolicy.screenJPEGs(from: turns) : []
+        let contextFilenames = HistoryPolicy.contextFilenames(from: turns)
+        // Finishing and then dismissing records the same chat twice. Skip the second full rewrite.
+        if let existingIndex {
+            let existing = entries[existingIndex]
+            if existing.turns.map(\.role) == turns.map(\.role.rawValue),
+               existing.turns.map(\.text) == turns.map(\.text),
+               existing.contextFilenames == contextFilenames,
+               existing.hasScreenshot == !shots.isEmpty
+            {
+                return existing
+            }
+        }
 
         removeScreenshots(for: id)
 
@@ -206,10 +215,10 @@ final class HistoryStore {
         }
         var wroteAnyScreenshot = false
 
-        if saveScreenshots {
+        if !shots.isEmpty {
             try? fileManager.createDirectory(at: screenshotsURL, withIntermediateDirectories: true)
             var shotOrdinal = 0
-            for item in HistoryPolicy.screenJPEGs(from: turns) {
+            for item in shots {
                 let name = "\(id.uuidString)-\(shotOrdinal).jpg"
                 let url = screenshotsURL.appendingPathComponent(name)
                 do {
@@ -228,13 +237,16 @@ final class HistoryStore {
             startedAt: startedAt,
             savedAt: Date(),
             turns: turnRecords,
-            contextFilenames: HistoryPolicy.contextFilenames(from: turns),
+            contextFilenames: contextFilenames,
             hasScreenshot: wroteAnyScreenshot
         )
         if let existingIndex {
             entries.remove(at: existingIndex)
         }
         entries.insert(entry, at: 0)
+        while entries.count > maxEntries {
+            removeScreenshots(for: entries.removeLast().id)
+        }
         persistIndex()
         return entry
     }
@@ -242,6 +254,18 @@ final class HistoryStore {
     func delete(id: UUID) {
         entries.removeAll { $0.id == id }
         removeScreenshots(for: id)
+        persistIndex()
+    }
+
+    /// Turning screenshots off removes the ones already saved. The chats stay.
+    func removeAllScreenshots() {
+        try? fileManager.removeItem(at: screenshotsURL)
+        for index in entries.indices {
+            entries[index].hasScreenshot = false
+            for turn in entries[index].turns.indices {
+                entries[index].turns[turn].screenshotNames = []
+            }
+        }
         persistIndex()
     }
 
@@ -273,7 +297,7 @@ final class HistoryStore {
     }
 
     func reload() {
-        entries = Self.loadEntries(from: indexURL)
+        entries = Self.loadEntries(from: indexURL, fileManager: fileManager)
     }
 
     private func removeScreenshots(for id: UUID) {
@@ -299,10 +323,17 @@ final class HistoryStore {
         try? data.write(to: indexURL, options: .atomic)
     }
 
-    private static func loadEntries(from url: URL) -> [HistoryEntry] {
+    private static func loadEntries(from url: URL, fileManager: FileManager) -> [HistoryEntry] {
         guard let data = try? Data(contentsOf: url) else { return [] }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode([HistoryEntry].self, from: data)) ?? []
+        if let entries = try? decoder.decode([HistoryEntry].self, from: data) {
+            return entries
+        }
+        // The next save would overwrite every chat with an empty list, so keep the unreadable file.
+        let stamp = Int(Date().timeIntervalSince1970)
+        let aside = url.deletingLastPathComponent().appendingPathComponent("history.corrupt-\(stamp).json")
+        try? fileManager.moveItem(at: url, to: aside)
+        return []
     }
 }

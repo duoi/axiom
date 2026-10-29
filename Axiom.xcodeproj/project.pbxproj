@@ -61,12 +61,10 @@
 		AC2F39E90B140242D68809E8 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE97A298FE9D484D8CE24048 /* StatusItemController.swift */; };
 		B691CA65244264EB4E88DD9A /* EndpointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788DBF53EE91E78B45B572B6 /* EndpointStore.swift */; };
 		B8B2A1487A25CCAB2D5978E8 /* DebugRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27EA2490242386C71D2D68D /* DebugRoutingTests.swift */; };
-		B9DCFE3EE8ED4BFD9624CE27 /* SettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 394BEF8E574FD7E24B22C348 /* SettingsCard.swift */; };
 		BD3128B0324D0EDC7BBE4A1A /* ModelChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD21F3A7E5F0A6CC98D2B5C2 /* ModelChoice.swift */; };
 		BF18975883D3544F35C9A87B /* ChatRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AE30553291F80A65BD86750 /* ChatRouting.swift */; };
 		C0BBDDFB48A9AB90B1FAC137 /* DebugTranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 769775CC76630A242298588D /* DebugTranscriptTests.swift */; };
 		C22784B4A8365D405C75E340 /* InFlightPromptEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81644BFED8B7DAF8435795CF /* InFlightPromptEffects.swift */; };
-		C2B7B578EAE4E7253E40EAB9 /* DevCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = A777EE7B25BA4F06F37870BD /* DevCredentials.swift */; };
 		C32A6D8E0B23A99B8B5040A9 /* ReasoningEffortTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B22B6C5120D7AC472A26D05 /* ReasoningEffortTests.swift */; };
 		C340EEBC9B66805B563B45D9 /* HUDGlowSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDDA17B5088CD21D27B5C8BD /* HUDGlowSync.swift */; };
 		C4AF3922E853F9A7847F4CA5 /* HUDModelMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E56CCB3DFBC5838A4E66739 /* HUDModelMenu.swift */; };
@@ -120,7 +118,6 @@
 		2C4F461B8B8A0C1D8398160E /* ChatLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatLogicTests.swift; sourceTree = "<group>"; };
 		2E56A27300A6D3AFEBC5AA2C /* DebugTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugTranscriptView.swift; sourceTree = "<group>"; };
 		3555231E8F0128EBC21C449C /* VoiceCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCapture.swift; sourceTree = "<group>"; };
-		394BEF8E574FD7E24B22C348 /* SettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsCard.swift; sourceTree = "<group>"; };
 		40730982A3406D0BEE82314B /* HistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryStore.swift; sourceTree = "<group>"; };
 		408B7CA5C5DC2BA5D3AB8C6A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C4A10C5E7B2D4F19A8E6C301 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
@@ -155,7 +152,6 @@
 		A27EA2490242386C71D2D68D /* DebugRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugRoutingTests.swift; sourceTree = "<group>"; };
 		A2DEE44DA71644B7B062CE82 /* Axiom.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Axiom.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A32CCE5C92C1EAF8D2C5F60C /* HistoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryDetailView.swift; sourceTree = "<group>"; };
-		A777EE7B25BA4F06F37870BD /* DevCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevCredentials.swift; sourceTree = "<group>"; };
 		B14F22708D0F5BEC80F89123 /* EndpointTableColumns.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndpointTableColumns.swift; sourceTree = "<group>"; };
 		B624DB7A9F28999E9460CB1C /* ChatGPTAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGPTAuth.swift; sourceTree = "<group>"; };
 		B6D3C687F3A2F601C8429F22 /* SendFailureCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendFailureCopy.swift; sourceTree = "<group>"; };
@@ -308,7 +304,6 @@
 			children = (
 				2E56A27300A6D3AFEBC5AA2C /* DebugTranscriptView.swift */,
 				C9A351F6CC373C286D7A8287 /* DebugView.swift */,
-				A777EE7B25BA4F06F37870BD /* DevCredentials.swift */,
 				1FE7EA1D7333315DBD63703A /* EndpointEditorView.swift */,
 				788DBF53EE91E78B45B572B6 /* EndpointStore.swift */,
 				B14F22708D0F5BEC80F89123 /* EndpointTableColumns.swift */,
@@ -316,7 +311,6 @@
 				425F3B10EC10752DC93C5F75 /* HUDAuxiliaryWindows.swift */,
 				D9AF527336009C81EA03944C /* KeychainStore.swift */,
 				ED9A394CD788E75E36F8DA75 /* ModelRoleSection.swift */,
-				394BEF8E574FD7E24B22C348 /* SettingsCard.swift */,
 				8D6A7D7F12D3B0160058DE37 /* SettingsPermissionRow.swift */,
 				65B4C076E52219EC804C81A6 /* SettingsView.swift */,
 			);
@@ -501,7 +495,6 @@
 				876CFD43475EC8C831ACB140 /* DebugRouting.swift in Sources */,
 				E7F60FF9530BEA11134ED482 /* DebugTranscriptView.swift in Sources */,
 				E0881EECDB1E19DFBC7B8511 /* DebugView.swift in Sources */,
-				C2B7B578EAE4E7253E40EAB9 /* DevCredentials.swift in Sources */,
 				DB3D9FB85095CD90125CEAC9 /* EditCommands.swift in Sources */,
 				CF349C37B64907564BC5B8C4 /* Endpoint.swift in Sources */,
 				61A8C11E2FBB72B3358F2880 /* EndpointEditorView.swift in Sources */,
@@ -541,7 +534,6 @@
 				D6448A3C7DEFC3A7EA9A2C5E /* ScreenImage.swift in Sources */,
 				518070144945027A3D421C88 /* SendFailureCopy.swift in Sources */,
 				DE4CBB33358D9136F52139C0 /* Session.swift in Sources */,
-				B9DCFE3EE8ED4BFD9624CE27 /* SettingsCard.swift in Sources */,
 				315FD37D8F197FA1AD9C9448 /* SettingsPermissionRow.swift in Sources */,
 				40BCB1641A00CB8F91ED079C /* SettingsView.swift in Sources */,
 				AC2F39E90B140242D68809E8 /* StatusItemController.swift in Sources */,

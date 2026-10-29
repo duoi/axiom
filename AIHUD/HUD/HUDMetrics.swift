@@ -1,29 +1,17 @@
 import AppKit
 import CoreGraphics
 
-struct HUDInsets: Equatable, Sendable {
-    var top: CGFloat
-    var leading: CGFloat
-    var bottom: CGFloat
-    var trailing: CGFloat
-
-    static func equal(_ value: CGFloat) -> HUDInsets {
-        HUDInsets(top: value, leading: value, bottom: value, trailing: value)
-    }
-}
-
 enum HUDMetrics {
     static let cardWidth: CGFloat = 560
     static let cornerRadius: CGFloat = 24
     static let inset: CGFloat = 20
     static let controlSize: CGFloat = 24
     static let pillInset: CGFloat = 8
-    static var pillInsets: HUDInsets { .equal(pillInset) }
     static let rowHeight: CGFloat = 52
     static let controlSpacing: CGFloat = 20
-    static let sidebarWidth: CGFloat = 184
+    static let sidebarWidth: CGFloat = 200
     static let minCardHeight: CGFloat = 108
-    static let settingsSize = CGSize(width: 760, height: 640)
+    static let settingsSize = CGSize(width: 680, height: 520)
     static let debugSize = CGSize(width: 440, height: 720)
     static let transcriptSize = CGSize(width: 640, height: 520)
 }
@@ -45,7 +33,7 @@ enum HUDLayout {
     static var replyMaxLines: Int { replyDownLines + replyUpLines }
     /// SwiftUI `.font(.body)` on the compact reply. Same face used to count wraps.
     static var replyFont: NSFont { .preferredFont(forTextStyle: .body) }
-    static var replyLineHeight: CGFloat { PromptLayout.lineHeight(for: replyFont) }
+    static let replyLineHeight: CGFloat = PromptLayout.lineHeight(for: replyFont)
     /// Compact answer and the shared reply/history scroll column use `HUDMetrics.inset` (20) on each side.
     static var replyTextWidth: CGFloat { rowWidth }
 
@@ -95,9 +83,10 @@ enum HUDLayout {
         windowHeight: CGFloat,
         cardHeight: CGFloat,
         cardWidth: CGFloat,
-        hasLip: Bool
+        hasLip: Bool,
+        minimumCardHeight: CGFloat = HUDMetrics.minCardHeight
     ) -> LipPlacement {
-        let card = max(HUDMetrics.minCardHeight, cardHeight)
+        let card = max(minimumCardHeight, cardHeight)
         let revealed = hasLip ? min(lipVisible, max(0, windowHeight - card)) : 0
         let plateHeight = min(card, max(0, windowHeight - revealed))
         let plateY = hasLip ? max(0, windowHeight - plateHeight) : 0
@@ -154,10 +143,11 @@ enum HUDLayout {
         proposed: CGFloat,
         previous: CGFloat,
         lineCount: Int,
-        multiline: Bool
+        multiline: Bool,
+        minimum: CGFloat = HUDMetrics.minCardHeight
     ) -> CGFloat {
-        let next = max(HUDMetrics.minCardHeight, proposed)
-        let prior = max(HUDMetrics.minCardHeight, previous)
+        let next = max(minimum, proposed)
+        let prior = max(minimum, previous)
         let delta = next - prior
         if abs(delta) <= heightFlicker {
             return prior
@@ -166,7 +156,7 @@ enum HUDLayout {
         if delta > heightFlicker {
             return next
         }
-        let line = PromptLayout.lineHeight(for: PromptLayout.font())
+        let line = PromptLayout.promptLineHeight
         if multiline {
             let extra = max(0, lineCount - 1)
             if extra == 0, abs(delta) < line {
@@ -180,16 +170,6 @@ enum HUDLayout {
         if abs(delta) < line {
             return prior
         }
-        return next
-    }
-
-    static func framePinnedTop(current: NSRect, height: CGFloat) -> NSRect {
-        let nextHeight = max(HUDMetrics.minCardHeight, height)
-        var next = current
-        next.size.width = HUDMetrics.cardWidth
-        let delta = nextHeight - current.height
-        next.size.height = nextHeight
-        next.origin.y -= delta
         return next
     }
 
@@ -274,28 +254,17 @@ enum HUDLayout {
         return next
     }
 
-    /// Lines 1...15 pin the top and lower `origin.y`. Lines 16...30 keep that bottom and raise `maxY`. Past 30, freeze.
-    static func frameForReplyGrowth(
-        base: NSRect,
-        chromeHeight: CGFloat,
-        replyLines: Int,
-        lineHeight: CGFloat = replyLineHeight,
-        visibleFrame: NSRect? = nil
-    ) -> NSRect {
-        let visible = replyVisibleLines(replyLines)
-        let down = min(visible, replyDownLines)
-        let heightDown = cardHeight(chromeHeight: chromeHeight, replyLines: down, lineHeight: lineHeight)
-        var frame = framePinnedTop(current: base, height: heightDown)
-        if visible > replyDownLines {
-            let heightFull = cardHeight(chromeHeight: chromeHeight, replyLines: visible, lineHeight: lineHeight)
-            frame = framePinnedBottom(current: frame, height: heightFull)
-        }
-        if let visibleFrame {
-            frame = clampFrame(frame, to: visibleFrame)
-        }
-        return frame
+    /// Gap a long reply leaves above the bottom of the visible frame before it grows up.
+    static let replyFloorMargin: CGFloat = 24
+
+    /// Centered horizontally, a third of the way down, so replies have room to grow below.
+    static func launchOrigin(size: NSSize, visibleFrame visible: NSRect) -> NSPoint {
+        let centerY = visible.maxY - visible.height / 3
+        let y = min(max(centerY - size.height / 2, visible.minY), visible.maxY - size.height)
+        return NSPoint(x: visible.midX - size.width / 2, y: y)
     }
 
+    /// The top stays put and the card grows down to the floor. Only what does not fit lifts the top. Past 30 lines, freeze.
     static func frameForReplyGrowth(
         x: CGFloat,
         pinTopMaxY: CGFloat,
@@ -319,7 +288,11 @@ enum HUDLayout {
             width: HUDMetrics.cardWidth,
             height: heightAtDownCap
         )
-        if extraUp > 0 {
+        if let visibleFrame {
+            // Grow down from the pinned top to the floor. Only what doesn't fit lifts the top.
+            next.size.height = cappedHeight
+            next.origin.y = max(pinTopMaxY - cappedHeight, visibleFrame.minY + replyFloorMargin)
+        } else if extraUp > 0 {
             next = framePinnedBottom(current: next, height: cappedHeight)
         }
         if let visibleFrame {
@@ -359,8 +332,6 @@ enum HUDLayout {
     }
 
     /// Trailing column shared with send/mic: control sits inside the card's `inset` gutter, outside scroll text.
-    static var expandChevronTrailingInset: CGFloat { HUDMetrics.inset }
-    static var expandChevronSize: CGFloat { HUDMetrics.controlSize }
 
     /// Top fade when scrolled away from the start. Bottom fade when more content remains below.
     /// Short content that fits the viewport gets neither.
@@ -562,7 +533,4 @@ enum HUDErrorLip {
         }
     }
 
-    static func reveal(_ state: inout State) {
-        state.dismissed = false
-    }
 }

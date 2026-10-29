@@ -105,8 +105,10 @@ final class DebugTranscriptStore {
 
     func append(_ chunk: String) {
         text += chunk
-        if text.count > 400_000 {
-            text = String(text.suffix(300_000))
+        // utf8.count is constant time. text.count walks the whole buffer on every streamed line.
+        if text.utf8.count > 400_000 {
+            // Trim in the same unit as the check, or non-ASCII text stays over the limit and trims every line.
+            text = String(decoding: text.utf8.suffix(300_000), as: UTF8.self)
         }
     }
 

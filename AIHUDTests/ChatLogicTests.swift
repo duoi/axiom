@@ -575,14 +575,6 @@ import Testing
     #expect(!ReplyMarkdown.containsCodeBlock(rendered))
 }
 
-@Test func pillInsetIsTheSameOnEverySide() {
-    let inset = HUDMetrics.pillInset
-    #expect(inset > 0)
-    #expect(HUDMetrics.pillInsets == HUDInsets.equal(inset))
-    #expect(HUDMetrics.pillInsets.top == HUDMetrics.pillInsets.leading)
-    #expect(HUDMetrics.pillInsets.bottom == HUDMetrics.pillInsets.trailing)
-}
-
 @Test func glassIsClearAndMatteIsRegular() {
     #expect(HUDMaterial.effectStyle(matte: false) == .clear)
     #expect(HUDMaterial.effectStyle(matte: true) == .regular)
@@ -724,9 +716,6 @@ import Testing
     let font = NSFont.systemFont(ofSize: PromptLayout.fontSize)
     let line = PromptLayout.lineHeight(for: font)
     #expect(line >= ceil(font.boundingRectForFont.height))
-    #expect(PromptLayout.fieldHeight(visibleLines: 1, font: font) == line)
-    #expect(PromptLayout.fieldHeight(visibleLines: 10, font: font) == line * 10)
-    #expect(PromptLayout.fieldHeight(visibleLines: 20, font: font) == line * 10)
     #expect(PromptLayout.rowHeight(visibleLines: 1, font: font) == HUDMetrics.rowHeight)
     #expect(PromptLayout.rowHeight(visibleLines: 2, font: font) == HUDMetrics.rowHeight + line)
     #expect(PromptLayout.rowHeight(visibleLines: 10, font: font) == HUDMetrics.rowHeight + line * 9)
@@ -1690,7 +1679,9 @@ import Testing
     session.stop()
     #expect(session.phase == .composing)
     #expect(session.displayAnswer.isEmpty)
-    #expect(session.turns.isEmpty == false)
+    // Nothing came back, so the prompt and its attachment go back to the composer, not the thread.
+    #expect(session.turns.isEmpty)
+    #expect(session.chips.map(\.name) == ["note.txt"])
 }
 
 @Test func stopKeepsAPartialAndFinishIgnoresIdle() {
@@ -1790,7 +1781,6 @@ import Testing
 @Test func promptLayoutClampsZeroLinesAndKeepsVerticalInsetNonNegative() {
     let font = NSFont.systemFont(ofSize: PromptLayout.fontSize)
     let line = PromptLayout.lineHeight(for: font)
-    #expect(PromptLayout.fieldHeight(visibleLines: 0, font: font) == line)
     #expect(PromptLayout.rowHeight(visibleLines: 0, font: font) == HUDMetrics.rowHeight)
     #expect(PromptLayout.verticalInset(font: font) >= 0)
     let style = PromptLayout.paragraphStyle(for: font)
@@ -2741,7 +2731,7 @@ import Testing
         ) == nil
     )
 
-    HUDErrorLip.reveal(&dismissedBlocking)
+    dismissedBlocking.dismissed = false
     let afterFail = HUDErrorLip.message(
         phase: .failed(DebugRouting.requestFailed),
         blockingMessage: DebugRouting.missingKey,
@@ -2942,65 +2932,6 @@ import Testing
     )
 }
 
-@Test func replyGrowsDownThenUpThenStops() {
-    let line = HUDLayout.replyLineHeight
-    let chrome = HUDMetrics.minCardHeight
-    let idle = NSRect(x: 80, y: 200, width: HUDMetrics.cardWidth, height: chrome)
-    #expect(line > 0)
-    #expect(HUDLayout.replyDownLines == 15)
-    #expect(HUDLayout.replyMaxLines == 30)
-
-    let at15 = HUDLayout.frameForReplyGrowth(
-        base: idle,
-        chromeHeight: chrome,
-        replyLines: 15,
-        lineHeight: line
-    )
-    #expect(at15.maxY == idle.maxY)
-    #expect(at15.height == chrome + line * 15)
-    #expect(at15.origin.y == idle.origin.y - line * 15)
-    #expect(at15.origin.x == idle.origin.x)
-
-    let at16 = HUDLayout.frameForReplyGrowth(
-        base: idle,
-        chromeHeight: chrome,
-        replyLines: 16,
-        lineHeight: line
-    )
-    #expect(at16.origin.y == at15.origin.y)
-    #expect(at16.height == at15.height + line)
-    #expect(at16.maxY == at15.maxY + line)
-
-    let at30 = HUDLayout.frameForReplyGrowth(
-        base: idle,
-        chromeHeight: chrome,
-        replyLines: 30,
-        lineHeight: line
-    )
-    #expect(at30.origin.y == at15.origin.y)
-    #expect(at30.height == chrome + line * 30)
-    #expect(at30.maxY == at15.maxY + line * 15)
-
-    let at40 = HUDLayout.frameForReplyGrowth(
-        base: idle,
-        chromeHeight: chrome,
-        replyLines: 40,
-        lineHeight: line
-    )
-    #expect(at40.height == at30.height)
-    #expect(at40.origin.y == at30.origin.y)
-    #expect(at40.maxY == at30.maxY)
-
-    let at1 = HUDLayout.frameForReplyGrowth(
-        base: idle,
-        chromeHeight: chrome,
-        replyLines: 1,
-        lineHeight: line
-    )
-    #expect(at1.maxY == idle.maxY)
-    #expect(at1.origin.y == idle.origin.y - line)
-}
-
 @Test func expandedHistoryDoesNotGrowPastThirtyLineCap() {
     let line = HUDLayout.replyLineHeight
     let chrome = HUDMetrics.minCardHeight
@@ -3124,29 +3055,6 @@ import Testing
     #expect(!back.scroll)
 }
 
-@Test func pinningKeepsTheTopEdgeFixedWhenHeightGrows() {
-    let current = NSRect(x: 80, y: 120, width: HUDMetrics.cardWidth, height: 108)
-    let next = HUDLayout.framePinnedTop(current: current, height: 200)
-    #expect(next.maxY == current.maxY)
-    #expect(next.height == 200)
-    #expect(next.origin.x == current.origin.x)
-    #expect(next.width == HUDMetrics.cardWidth)
-
-    let idle = NSRect(x: 80, y: 148, width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight)
-    let grown = HUDLayout.framePinnedTop(
-        current: idle,
-        height: HUDLayout.windowHeight(card: idle.height, hasLip: true)
-    )
-    #expect(grown.maxY == idle.maxY)
-    #expect(grown.height == idle.height + HUDLayout.lipVisible)
-    #expect(grown.origin.y == idle.origin.y - HUDLayout.lipVisible)
-
-    let shrunk = HUDLayout.framePinnedTop(current: grown, height: idle.height)
-    #expect(shrunk.maxY == grown.maxY)
-    #expect(shrunk.height == idle.height)
-    #expect(shrunk.origin.y == idle.origin.y)
-}
-
 @Test func liveStreamChunksAppendThroughReceiveToken() {
     var session = Session()
     session.draft = DebugRouting.draft
@@ -3164,7 +3072,7 @@ import Testing
 }
 
 @Test @MainActor func simulateIncomingStreamReplaysTokensAndLayouts() {
-    let model = HUDModel(store: EndpointStore())
+    let model = HUDModel(store: .isolated())
     var layouts = 0
     model.onLayout = { layouts += 1 }
     model.simulateIncomingStream(DebugRouting.liveStreamReply)
@@ -3175,8 +3083,6 @@ import Testing
 
 @Test func overlayScrollerFadeHidesTheExpandChevron() {
     #expect(HUDMetrics.controlSize == 24)
-    #expect(HUDLayout.expandChevronSize == 24)
-    #expect(HUDLayout.expandChevronTrailingInset == HUDMetrics.inset)
     #expect(HUDLayout.scrollerFadeDuration >= 0.15)
     #expect(HUDLayout.scrollerFadeDuration <= 0.20)
     #expect(HUDLayout.scrollerHideDelay == 0.35)
@@ -3189,39 +3095,15 @@ import Testing
     #expect(HUDPanelFade.duration == 0.16)
     #expect(HUDPanelFade.animationDuration(reduceMotion: false) == 0.16)
     #expect(HUDPanelFade.animationDuration(reduceMotion: true) == 0)
-    #expect(HUDPanelFade.shouldOrderOut(elapsed: 0, duration: 0.16) == false)
-    #expect(HUDPanelFade.shouldOrderOut(elapsed: 0.15, duration: 0.16) == false)
-    #expect(HUDPanelFade.shouldOrderOut(elapsed: 0.16, duration: 0.16) == true)
-    #expect(HUDPanelFade.shouldOrderOut(elapsed: 0, duration: 0) == true)
 }
 
-@Test func devCredentialLoaderReadsEnvWithoutKeychain() {
-    #expect(DevCredentials.suppressesKeychain)
-    #expect(DevCredentials.envName(for: KeychainStore.chatAccount) == "AXIOM_API_KEY")
-    let env = ["AXIOM_API_KEY": "sk-test-from-env"]
-    #expect(
-        DevCredentials.secret(account: KeychainStore.chatAccount, environment: env, fileValues: [:])
-            == "sk-test-from-env"
-    )
-    #expect(DevCredentials.secret(account: KeychainStore.chatAccount, environment: [:], fileValues: [:]) == nil)
-    #expect(DevCredentials.secret(account: KeychainStore.visionAccount, environment: [:], fileValues: [:]) == nil)
-
-    let id = UUID(uuidString: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE")!
-    let account = KeychainStore.chatAccount(for: id)
-    #expect(account == "api-key.AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE")
-    #expect(DevCredentials.envName(for: account) == "AXIOM_API_KEY_AAAAAAAA_BBBB_4CCC_8DDD_EEEEEEEEEEEE")
-    let row = ["AXIOM_API_KEY_AAAAAAAA_BBBB_4CCC_8DDD_EEEEEEEEEEEE": "sk-row-test"]
-    #expect(DevCredentials.secret(account: account, environment: row, fileValues: [:]) == "sk-row-test")
-    #expect(DevCredentials.secret(account: account, environment: env, fileValues: [:]) == "sk-test-from-env")
-
-    let parsed = DevCredentials.parseEnvFile("AXIOM_API_KEY=sk-file-test\n# comment\n\n")
-    #expect(parsed["AXIOM_API_KEY"] == "sk-file-test")
-    let fromFile = DevCredentials.secret(
-        account: KeychainStore.chatAccount,
-        environment: [:],
-        fileValues: parsed
-    )
-    #expect(fromFile == "sk-file-test")
+@Test func debugKeysSurviveARelaunchInTheKeychain() throws {
+    let account = "test.\(UUID().uuidString)"
+    defer { KeychainStore.delete(account: account) }
+    try KeychainStore.write("sk-roundtrip", account: account)
+    #expect(KeychainStore.read(account: account) == "sk-roundtrip")
+    KeychainStore.delete(account: account)
+    #expect(KeychainStore.read(account: account) == nil)
 }
 
 @Test func escapeDismissesWhenThePanelIsKeyRegardlessOfFirstResponder() {
@@ -3286,4 +3168,244 @@ private extension Result where Failure == EndpointError {
         if case .success = self { return true }
         return false
     }
+}
+
+@Test func cardOpensInTheUpperThirdOfTheScreen() {
+    let visible = NSRect(x: 0, y: 25, width: 1440, height: 875)
+    let size = NSSize(width: HUDMetrics.cardWidth, height: HUDMetrics.minCardHeight)
+    let origin = HUDLayout.launchOrigin(size: size, visibleFrame: visible)
+    #expect(origin.x == visible.midX - size.width / 2)
+    // Centered a third of the way down, above the middle of the screen.
+    #expect(abs((origin.y + size.height / 2) - (visible.maxY - visible.height / 3)) < 0.5)
+
+    // A tall card still fits inside the visible frame.
+    let tall = NSSize(width: size.width, height: 800)
+    let clamped = HUDLayout.launchOrigin(size: tall, visibleFrame: visible)
+    #expect(clamped.y + tall.height <= visible.maxY)
+    #expect(clamped.y >= visible.minY)
+}
+
+@Test func longReplyGrowsDownUntilTheScreenBottomBeforeLiftingTheTop() {
+    let line = HUDLayout.replyLineHeight
+    let chrome = HUDMetrics.minCardHeight
+    let visible = NSRect(x: 0, y: 25, width: 1440, height: 1400)
+    let idle = NSSize(width: HUDMetrics.cardWidth, height: chrome)
+    let top = HUDLayout.launchOrigin(size: idle, visibleFrame: visible).y + chrome
+    let full = chrome + line * 30
+
+    // Room below: the top stays where the card opened.
+    let roomy = HUDLayout.frameForReplyGrowth(
+        x: 80, pinTopMaxY: top, height: full, replyLines: 30,
+        lineHeight: line, visibleFrame: visible
+    )
+    #expect(roomy.maxY == top)
+    #expect(roomy.height == full)
+
+    // Short screen: the bottom stops at the floor and only the overflow lifts the top.
+    let short = NSRect(x: 0, y: 25, width: 1440, height: 875)
+    let shortTop = HUDLayout.launchOrigin(size: idle, visibleFrame: short).y + chrome
+    let tight = HUDLayout.frameForReplyGrowth(
+        x: 80, pinTopMaxY: shortTop, height: full, replyLines: 30,
+        lineHeight: line, visibleFrame: short
+    )
+    #expect(tight.minY == short.minY + HUDLayout.replyFloorMargin)
+    #expect(tight.height == full)
+    #expect(tight.maxY <= short.maxY)
+}
+
+/// Keys live in a dictionary instead of the Keychain.
+final class MemorySecrets {
+    var values: [String: String] = [:]
+    var failsWrites = false
+
+    var store: SecretStore {
+        SecretStore(
+            read: { [unowned self] in values[$0] },
+            write: { [unowned self] value, account in
+                if failsWrites { throw KeychainError.status(errSecInteractionNotAllowed) }
+                values[account] = value
+            },
+            delete: { [unowned self] in values[$0] = nil }
+        )
+    }
+}
+
+@MainActor extension EndpointStore {
+    /// A store with its own defaults, keys, and history folder, so tests never touch the user's.
+    static func isolated(
+        _ secrets: MemorySecrets = MemorySecrets(),
+        prepare: (UserDefaults) -> Void = { _ in }
+    ) -> EndpointStore {
+        let suite = "axiom-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        prepare(defaults)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+        return EndpointStore(defaults: defaults, secrets: secrets.store, historyRoot: root)
+    }
+}
+
+@MainActor private func savedOpenAIRow(_ store: EndpointStore, key: String) throws -> ChatEndpoint {
+    let row = ChatEndpoint(
+        id: UUID(),
+        name: "OpenAI",
+        completionsURL: "https://api.openai.com/v1",
+        model: "gpt-4o",
+        systemPrompt: "",
+        kind: .openaiCompatible,
+        presetID: "openai"
+    )
+    #expect(store.saveEndpoint(row, apiKey: key) == nil)
+    return try #require(store.endpoints.first { $0.id == row.id })
+}
+
+/// A saved catalog of on-device (default) plus one keyless OpenAI row, last used at `url`.
+private func legacyCatalog(row: UUID, url: String) -> (UserDefaults) -> Void {
+    { defaults in
+        let openAI = ChatEndpoint(
+            id: row, name: "OpenAI", completionsURL: "https://api.openai.com/v1", model: "gpt-4o",
+            systemPrompt: "", kind: .openaiCompatible, presetID: "openai"
+        )
+        ChatEndpointCatalog.save(
+            endpoints: [ChatEndpointCatalog.onDeviceEndpoint, openAI],
+            defaultID: ChatEndpointCatalog.onDeviceID,
+            visionID: nil,
+            chatModelID: "",
+            visionModelID: "",
+            to: defaults
+        )
+        defaults.set(url, forKey: ChatSettings.urlKey)
+    }
+}
+
+@Test @MainActor func theOldSharedKeyMovesToItsOwnHostThenGoes() {
+    let row = UUID()
+    let secrets = MemorySecrets()
+    secrets.values[KeychainStore.chatAccount] = "sk-shared-old"
+    // On-device is the default, but the key belongs to the OpenAI host it was last used with.
+    let store = EndpointStore.isolated(secrets, prepare: legacyCatalog(row: row, url: "https://api.openai.com/v1"))
+    #expect(store.apiKey(for: row) == "sk-shared-old")
+    #expect(secrets.values[KeychainStore.chatAccount(for: row)] == "sk-shared-old")
+    #expect(secrets.values[KeychainStore.chatAccount] == nil)
+}
+
+@Test @MainActor func theOldSharedKeyStaysWhenNothingCanHoldIt() {
+    let row = UUID()
+    let secrets = MemorySecrets()
+    secrets.values[KeychainStore.chatAccount] = "sk-shared-old"
+    // No provider on the host it was used with: never copied to another host, never deleted.
+    let elsewhere = EndpointStore.isolated(secrets, prepare: legacyCatalog(row: row, url: "https://example.com/v1"))
+    #expect(elsewhere.apiKey(for: row).isEmpty)
+    #expect(secrets.values[KeychainStore.chatAccount] == "sk-shared-old")
+
+    // The Keychain refuses the copy: keep the only copy.
+    secrets.failsWrites = true
+    _ = EndpointStore.isolated(secrets, prepare: legacyCatalog(row: row, url: "https://api.openai.com/v1"))
+    #expect(secrets.values[KeychainStore.chatAccount] == "sk-shared-old")
+}
+
+@Test @MainActor func savingWithAKeyThatNeverLoadedLeavesTheKeychainAlone() throws {
+    let secrets = MemorySecrets()
+    let store = EndpointStore.isolated(secrets)
+    let row = try savedOpenAIRow(store, key: "")
+    // The Keychain has a key the store could not read at launch; the field showed empty.
+    secrets.values[KeychainStore.chatAccount(for: row.id)] = "sk-unread"
+    #expect(store.saveEndpoint(row, apiKey: "") == nil)
+    #expect(secrets.values[KeychainStore.chatAccount(for: row.id)] == "sk-unread")
+}
+
+@Test @MainActor func aKeyStaysWithItsOwnProvider() throws {
+    let secrets = MemorySecrets()
+    let store = EndpointStore.isolated(secrets)
+    let row = try savedOpenAIRow(store, key: "sk-openai")
+    store.setDefault(row.id)
+    _ = store.saveEndpoint(row, apiKey: "sk-openai-2")
+    #expect(secrets.values[KeychainStore.chatAccount] == nil)
+    #expect(secrets.values[KeychainStore.chatAccount(for: row.id)] == "sk-openai-2")
+}
+
+@Test @MainActor func clearingTheKeyFieldRemovesTheKey() throws {
+    let secrets = MemorySecrets()
+    let store = EndpointStore.isolated(secrets)
+    let row = try savedOpenAIRow(store, key: "sk-openai")
+    #expect(store.saveEndpoint(row, apiKey: "") == nil)
+    #expect(store.apiKey(for: row.id).isEmpty)
+    #expect(secrets.values[KeychainStore.chatAccount(for: row.id)] == nil)
+}
+
+@Test @MainActor func aKeyTheKeychainRefusesIsReported() throws {
+    let secrets = MemorySecrets()
+    let store = EndpointStore.isolated(secrets)
+    let row = try savedOpenAIRow(store, key: "sk-openai")
+    secrets.failsWrites = true
+    #expect(store.saveEndpoint(row, apiKey: "sk-new") != nil)
+}
+
+@Test func aShortReplyNearTheBottomKeepsTheFloorGap() {
+    let line = HUDLayout.replyLineHeight
+    let chrome = HUDMetrics.minCardHeight
+    let visible = NSRect(x: 0, y: 25, width: 1440, height: 600)
+    let top = visible.minY + 200
+    let frame = HUDLayout.frameForReplyGrowth(
+        x: 80, pinTopMaxY: top, height: chrome + line * 10, replyLines: 10,
+        lineHeight: line, visibleFrame: visible
+    )
+    #expect(frame.minY == visible.minY + HUDLayout.replyFloorMargin)
+    #expect(frame.height == chrome + line * 10)
+}
+
+/// Serves a canned HTTP response per host, so the streaming loop runs without a network.
+final class StubProtocol: URLProtocol {
+    nonisolated(unsafe) static var responses: [String: (status: Int, body: String)] = [:]
+    static let lock = NSLock()
+
+    static func serve(_ host: String, status: Int = 200, body: String) {
+        lock.withLock { responses[host] = (status, body) }
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let stub = Self.lock.withLock { Self.responses[request.url?.host ?? ""] } ?? (404, "")
+        let response = HTTPURLResponse(url: request.url!, statusCode: stub.status, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(stub.body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+private func streamed(host: String, status: Int = 200, body: String) async throws -> [ChatStreamEvent] {
+    StubProtocol.serve(host, status: status, body: body)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [StubProtocol.self]
+    let session = URLSession(configuration: configuration)
+    let request = ChatRequest(
+        url: URL(string: "https://\(host)/v1/chat/completions")!,
+        model: "m",
+        apiKey: "sk-test",
+        messages: [OutboundMessage(role: "user", text: "hi", imageJPEGs: [])]
+    )
+    var events: [ChatStreamEvent] = []
+    for try await event in ChatClient(session: session).stream(request) {
+        events.append(event)
+    }
+    return events
+}
+
+@Test func streamLoopFinishesFailsAndReportsErrors() async throws {
+    let token = #"data: {"choices":[{"delta":{"content":"Hi"}}]}"#
+    // Text then [DONE].
+    #expect(try await streamed(host: "done.test", body: "\(token)\n\ndata: [DONE]\n\n") == [.token("Hi"), .done])
+    // Text but the stream closed without [DONE]: keep what came.
+    #expect(try await streamed(host: "nodone.test", body: "\(token)\n\n") == [.token("Hi"), .done])
+    // Nothing at all: the response was cut off.
+    #expect(try await streamed(host: "empty.test", body: "") == [.failure("The response ended early.")])
+    // A tool call with no [DONE] still arrives.
+    let call = #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"read","arguments":"{}"}}]}}]}"#
+    let events = try await streamed(host: "tool.test", body: "\(call)\n\n")
+    #expect(events.last == .done)
+    #expect(events.contains { if case .toolCalls(let calls, _) = $0 { calls.first?.name == "read" } else { false } })
+    // A non-200 shows the provider's message.
+    #expect(try await streamed(host: "err.test", status: 500, body: #"{"error":{"message":"boom"}}"#) == [.failure("boom")])
 }

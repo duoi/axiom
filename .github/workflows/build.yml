@@ -6,14 +6,17 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Tests and the build compile third-party packages, so they only get read access.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: xcode-27
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: |
@@ -45,24 +48,39 @@ jobs:
             "$RUNNER_TEMP/DerivedData/Build/Products/Release/Axiom.app" \
             Axiom-macOS.zip
 
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Axiom-macOS
+          path: Axiom-macOS.zip
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: Axiom-macOS
+
       - name: Publish
-        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             tag="${GITHUB_REF#refs/tags/}"
-            title="Axiom $tag"
           else
             tag="build-${GITHUB_SHA::7}"
-            title="Axiom $tag"
           fi
-          notes="$(git log -1 --pretty=%s)"
+          notes="${COMMIT_MESSAGE%%$'\n'*}"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" Axiom-macOS.zip --clobber
           else
             gh release create "$tag" Axiom-macOS.zip \
-              --title "$title" \
-              --notes "$notes" \
+              --target "$GITHUB_SHA" \
+              --title "Axiom $tag" \
+              --notes "${notes:-Build ${GITHUB_SHA::7}}" \
               --latest
           fi

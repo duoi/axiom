@@ -37,6 +37,7 @@ final class EndpointStore {
     private static let hoverKey = "hud.keepHovering"
     private static let captureKey = "hud.captureTarget"
     private static let matteKey = HUDMaterial.matteKey
+    private static let newUIKey = "hud.newUI"
 
     var endpoints: [ChatEndpoint]
     var defaultEndpointID: UUID?
@@ -46,24 +47,31 @@ final class EndpointStore {
     var modelListErrors: [UUID: String]
     var visionModel: String
     var visionURL: String
-    var visionAPIKey: String
     var devCleartextHost: String?
+    private let defaults: UserDefaults
+    private let secrets: SecretStore
     var keepHovering: Bool {
-        didSet { UserDefaults.standard.set(keepHovering, forKey: Self.hoverKey) }
+        didSet { defaults.set(keepHovering, forKey: Self.hoverKey) }
     }
     var experimentalAgent: Bool {
-        didSet { ExperimentalAgent.save(experimentalAgent, to: .standard) }
+        didSet { ExperimentalAgent.save(experimentalAgent, to: defaults) }
     }
     var agentFolderPath: String?
     var usesMultilinePrompt: Bool {
-        didSet { PromptSettings.saveMultiline(usesMultilinePrompt, to: .standard) }
+        didSet { PromptSettings.saveMultiline(usesMultilinePrompt, to: defaults) }
     }
     var captureTarget: CaptureTarget {
-        didSet { UserDefaults.standard.set(captureTarget.rawValue, forKey: Self.captureKey) }
+        didSet { defaults.set(captureTarget.rawValue, forKey: Self.captureKey) }
     }
     var usesMatte: Bool {
         didSet {
-            UserDefaults.standard.set(usesMatte, forKey: Self.matteKey)
+            defaults.set(usesMatte, forKey: Self.matteKey)
+            onAppearanceChange()
+        }
+    }
+    var usesNewUI: Bool {
+        didSet {
+            defaults.set(usesNewUI, forKey: Self.newUIKey)
             onAppearanceChange()
         }
     }
@@ -77,7 +85,7 @@ final class EndpointStore {
                 glassAmount = clamped
                 return
             }
-            HUDMaterial.saveAmount(clamped, to: .standard)
+            HUDMaterial.saveAmount(clamped, to: defaults)
             onAppearanceChange()
         }
     }
@@ -93,7 +101,7 @@ final class EndpointStore {
                 defaultSystemPrompt = shown
                 return
             }
-            SystemPrompt.saveGlobal(shown, to: .standard)
+            SystemPrompt.saveGlobal(shown, to: defaults)
         }
     }
 
@@ -101,14 +109,14 @@ final class EndpointStore {
         ChatEndpointCatalog.usesOnDevice(endpoints: endpoints, defaultID: defaultEndpointID)
     }
     var wakeOnAxiom: Bool {
-        didSet { VoiceSettings.saveWakeOnAxiom(wakeOnAxiom, to: .standard) }
+        didSet { VoiceSettings.saveWakeOnAxiom(wakeOnAxiom, to: defaults) }
     }
     var pauseToSend: Bool {
-        didSet { VoiceSettings.savePauseToSend(pauseToSend, to: .standard) }
+        didSet { VoiceSettings.savePauseToSend(pauseToSend, to: defaults) }
     }
     var savesHistory: Bool {
         didSet {
-            HistorySettings.saveEnabled(savesHistory, to: .standard)
+            HistorySettings.saveEnabled(savesHistory, to: defaults)
             if !savesHistory, savesHistoryScreenshots {
                 savesHistoryScreenshots = false
             }
@@ -116,11 +124,14 @@ final class EndpointStore {
     }
     var savesHistoryScreenshots: Bool {
         didSet {
-            HistorySettings.saveSaveScreenshots(savesHistoryScreenshots, to: .standard)
+            HistorySettings.saveSaveScreenshots(savesHistoryScreenshots, to: defaults)
+            if oldValue, !savesHistoryScreenshots {
+                historyStore.removeAllScreenshots()
+            }
         }
     }
     var reasoningEffort: ReasoningEffort {
-        didSet { ReasoningEffort.save(reasoningEffort, to: .standard) }
+        didSet { ReasoningEffort.save(reasoningEffort, to: defaults) }
     }
     var requestTimeoutSeconds: TimeInterval {
         didSet {
@@ -129,7 +140,7 @@ final class EndpointStore {
                 requestTimeoutSeconds = clamped
                 return
             }
-            ChatTimeoutSettings.save(clamped, to: .standard)
+            ChatTimeoutSettings.save(clamped, to: defaults)
         }
     }
     let historyStore: HistoryStore
@@ -137,20 +148,22 @@ final class EndpointStore {
 
     func saveAgentFolder(_ url: URL) {
         guard let data = FolderGrant.data(for: url) else { return }
-        UserDefaults.standard.set(data, forKey: FolderGrant.defaultsKey)
+        defaults.set(data, forKey: FolderGrant.defaultsKey)
         agentFolderPath = FolderGrant.displayPath(url)
     }
 
     func clearAgentFolder() {
-        FolderGrant.clear(in: .standard)
+        FolderGrant.clear(in: defaults)
         agentFolderPath = nil
     }
 
-    init() {
-        if DevCredentials.suppressesKeychain {
-            DevCredentials.seedEnvFileIfMissing()
-        }
-        let defaults = UserDefaults.standard
+    init(
+        defaults: UserDefaults = .standard,
+        secrets: SecretStore = .keychain,
+        historyRoot: URL = HistoryStore.defaultRoot()
+    ) {
+        self.defaults = defaults
+        self.secrets = secrets
         let dev = DevEndpointFile.bundled()
         devCleartextHost = dev.flatMap { URL(string: $0.completionsURL)?.host }
         let loaded = ChatEndpointCatalog.load(from: defaults)
@@ -193,7 +206,7 @@ final class EndpointStore {
         }
         var keys: [UUID: String] = [:]
         for endpoint in loadedEndpoints {
-            keys[endpoint.id] = KeychainStore.read(account: KeychainStore.chatAccount(for: endpoint.id)) ?? ""
+            keys[endpoint.id] = secrets.read(KeychainStore.chatAccount(for: endpoint.id)) ?? ""
         }
         if loadedDefault == nil || !loadedEndpoints.contains(where: { $0.id == loadedDefault }) {
             loadedDefault = ChatEndpointCatalog.resolvedDefault(
@@ -205,30 +218,37 @@ final class EndpointStore {
             endpoints: loadedEndpoints,
             visionID: loadedVision
         )?.id
-        if let id = loadedDefault,
-           id != ChatEndpointCatalog.onDeviceID,
-           (keys[id] ?? "").isEmpty,
-           let legacy = KeychainStore.read(),
-           !legacy.isEmpty
-        {
-            keys[id] = legacy
-            try? KeychainStore.write(legacy, account: KeychainStore.chatAccount(for: id))
+        // Old builds kept one shared chat key and one vision key. Copy each only to the provider it
+        // belongs to, and delete the shared slot only once a provider holds it: never another host, never lost.
+        func takesKey(_ id: UUID?) -> UUID? {
+            guard let row = loadedEndpoints.first(where: { $0.id == id }),
+                  !ChatEndpointCatalog.isOnDevice(row), !row.usesChatGPTAuth
+            else { return nil }
+            return row.id
         }
-        if let visionID = resolvedVisionID,
-           (keys[visionID] ?? "").isEmpty,
-           let visionKey = KeychainStore.read(account: KeychainStore.visionAccount),
-           !visionKey.isEmpty
-        {
-            keys[visionID] = visionKey
-            try? KeychainStore.write(visionKey, account: KeychainStore.chatAccount(for: visionID))
+        func migrateLegacy(_ account: String, to target: UUID?) {
+            guard let legacy = secrets.read(account), !legacy.isEmpty else { return }
+            if let target, (keys[target] ?? "").isEmpty,
+               (try? secrets.write(legacy, KeychainStore.chatAccount(for: target))) != nil
+            {
+                keys[target] = legacy
+            }
+            if keys.values.contains(legacy) {
+                secrets.delete(account)
+            }
         }
+        let lastChatURL = defaults.string(forKey: ChatSettings.urlKey) ?? ""
+        migrateLegacy(KeychainStore.chatAccount, to: takesKey(loadedEndpoints.first {
+            !lastChatURL.isEmpty && ChatEndpointCatalog.matchesHost($0.completionsURL, lastChatURL)
+        }?.id))
+        migrateLegacy(KeychainStore.visionAccount, to: takesKey(resolvedVisionID))
         if let dev {
             if let match = loadedEndpoints.first(where: {
                 ChatEndpointCatalog.matchesHost($0.completionsURL, dev.completionsURL)
                     && !ChatEndpointCatalog.isOnDevice($0)
             }), (keys[match.id] ?? "").isEmpty {
                 keys[match.id] = dev.apiKey
-                try? KeychainStore.write(dev.apiKey, account: KeychainStore.chatAccount(for: match.id))
+                try? secrets.write(dev.apiKey, KeychainStore.chatAccount(for: match.id))
             }
         }
         let beforePrune = loadedEndpoints.map(\.id)
@@ -252,10 +272,8 @@ final class EndpointStore {
             visionID: loadedVision
         )?.id
         var nextVisionURL = defaults.string(forKey: Self.visionURLKey) ?? ""
-        var nextVisionKey = KeychainStore.read(account: KeychainStore.visionAccount) ?? ""
         if let vision = ChatEndpointCatalog.resolvedVision(endpoints: loadedEndpoints, visionID: resolvedVisionID) {
             nextVisionURL = vision.completionsURL
-            nextVisionKey = keys[vision.id] ?? nextVisionKey
         }
         var nextChatModel = loaded.chatModelID
         var nextVisionModel = loaded.visionModelID
@@ -281,7 +299,6 @@ final class EndpointStore {
         modelListErrors = [:]
         visionModel = nextVisionModel
         visionURL = nextVisionURL
-        visionAPIKey = nextVisionKey
         if defaults.object(forKey: Self.hoverKey) == nil {
             keepHovering = true
         } else {
@@ -292,6 +309,7 @@ final class EndpointStore {
         usesMultilinePrompt = PromptSettings.loadMultiline(from: defaults)
         captureTarget = CaptureTarget(rawValue: defaults.string(forKey: Self.captureKey) ?? "") ?? .screen
         usesMatte = defaults.bool(forKey: Self.matteKey)
+        usesNewUI = defaults.bool(forKey: Self.newUIKey) || CommandLine.arguments.contains("--new-ui")
         glassAmount = HUDMaterial.loadAmount(from: defaults)
         defaultSystemPrompt = SystemPrompt.loadGlobal(from: defaults)
         wakeOnAxiom = VoiceSettings.loadWakeOnAxiom(from: defaults)
@@ -306,7 +324,7 @@ final class EndpointStore {
         }
         reasoningEffort = ReasoningEffort.load(from: defaults)
         requestTimeoutSeconds = ChatTimeoutSettings.load(from: defaults)
-        historyStore = HistoryStore(root: HistoryStore.defaultRoot())
+        historyStore = HistoryStore(root: historyRoot)
         if ChatSettings.loadOnDevice(from: defaults) {
             ChatSettings.saveOnDevice(false, to: defaults)
         }
@@ -470,11 +488,9 @@ final class EndpointStore {
         if endpoint.map(ChatEndpointCatalog.isOnDevice) == true {
             visionModel = ""
             visionURL = ""
-            visionAPIKey = ""
         } else if let endpoint {
             visionURL = endpoint.completionsURL
             visionModel = ModelList.selectModel(saved: visionModel, models: endpoint.availableModels)
-            visionAPIKey = apiKeys[id] ?? ""
         }
         persistCatalog()
         saveVision()
@@ -484,17 +500,12 @@ final class EndpointStore {
         visionEndpointID = nil
         visionModel = ""
         visionURL = ""
-        visionAPIKey = ""
         persistCatalog()
         saveVision()
     }
 
     func draftEndpoint(for choice: EndpointAddChoice = .custom) -> ChatEndpoint {
         EndpointAddPolicy.draft(for: choice)
-    }
-
-    func addEndpoint() -> ChatEndpoint {
-        draftEndpoint(for: .custom)
     }
 
     @discardableResult
@@ -528,25 +539,29 @@ final class EndpointStore {
         } else {
             endpoints.append(updated)
         }
+        var keyError: String?
+        // Clearing a key that loaded removes it. An empty field for a key that never loaded leaves the
+        // Keychain alone, and ChatGPT keeps its sign-in unless a new one arrives.
+        let clearsLoadedKey = apiKey.isEmpty && !(apiKeys[updated.id] ?? "").isEmpty
         if updated.kind == .chatgptSubscription {
             if ChatGPTAuth.parse(apiKey) != nil {
-                writeChatKey(apiKey, id: updated.id)
+                keyError = writeChatKey(apiKey, id: updated.id)
             }
-        } else if !apiKey.isEmpty {
-            writeChatKey(apiKey, id: updated.id)
+        } else if !apiKey.isEmpty || clearsLoadedKey {
+            keyError = writeChatKey(apiKey, id: updated.id)
         }
         persistCatalog()
-        return nil
+        return keyError
     }
 
     func replaceChatSecret(_ value: String, id: UUID) {
         guard !value.isEmpty else { return }
-        writeChatKey(value, id: id)
+        _ = writeChatKey(value, id: id)
     }
 
     func clearChatSecret(id: UUID) {
         apiKeys[id] = ""
-        KeychainStore.delete(account: KeychainStore.chatAccount(for: id))
+        secrets.delete(KeychainStore.chatAccount(for: id))
     }
 
     func applyListedModels(
@@ -575,11 +590,22 @@ final class EndpointStore {
 
     func refreshModels(for id: UUID) async {
         guard let endpoint = endpoints.first(where: { $0.id == id }) else { return }
-        let result = await ModelListClient().list(
+        var secret = apiKeys[id] ?? ""
+        // An expired ChatGPT sign-in would list nothing until the next send refreshed it.
+        if endpoint.usesChatGPTAuth, let fresh = try? await ChatGPTAuth.freshCredential(secret) {
+            // Still fresh: nothing to store, and no Keychain write.
+            if ChatGPTAuth.parse(secret)?.access != fresh.access {
+                secret = ChatGPTAuth.serialize(fresh)
+                replaceChatSecret(secret, id: id)
+            }
+        }
+        let client = ModelListClient()
+        let result = await client.list(
             endpoint: endpoint,
-            secret: apiKeys[id] ?? "",
+            secret: secret,
             allowedCleartextHosts: allowedCleartextHosts
         )
+        client.session.finishTasksAndInvalidate()
         applyListedModels(
             result.models,
             to: id,
@@ -593,7 +619,7 @@ final class EndpointStore {
         endpoints = ChatEndpointCatalog.removing(id, from: endpoints)
         apiKeys[id] = nil
         modelListErrors[id] = nil
-        KeychainStore.delete(account: KeychainStore.chatAccount(for: id))
+        secrets.delete(KeychainStore.chatAccount(for: id))
         if defaultEndpointID == id {
             defaultEndpointID = ChatEndpointCatalog.resolvedDefault(
                 endpoints: endpoints,
@@ -611,10 +637,22 @@ final class EndpointStore {
             visionEndpointID = nil
             visionURL = ""
             visionModel = ""
-            visionAPIKey = ""
             saveVision()
         }
         persistCatalog()
+    }
+
+    /// Whether the card shows Ask and Agent. One rule for the toolbar, the pills, and the shortcut.
+    var showsPresetControl: Bool {
+        AgentModePolicy.showsPresetControl(experimental: experimentalAgent, prefersAgent: prefersAgent)
+    }
+
+    var startingPreset: Preset {
+        AgentModePolicy.preset(experimental: experimentalAgent, prefersAgent: prefersAgent)
+    }
+
+    private var prefersAgent: Bool {
+        sendEndpoint(hasImage: false)?.prefersAgent == true
     }
 
     func apiKey(for id: UUID) -> String {
@@ -628,33 +666,35 @@ final class EndpointStore {
             visionID: visionEndpointID,
             chatModelID: chatModelID,
             visionModelID: visionModel,
-            to: .standard
+            to: defaults
         )
         if let selected = selectedEndpoint, !ChatEndpointCatalog.isOnDevice(selected) {
-            UserDefaults.standard.set(chatModelID, forKey: ChatSettings.modelKey)
-            UserDefaults.standard.set(selected.completionsURL, forKey: ChatSettings.urlKey)
+            defaults.set(chatModelID, forKey: ChatSettings.modelKey)
+            defaults.set(selected.completionsURL, forKey: ChatSettings.urlKey)
         }
     }
 
-    private func writeChatKey(_ value: String, id: UUID) {
+    /// Returns an error to show when the Keychain refuses the key. It still works until Axiom quits.
+    private func writeChatKey(_ value: String, id: UUID) -> String? {
         apiKeys[id] = value
         let account = KeychainStore.chatAccount(for: id)
         if value.isEmpty {
-            KeychainStore.delete(account: account)
-        } else {
-            try? KeychainStore.write(value, account: account)
-            if id == defaultEndpointID {
-                try? KeychainStore.write(value)
-            }
+            secrets.delete(account)
+            return nil
+        }
+        do {
+            try secrets.write(value, account)
+            return nil
+        } catch {
+            return String(localized: "The key works until Axiom quits, but the Keychain did not save it.")
         }
     }
 
     private func saveVision() {
         visionModel = visionModel.trimmingCharacters(in: .whitespacesAndNewlines)
         visionURL = visionURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        UserDefaults.standard.set(visionModel, forKey: Self.visionModelKey)
-        UserDefaults.standard.set(visionURL, forKey: Self.visionURLKey)
-        try? KeychainStore.write(visionAPIKey, account: KeychainStore.visionAccount)
+        defaults.set(visionModel, forKey: Self.visionModelKey)
+        defaults.set(visionURL, forKey: Self.visionURLKey)
     }
 }
 

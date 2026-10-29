@@ -48,27 +48,35 @@ enum AgentLoop {
         var stoppedForCap: Bool
     }
 
+    /// `record` gets each step's turn and results so the caller can append them to the conversation.
     static func run(
-        sample: ([ToolResult]) -> Turn,
-        execute: (ToolCall) -> ToolResult
-    ) -> Outcome {
+        sample: ([ToolResult]) async throws -> Turn,
+        execute: (ToolCall) async throws -> ToolResult,
+        record: (Turn, [ToolResult]) -> Void = { _, _ in },
+        isolation: isolated (any Actor)? = #isolation
+    ) async rethrows -> Outcome {
         var results: [ToolResult] = []
         var modelCalls = 0
         var text = ""
         while modelCalls < stepCap {
-            let turn = sample(results)
+            let turn = try await sample(results)
             modelCalls += 1
             text = turn.text
             if turn.truncated {
-                results.append(contentsOf: turn.calls.map(AgentTools.truncatedResult))
+                let step = turn.calls.map(AgentTools.truncatedResult)
+                results.append(contentsOf: step)
+                record(turn, step)
                 continue
             }
             if turn.calls.isEmpty {
                 return Outcome(text: text, results: results, modelCalls: modelCalls, stoppedForCap: false)
             }
+            var step: [ToolResult] = []
             for call in turn.calls {
-                results.append(execute(call))
+                step.append(try await execute(call))
             }
+            results.append(contentsOf: step)
+            record(turn, step)
         }
         return Outcome(text: text, results: results, modelCalls: modelCalls, stoppedForCap: true)
     }
@@ -136,7 +144,7 @@ enum AgentTools {
     }
 
     static func needsApproval(_ name: String) -> Bool {
-        name == openName
+        name == openName || name == fetchName
     }
 
     static func unknownResult(_ call: ToolCall) -> ToolResult {
@@ -198,6 +206,13 @@ enum FetchURLPolicy {
         return false
     }
 
+    /// The URL as the approval prompt shows it: whole, unless very long, then its start and end.
+    static func shown(_ url: URL) -> String {
+        let text = url.absoluteString
+        guard text.count > 160 else { return text }
+        return String(text.prefix(110)) + "…" + String(text.suffix(50))
+    }
+
     static func allowsOpen(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
         guard let host = normalizedHost(url), !host.isEmpty else { return false }
@@ -250,14 +265,19 @@ enum FetchURLTool {
         request.timeoutInterval = AgentLoop.toolTimeout
         request.setValue("text/plain, text/html;q=0.9", forHTTPHeaderField: "Accept")
         do {
-            let (data, response) = try await session.data(for: request)
+            let (bytes, response) = try await session.bytes(for: request)
             guard let http = response as? HTTPURLResponse else {
                 return .failed(String(localized: "The fetch failed."))
             }
             if http.statusCode != 200 {
                 return .failed(String(localized: "The fetch failed (\(http.statusCode))."))
             }
-            let limited = data.prefix(1_000_000)
+            // Stop at 1 MB instead of downloading a large file whole.
+            var limited = Data()
+            for try await byte in bytes {
+                limited.append(byte)
+                if limited.count >= 1_000_000 { break }
+            }
             let raw = String(decoding: limited, as: UTF8.self)
             let type = http.value(forHTTPHeaderField: "Content-Type")
             return .text(FetchURLPolicy.elide(FetchURLPolicy.readableText(raw, contentType: type)))
@@ -640,7 +660,10 @@ enum FolderSearch {
     }
 
     private static func textFile(at url: URL) -> (text: String, truncated: Bool)? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        // Read one byte past the cap so a huge file is never loaded whole.
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: maxFileBytes + 1) ?? Data() else { return nil }
         let truncated = data.count > maxFileBytes
         let slice = data.prefix(maxFileBytes)
         if slice.contains(0) { return nil }

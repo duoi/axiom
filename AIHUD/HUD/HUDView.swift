@@ -7,13 +7,25 @@ struct HUDView: View {
     var store: EndpointStore
     /// Offscreen height probe. It must not take the live prompt editor or report line height.
     var measuresOnly = false
+    var region: HUDChromeRegion = .plate
     @State private var promptHeight = HUDMetrics.rowHeight
     @State private var scrollerVisible = false
     @Bindable private var preview = DebugPreviewStore.shared
 
     var body: some View {
+        switch region {
+        case .plate:
+            plate
+        case .capsule:
+            capsule
+        case .pill(let id):
+            pill(id)
+        }
+    }
+
+    private var plate: some View {
         let override = model.logoOverride
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             promptRow(
                 idleSlot: HUDModelMenu.idleSlot(
                     dictating: model.dictating,
@@ -43,9 +55,123 @@ struct HUDView: View {
         .background(Color.clear)
     }
 
+    private var capsule: some View {
+        let override = model.logoOverride
+        let showsReply = HistoryChromePolicy.showsReplyRegion(
+            answer: model.session.displayAnswer,
+            phase: model.session.phase,
+            historyExpanded: model.historyExpanded,
+            toolLine: model.toolLine
+        )
+        return VStack(alignment: .leading, spacing: 0) {
+            promptRow(
+                idleSlot: HUDModelMenu.idleSlot(
+                    dictating: model.dictating,
+                    override: override,
+                    endpoint: store.selectedEndpoint ?? ChatEndpointCatalog.onDeviceEndpoint
+                ),
+                orbChoice: preview.cardOrb,
+                showsSend: false
+            )
+            if !model.session.chips.isEmpty {
+                chipRow
+                    .opacity(model.splitChipOpacity)
+            }
+            if showsReply {
+                hairline
+                history
+            }
+        }
+        .frame(width: HUDMetrics.cardWidth, alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(Color.clear)
+        .onChange(of: store.experimentalAgent) { relayout() }
+        .onChange(of: store.savesHistory) { relayout() }
+        .onChange(of: model.displayedCaptureTarget) { relayout() }
+        .onChange(of: model.captureArmed) { relayout() }
+        .onChange(of: model.session.preset) { relayout() }
+        .onChange(of: store.showsPresetControl) { relayout() }
+    }
+
+    /// Only the live card asks for layout. The measuring copy and each pill see the same changes.
+    private func relayout() {
+        guard !measuresOnly, !isPill else { return }
+        model.onLayout()
+    }
+
+    @ViewBuilder
+    private func pill(_ id: HUDPillID) -> some View {
+        Group {
+            switch id {
+            case .preset:
+                presetToggle
+            case .capture:
+                captureControl
+            case .context:
+                contextButton(showsLabel: true)
+            case .contextIcon:
+                contextButton(showsLabel: false)
+            case .shortcut:
+                Group {
+                    if store.savesHistory {
+                        historyGhostButton
+                    } else {
+                        Text(shortcutLabel)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .help("Show or hide the card. \(shortcutKeys(.hideCard)) hides it.")
+                    }
+                }
+                .animation(pillMotion ? .easeInOut(duration: 0.08) : nil, value: store.savesHistory)
+            case .mic:
+                micButton
+            case .send:
+                sendControl(symbol: "arrow.up", orbChoice: preview.cardOrb)
+            }
+        }
+        .padding(.horizontal, id.isCircle ? 0 : 16)
+        .frame(
+            minWidth: id.isCircle ? HUDSplitChromeLayout.pillHeight : nil,
+            maxWidth: id.isCircle ? HUDSplitChromeLayout.pillHeight : nil
+        )
+        .frame(height: HUDSplitChromeLayout.pillHeight)
+        .background {
+            // A pill is already its own bubble, so the selection fills all of it.
+            if pillHighlighted(id) {
+                HUDSelectionFill()
+            }
+        }
+        .animation(pillMotion ? .easeInOut(duration: 0.16) : nil, value: pillHighlighted(id))
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func pillHighlighted(_ id: HUDPillID) -> Bool {
+        switch id {
+        case .preset: model.session.preset == .agent
+        case .capture: model.captureArmed
+        default: false
+        }
+    }
+
+    private var isPill: Bool {
+        if case .pill = region { return true }
+        return false
+    }
+
+    private var pillMotion: Bool {
+        guard case .pill = region else { return false }
+        return !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    private var symbolReplace: ContentTransition {
+        pillMotion ? .symbolEffect(.replace) : .identity
+    }
+
     private func promptRow(
         idleSlot: HUDIdleSlot,
-        orbChoice: ThinkingOrbChoice
+        orbChoice: ThinkingOrbChoice,
+        showsSend: Bool = true
     ) -> some View {
         HStack(alignment: .center, spacing: 10) {
             Group {
@@ -94,7 +220,7 @@ struct HUDView: View {
                 },
                 onHeight: { height in
                     guard !measuresOnly else { return }
-                    let line = PromptLayout.lineHeight(for: PromptLayout.font())
+                    let line = PromptLayout.promptLineHeight
                     let extra = max(0, height - HUDMetrics.rowHeight)
                     let lines = model.displayedMultiline
                         ? min(PromptLayout.maxVisibleLines, 1 + Int((extra / max(line, 1)).rounded()))
@@ -108,26 +234,9 @@ struct HUDView: View {
                     }
                 }
             )
-            Button(action: model.submitOrStop) {
-                if ReplyWaitingChrome.showsComposingOrb(
-                    phase: model.session.phase,
-                    answer: model.session.displayAnswer
-                ) {
-                    AnimatedThinkingOrb(choice: orbChoice)
-                } else {
-                    Image(systemName: model.session.showsStop ? "stop.fill" : "arrow.up.right")
-                        .font(.system(size: 15, weight: .medium))
-                }
+            if showsSend {
+                sendControl(symbol: "arrow.up.right", orbChoice: orbChoice)
             }
-            .frame(width: HUDMetrics.controlSize, height: HUDMetrics.controlSize)
-            .contentShape(Rectangle())
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help(model.session.showsStop
-                  ? String(localized: "Stop")
-                  : String(localized: "Send. \(shortcutKeys(.send))"))
-            .opacity(model.session.canSend || model.captureArmed || model.session.showsStop ? 0.9 : 0.35)
-            .disabled(!model.session.canSend && !model.captureArmed && !model.session.showsStop)
         }
         .frame(
             width: HUDLayout.rowWidth,
@@ -137,9 +246,10 @@ struct HUDView: View {
         .onChange(of: model.displayedMultiline) {
             if !model.displayedMultiline {
                 promptHeight = HUDMetrics.rowHeight
+                guard !measuresOnly else { return }
                 model.promptLineCount = 1
             }
-            model.onLayout()
+            relayout()
         }
     }
 
@@ -283,10 +393,8 @@ struct HUDView: View {
             }
             if model.hasPendingOpen {
                 HStack(spacing: 12) {
-                    Button("Yes") { model.allowPendingOpen() }
-                        .help("Open this link")
-                    Button("No") { model.denyPendingOpen() }
-                        .help("Skip this link")
+                    Button("Allow") { model.allowPendingOpen() }
+                    Button("Deny") { model.denyPendingOpen() }
                 }
                 .buttonStyle(.borderless)
             }
@@ -363,23 +471,11 @@ struct HUDView: View {
     private var toolbar: some View {
         HStack(alignment: .center, spacing: 0) {
             HStack(spacing: HUDMetrics.controlSpacing) {
-                if AgentModePolicy.showsPresetControl(
-                    experimental: store.experimentalAgent,
-                    prefersAgent: store.sendEndpoint(hasImage: false)?.prefersAgent == true
-                ) {
+                if store.showsPresetControl {
                     presetToggle
                 }
                 captureControl
-                Button(action: model.addContext) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "paperclip")
-                        Text("Add context")
-                    }
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Attach a file. Up to 4 files, 4 MB each. \(shortcutKeys(.addContext))")
+                contextButton()
             }
             Spacer(minLength: HUDMetrics.controlSpacing)
             HStack(spacing: HUDMetrics.controlSpacing) {
@@ -396,12 +492,62 @@ struct HUDView: View {
         .padding(.horizontal, HUDMetrics.inset)
     }
 
+    private func contextButton(showsLabel: Bool = true) -> some View {
+        Button(action: model.addContext) {
+            HStack(spacing: 6) {
+                Image(systemName: "paperclip")
+                if showsLabel {
+                    Text("Add context")
+                }
+            }
+            .font(.system(size: 13))
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Attach a file. Up to 4 files, 4 MB each. \(shortcutKeys(.addContext))")
+        .accessibilityLabel("Add context")
+    }
+
+    private func sendControl(symbol: String, orbChoice: ThinkingOrbChoice) -> some View {
+        let showsOrb = ReplyWaitingChrome.showsComposingOrb(
+            phase: model.session.phase,
+            answer: model.session.displayAnswer
+        )
+        let symbolName = model.session.showsStop ? "stop.fill" : symbol
+        let canPress = model.session.canSend || model.captureArmed || model.session.showsStop
+        return Button(action: model.submitOrStop) {
+            ZStack {
+                if showsOrb {
+                    AnimatedThinkingOrb(choice: orbChoice)
+                        .transition(.opacity)
+                } else {
+                    Image(systemName: symbolName)
+                        .font(.system(size: 15, weight: .medium))
+                        .contentTransition(symbolReplace)
+                        .transition(.opacity)
+                }
+            }
+            .animation(pillMotion ? .easeInOut(duration: 0.12) : nil, value: showsOrb)
+        }
+        .frame(width: HUDMetrics.controlSize, height: HUDMetrics.controlSize)
+        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(model.session.showsStop
+              ? String(localized: "Stop")
+              : String(localized: "Send. \(shortcutKeys(.send))"))
+        .opacity(canPress ? 0.9 : 0.35)
+        .disabled(!canPress)
+    }
+
     private var micButton: some View {
         Button(action: model.toggleDictation) {
             Image(systemName: model.dictating ? "waveform" : "mic")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(model.dictating ? Color.orange : Color.secondary)
+                .contentTransition(symbolReplace)
                 .symbolEffect(.variableColor.iterative, isActive: model.dictating)
+                .animation(pillMotion ? .easeInOut(duration: 0.16) : nil, value: model.dictating)
                 .frame(width: HUDMetrics.controlSize, height: HUDMetrics.controlSize)
         }
         .buttonStyle(.plain)
@@ -420,12 +566,15 @@ struct HUDView: View {
                 .hidden()
                 HStack(spacing: 6) {
                     Image(systemName: model.session.preset.symbolName)
+                        .contentTransition(symbolReplace)
                     Text(model.session.preset.title)
+                        .contentTransition(pillMotion ? .opacity : .identity)
                 }
             }
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.secondary)
-            .hudCapsule(highlighted: model.session.preset == .agent)
+            .animation(pillMotion ? .easeInOut(duration: 0.16) : nil, value: model.session.preset)
+            .hudCapsule(highlighted: model.session.preset == .agent && !isPill)
         }
         .buttonStyle(.plain)
         .fixedSize()
@@ -455,8 +604,11 @@ struct HUDView: View {
                 Button(action: model.toggleCapture) {
                     HStack(spacing: 6) {
                         Image(systemName: model.displayedCaptureTarget.symbolName)
+                            .contentTransition(symbolReplace)
                         Text(model.displayedCaptureTarget.title)
+                            .contentTransition(pillMotion ? .opacity : .identity)
                     }
+                    .animation(pillMotion ? .easeInOut(duration: 0.12) : nil, value: model.displayedCaptureTarget)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -472,7 +624,7 @@ struct HUDView: View {
         }
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(tint)
-        .hudCapsule(highlighted: model.captureArmed)
+        .hudCapsule(highlighted: model.captureArmed && !isPill)
         .fixedSize()
     }
 
@@ -587,6 +739,7 @@ struct HUDView: View {
                 .scaledToFit()
                 .frame(width: 15, height: 15)
                 .foregroundStyle(model.historyExcluded ? Color.primary : Color.secondary)
+                .animation(pillMotion ? .easeInOut(duration: 0.16) : nil, value: model.historyExcluded)
                 .frame(width: HUDMetrics.controlSize, height: HUDMetrics.controlSize)
                 .contentShape(Rectangle())
         }

@@ -103,7 +103,6 @@ enum VoicePermission {
 @MainActor
 final class VoiceCapture {
     var onTranscript: (String, Bool) -> Void = { _, _ in }
-    var onSpeechDetected: (Bool) -> Void = { _ in }
     var onFailure: (String) -> Void = { _ in }
 
     private var analyzer: SpeechAnalyzer?
@@ -331,9 +330,7 @@ final class VoiceCapture {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            continuation.yield(AnalyzerInput(buffer: Self.int16Copy(buffer)))
-        }
+        input.installTap(onBus: 0, bufferSize: 1024, format: format, block: Self.makeTap(continuation))
         self.engine = engine
         inputContinuation = continuation
         engine.prepare()
@@ -385,7 +382,15 @@ final class VoiceCapture {
         stop()
     }
 
-    private static func copyPCM(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer {
+    /// Built outside the main actor: the engine calls the tap on its audio thread, and a closure
+    /// made inside this class would inherit main-actor isolation and trap there.
+    nonisolated static func makeTap(_ continuation: AsyncStream<AnalyzerInput>.Continuation) -> AVAudioNodeTapBlock {
+        { buffer, _ in
+            continuation.yield(AnalyzerInput(buffer: int16Copy(buffer)))
+        }
+    }
+
+    private nonisolated static func copyPCM(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer {
         guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else {
             return buffer
         }
@@ -408,7 +413,7 @@ final class VoiceCapture {
         return copy
     }
 
-    private static func int16Copy(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer {
+    private nonisolated static func int16Copy(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer {
         if buffer.format.commonFormat == .pcmFormatInt16 {
             return copyPCM(buffer)
         }

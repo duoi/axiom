@@ -11,9 +11,6 @@ enum KeychainStore {
     }
 
     static func read(account: String = chatAccount) -> String? {
-        if DevCredentials.suppressesKeychain {
-            return DevCredentials.secret(account: account)
-        }
         if let value = read(account: account, dataProtection: true), !value.isEmpty {
             return value
         }
@@ -38,16 +35,24 @@ enum KeychainStore {
     }
 
     static func write(_ value: String, account: String = chatAccount) throws {
-        if DevCredentials.suppressesKeychain {
-            return
+        do {
+            try write(value, account: account, dataProtection: true)
+        } catch KeychainError.status(errSecMissingEntitlement) {
+            // A build without an application identifier cannot use the data-protection keychain.
+            try write(value, account: account, dataProtection: false)
         }
+    }
+
+    private static func write(_ value: String, account: String, dataProtection: Bool) throws {
         let data = Data(value.utf8)
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: true
+            kSecAttrAccount as String: account
         ]
+        if dataProtection {
+            query[kSecUseDataProtectionKeychain as String] = true
+        }
         let attributes: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
@@ -57,11 +62,13 @@ enum KeychainStore {
         if update == errSecSuccess {
             return
         }
+        if update != errSecItemNotFound {
+            throw KeychainError.status(update)
+        }
         var insert = query
         insert[kSecValueData as String] = data
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         insert[kSecAttrSynchronizable as String] = false
-        insert[kSecUseDataProtectionKeychain as String] = true
         let status = SecItemAdd(insert as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw KeychainError.status(status)
@@ -69,16 +76,32 @@ enum KeychainStore {
     }
 
     static func delete(account: String = chatAccount) {
-        if DevCredentials.suppressesKeychain {
-            return
+        for dataProtection in [true, false] {
+            var query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account
+            ]
+            if dataProtection {
+                query[kSecUseDataProtectionKeychain as String] = true
+            }
+            SecItemDelete(query as CFDictionary)
         }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: true
-        ]
-        SecItemDelete(query as CFDictionary)
+    }
+}
+
+/// Where `EndpointStore` keeps keys. Tests pass an in-memory one so they never touch the real Keychain.
+struct SecretStore {
+    var read: (_ account: String) -> String?
+    var write: (_ value: String, _ account: String) throws -> Void
+    var delete: (_ account: String) -> Void
+
+    static var keychain: SecretStore {
+        SecretStore(
+            read: { KeychainStore.read(account: $0) },
+            write: { try KeychainStore.write($0, account: $1) },
+            delete: { KeychainStore.delete(account: $0) }
+        )
     }
 }
 

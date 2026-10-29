@@ -40,47 +40,55 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 
     var symbolName: String {
         switch self {
-        case .general: "gearshape"
-        case .appearance: "paintbrush"
-        case .chat: "text.bubble"
-        case .history: "clock"
-        case .about: "info.circle"
+        case .general: "gearshape.fill"
+        case .appearance: "paintbrush.fill"
+        case .chat: "text.bubble.fill"
+        case .history: "clock.fill"
+        case .about: "info.circle.fill"
         }
     }
-}
 
-private struct ModelSettingsRowHeight: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
+    var tint: Color {
+        switch self {
+        case .general: .gray
+        case .appearance: .blue
+        case .chat: .purple
+        case .history: .orange
+        case .about: .gray
+        }
     }
 }
 
 struct SettingsView: View {
     @Bindable var store: EndpointStore
     @Bindable var model: HUDModel
-    @State private var page: SettingsPage = SettingsPage.launchPage()
-    @State private var endpointSelection: ChatEndpoint.ID?
+    @State private var page: SettingsPage
+    @State private var columns = NavigationSplitViewVisibility.all
     @State private var editingEndpoint: ChatEndpoint?
-    @State private var historySelection: HistoryEntry.ID?
+    @State private var choosingProvider = false
+    @State private var pendingAdd: EndpointAddChoice?
     @State private var historyDetail: HistoryEntry?
     @State private var permissionRefresh = 0
-    @State private var modelGridTopHeight: CGFloat = 0
-    @State private var modelGridBottomHeight: CGFloat = 0
+
+    init(store: EndpointStore, model: HUDModel, page: SettingsPage = .launchPage()) {
+        self.store = store
+        self.model = model
+        _page = State(initialValue: page)
+    }
 
     var body: some View {
-        HStack(spacing: 0) {
+        NavigationSplitView(columnVisibility: $columns) {
             List(SettingsPage.allCases, selection: $page) { item in
-                Label(item.title, systemImage: item.symbolName)
-                    .tag(item)
+                Label {
+                    Text(item.title)
+                } icon: {
+                    SettingsIcon(symbol: item.symbolName, tint: item.tint)
+                }
+                .tag(item)
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .frame(width: HUDMetrics.sidebarWidth)
-            .padding(.top, HUDMetrics.inset)
-
-            Divider()
-
+            .toolbar(removing: .sidebarToggle)
+            .navigationSplitViewColumnWidth(HUDMetrics.sidebarWidth)
+        } detail: {
             Group {
                 switch page {
                 case .general:
@@ -95,99 +103,90 @@ struct SettingsView: View {
                     aboutPane
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .formStyle(.grouped)
+            .navigationTitle(page.title)
         }
-        .frame(minWidth: HUDMetrics.settingsSize.width, minHeight: HUDMetrics.settingsSize.height - 40)
+        // Settings keeps its sidebar, like System Settings.
+        .onChange(of: columns) { columns = .all }
+        .frame(minWidth: HUDMetrics.settingsSize.width, minHeight: HUDMetrics.settingsSize.height)
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
     }
 
     private var generalPane: some View {
-        settingsPane {
-            SettingsCard {
-                Toggle("Keep the card up", isOn: $store.keepHovering)
-                Text("A click outside leaves the card up. Escape or the hotkey still hides it.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Toggle("Multiline prompt", isOn: $store.usesMultilinePrompt)
-                Text("The field wraps and the card grows, up to 10 lines. Return sends. Option-Return or Shift-Return starts a new line.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Toggle("Wake on Axiom", isOn: Binding(
+        Form {
+            Section {
+                Toggle(isOn: $store.keepHovering) {
+                    Text("Keep the card up")
+                    Text("A click outside leaves it up. Escape or the hotkey still hides it.")
+                }
+                Toggle(isOn: $store.usesMultilinePrompt) {
+                    Text("Multiline prompt")
+                    Text("Wraps up to 10 lines. Option-Return or Shift-Return starts a new line.")
+                }
+            }
+            Section("Voice") {
+                Toggle(isOn: Binding(
                     get: { store.wakeOnAxiom },
                     set: { model.onSetWake($0) }
-                ))
-                Text("Listens for \"Axiom\" or \"Hey Axiom\", then shows the card with the rest of the sentence.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Toggle("Pause to send", isOn: $store.pauseToSend)
-                Text("About 2 seconds of silence sends the prompt once it has text. Return still sends. It waits while a reply is in progress.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                )) {
+                    Text("Wake on Axiom")
+                    Text("Say \"Axiom\" or \"Hey Axiom\" to show the card with the rest of the sentence.")
+                }
+                Toggle(isOn: $store.pauseToSend) {
+                    Text("Pause to send")
+                    Text("About 2 seconds of silence sends the prompt.")
+                }
                 if let status = model.voiceStatus, !status.isEmpty {
-                    Text(status)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    note(status)
                 }
             }
-            SettingsCard {
-                Text("Permissions")
-                    .font(.headline)
+            Section {
                 ForEach(SettingsPermissionRows.make(model: model)) { row in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(row.title)
-                            Text(row.status)
-                                .font(.callout)
+                    LabeledContent {
+                        if row.isGranted {
+                            Label("Allowed", systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(.secondary)
+                        } else {
+                            Button(row.buttonTitle) {
+                                row.prompt()
+                                permissionRefresh += 1
+                            }
                         }
-                        Spacer()
-                        Button(row.buttonTitle) {
-                            row.prompt()
-                            permissionRefresh += 1
+                    } label: {
+                        Text(row.title)
+                        if !row.isGranted {
+                            Text(row.status)
                         }
-                        .disabled(row.isGranted)
                     }
                 }
-                Text("The button requests access. If you already denied it, the button opens System Settings.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Permissions")
+            } footer: {
+                note(String(localized: "If you already denied access, the button opens System Settings."))
             }
             .id(permissionRefresh)
-            SettingsCard {
+            Section("Shortcuts") {
                 shortcutRow(String(localized: "Show and hide"), .toggleHUD)
-                Text("Shows and hides the card from anywhere.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Text("On the card")
-                    .font(.headline)
                 shortcutRow(String(localized: "Hide"), .hideCard)
                 shortcutRow(String(localized: "Send"), .send)
                 shortcutRow(String(localized: "New line"), .newline)
                 shortcutRow(String(localized: "New line"), .newlineShift)
-                Text("Either new-line shortcut works when multiline is on.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
                 shortcutRow(String(localized: "Ask and Agent"), .cyclePreset)
-                Text("Switches when that control is showing.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
                 shortcutRow(String(localized: "Capture"), .cycleCapture)
-                Text("Arms capture, switches Screen and Window, then turns it off.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
                 shortcutRow(String(localized: "Add context"), .addContext)
                 shortcutRow(String(localized: "Recording"), .toggleIncognito)
-                Text("Skips saving this chat.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
                 shortcutRow(String(localized: "Dictation"), .toggleDictation)
             }
         }
     }
 
     private func shortcutRow(_ title: String, _ name: KeyboardShortcuts.Name) -> some View {
-        HStack {
-            Text(title)
-            Spacer(minLength: 16)
+        LabeledContent(title) {
             KeyboardShortcuts.Recorder(for: name)
                 .fixedSize()
         }
@@ -215,29 +214,6 @@ struct SettingsView: View {
         )
     }
 
-    /// One row per provider, capped at five. The 43 covers the header and the table's own padding so two rows do not grow a scrollbar.
-    private var providerTableHeight: CGFloat {
-        let visible = min(max(store.endpoints.count, 1), 5)
-        return 43 + CGFloat(visible) * 24
-    }
-
-    private func modelSettingsCell<Content: View>(minHeight: CGFloat, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
-            content()
-        }
-        .padding(HUDMetrics.inset)
-        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: HUDMetrics.cornerRadius, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(key: ModelSettingsRowHeight.self, value: proxy.size.height)
-            }
-        }
-    }
-
     private func chooseAgentFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -249,251 +225,170 @@ struct SettingsView: View {
     }
 
     private var appearancePane: some View {
-        settingsPane {
-            SettingsCard {
+        Form {
+            Section {
                 Picker("Finish", selection: $store.usesMatte) {
                     Text("Glass").tag(false)
                     Text("Matte").tag(true)
                 }
                 .pickerStyle(.segmented)
-                Text("Glass is clear. Matte is the heavier glass.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                LabeledContent {
+                    HStack {
+                        Slider(value: $store.glassPercent, in: 0...100)
+                        Text("\(Int(store.glassPercent.rounded()))%")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 40, alignment: .trailing)
+                    }
+                } label: {
+                    Text("Glass amount")
+                    Text("100% is clear. Lower values tint the card.")
+                }
+            } footer: {
+                note(String(localized: "Glass is clear. Matte is the heavier glass."))
             }
-            SettingsCard {
-                Text("Glass amount")
-                Slider(value: $store.glassPercent, in: 0...100)
-                Text("\(Int(store.glassPercent.rounded()))%")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                Text("100% is clear. Lower values tint the card.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            Section {
+                Toggle(isOn: $store.usesNewUI) {
+                    Text("New UI")
+                    Text("The prompt sits in its own capsule, with the buttons floating under it.")
+                }
             }
         }
     }
 
     private var chatPane: some View {
-        settingsPane {
-            SettingsCard {
-                Toggle("Experimental", isOn: experimentalBinding)
-                    .toggleStyle(.checkbox)
-                Text("Shows an Agent checkbox on each provider. Checking it shows Ask and Agent on the card and lets a cloud model use tools.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                if store.experimentalAgent {
-                    HStack {
-                        Text(store.agentFolderPath ?? String(localized: "No folder selected"))
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer()
-                        Button("Choose Folder") { chooseAgentFolder() }
-                        if store.agentFolderPath != nil {
-                            Button("Clear") { store.clearAgentFolder() }
-                        }
-                    }
-                    Text("Agent can list, search, and read files here, and it stays inside this folder.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            SettingsCard {
-                Table(store.endpoints, selection: $endpointSelection) {
-                    TableColumn("Name") { endpoint in
-                        HStack(spacing: 6) {
-                            if endpoint.id == store.defaultEndpointID {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text(endpoint.name)
-                            if endpoint.id == store.defaultEndpointID {
-                                Text("Chat")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if endpoint.id == store.visionEndpointID {
-                                Text("Vision")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    TableColumn("Host") { endpoint in
-                        Text(endpoint.hostLabel.isEmpty ? "—" : endpoint.hostLabel)
-                            .foregroundStyle(.secondary)
-                    }
-                    if store.experimentalAgent {
-                        TableColumn("Agent") { endpoint in
-                            Toggle("Agent mode", isOn: agentBinding(endpoint))
-                                .toggleStyle(.checkbox)
-                                .labelsHidden()
-                        }
-                        .width(64)
-                    }
-                }
-                .frame(height: providerTableHeight)
-                .contextMenu(forSelectionType: ChatEndpoint.ID.self) { ids in
-                    if let id = ids.first, let endpoint = store.endpoints.first(where: { $0.id == id }) {
-                        if EndpointTablePolicy.allowsEdit(id) {
-                            Button("Edit") { presentEditor(endpoint) }
-                        }
-                        if !ChatEndpointCatalog.isOnDevice(endpoint) {
-                            Button("Delete", role: .destructive) { store.deleteEndpoint(id) }
-                        }
-                    }
+        Form {
+            Section {
+                ForEach(store.endpoints) { endpoint in
+                    providerRow(endpoint)
                 }
                 HStack {
-                    Menu("Add") {
-                        Button("Custom") {
-                            beginDraft(.custom)
-                        }
-                        Divider()
-                        ForEach(ChatEndpointCatalog.cloudPresets, id: \.id) { preset in
-                            Button(preset.name) {
-                                beginDraft(.preset(preset.id))
-                            }
-                        }
-                    }
-                    Button("Edit") {
-                        if let row = selectedRow {
-                            presentEditor(row)
-                        }
-                    }
-                    .disabled(selectedRow == nil || selectedRow.map { ChatEndpointCatalog.isOnDevice($0) } == true)
-                    Button("Delete", role: .destructive) {
-                        if let id = endpointSelection {
-                            store.deleteEndpoint(id)
-                            endpointSelection = store.defaultEndpointID
-                        }
-                    }
-                    .disabled(selectedRow.map(ChatEndpointCatalog.isOnDevice) ?? store.endpoints.isEmpty)
                     Spacer()
+                    // A Menu in a grouped form row ignored real clicks, so this is a plain button and a popover.
+                    Button("Add Provider…") { choosingProvider = true }
+                        .popover(isPresented: $choosingProvider, arrowEdge: .bottom) {
+                            addProviderList
+                        }
                 }
-                Text(store.experimentalAgent
-                    ? String(localized: "Check Agent to show Ask and Agent on the card and turn tools on. On-device cannot use tools.")
-                    : String(localized: "On-device cannot be edited or deleted."))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Providers")
+            } footer: {
+                if store.experimentalAgent {
+                    note(String(localized: "Turn on Agent to show Ask and Agent on the card and let that provider use tools. On-device cannot use tools."))
+                }
             }
-            VStack(spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
-                    modelSettingsCell(minHeight: modelGridTopHeight) {
-                        ModelRoleSection(
-                            title: String(localized: "Chat model"),
-                            detail: String(localized: "Prompts with no image."),
-                            store: store,
-                            providerID: Binding(
-                                get: { store.defaultEndpointID },
-                                set: { id in
-                                    if let id {
-                                        store.setDefault(id)
-                                        model.applyModelPreset()
-                                    }
-                                }
-                            ),
-                            modelID: Binding(
-                                get: { store.chatModelID },
-                                set: { store.chatModelID = $0; store.save() }
-                            ),
-                            allowsUnset: false
-                        )
-                    }
-                    modelSettingsCell(minHeight: modelGridTopHeight) {
-                        Text("Reasoning effort")
-                            .font(.headline)
-                        Picker("Reasoning effort", selection: $store.reasoningEffort) {
-                            ForEach(ReasoningEffort.allCases) { effort in
-                                Text(effort.title).tag(effort)
+            Section("Chat") {
+                ModelRoleSection(
+                    store: store,
+                    providerID: Binding(
+                        get: { store.defaultEndpointID },
+                        set: { id in
+                            if let id {
+                                store.setDefault(id)
+                                model.applyModelPreset()
                             }
                         }
-                        .labelsHidden()
-                        Text("Default is Medium. OpenAI and ChatGPT send this value. Anthropic thinks unless this is None.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                    ),
+                    modelID: Binding(
+                        get: { store.chatModelID },
+                        set: { store.chatModelID = $0; store.save() }
+                    ),
+                    allowsUnset: false
+                )
+                Picker(selection: $store.reasoningEffort) {
+                    ForEach(ReasoningEffort.allCases) { effort in
+                        Text(effort.title).tag(effort)
                     }
-                }
-                .onPreferenceChange(ModelSettingsRowHeight.self) { measured in
-                    guard measured > 1, abs(modelGridTopHeight - measured) > 0.5 else { return }
-                    modelGridTopHeight = measured
-                }
-                HStack(alignment: .top, spacing: 12) {
-                    modelSettingsCell(minHeight: modelGridBottomHeight) {
-                        ModelRoleSection(
-                            title: String(localized: "Vision model"),
-                            detail: String(localized: "Prompts that include an image. Same as chat uses the chat model."),
-                            store: store,
-                            providerID: Binding(
-                                get: { store.visionEndpointID },
-                                set: { id in
-                                    if let id {
-                                        store.setVision(id)
-                                    } else {
-                                        store.clearVisionSelection()
-                                    }
-                                }
-                            ),
-                            modelID: Binding(
-                                get: { store.visionModelID },
-                                set: { store.visionModelID = $0; store.save() }
-                            ),
-                            allowsUnset: true
-                        )
-                    }
-                    modelSettingsCell(minHeight: modelGridBottomHeight) {
-                        Text("Request timeout")
-                            .font(.headline)
-                        HStack {
-                            TextField(
-                                "Seconds",
-                                value: $store.requestTimeoutSeconds,
-                                format: .number.precision(.fractionLength(0))
-                            )
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 72)
-                            Text("seconds")
-                                .foregroundStyle(.secondary)
-                        }
-                        Text("How long one reply can run. \(Int(ChatTimeoutSettings.minimumSeconds)) to \(Int(ChatTimeoutSettings.maximumSeconds)) seconds. Default is \(Int(ChatTimeoutSettings.defaultSeconds)).")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onPreferenceChange(ModelSettingsRowHeight.self) { measured in
-                    guard measured > 1, abs(modelGridBottomHeight - measured) > 0.5 else { return }
-                    modelGridBottomHeight = measured
+                } label: {
+                    Text("Reasoning effort")
+                    Text("Anthropic thinks unless this is None.")
                 }
             }
-            SettingsCard {
-                Text("Default prompt")
-                    .font(.headline)
-                Text("Used when a provider leaves its own prompt blank. %datetime% becomes the local date and time when you send.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                TextEditor(text: $store.defaultSystemPrompt)
-                    .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 140)
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                    )
+            Section {
+                ModelRoleSection(
+                    store: store,
+                    providerID: Binding(
+                        get: { store.visionEndpointID },
+                        set: { id in
+                            if let id {
+                                store.setVision(id)
+                            } else {
+                                store.clearVisionSelection()
+                            }
+                        }
+                    ),
+                    modelID: Binding(
+                        get: { store.visionModelID },
+                        set: { store.visionModelID = $0; store.save() }
+                    ),
+                    allowsUnset: true
+                )
+            } header: {
+                Text("Vision")
+            } footer: {
+                note(String(localized: "Used for prompts that include an image."))
+            }
+            Section {
+                LabeledContent {
+                    HStack(spacing: 6) {
+                        TextField(
+                            "Request timeout",
+                            value: $store.requestTimeoutSeconds,
+                            format: .number.precision(.fractionLength(0))
+                        )
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 56)
+                        Text("seconds")
+                            .foregroundStyle(.secondary)
+                    }
+                } label: {
+                    Text("Request timeout")
+                    Text("\(Int(ChatTimeoutSettings.minimumSeconds)) to \(Int(ChatTimeoutSettings.maximumSeconds)) seconds. Default is \(Int(ChatTimeoutSettings.defaultSeconds)).")
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Default prompt")
+                    note(String(localized: "Used when a provider leaves its own prompt blank. %datetime% becomes the local date and time."))
+                    TextEditor(text: $store.defaultSystemPrompt)
+                        .font(.body)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 100)
+                }
+            }
+            Section {
+                Toggle(isOn: experimentalBinding) {
+                    Text("Experimental")
+                    Text("Adds an Agent switch to each provider. Agent lets a cloud model use tools.")
+                }
+                if store.experimentalAgent {
+                    LabeledContent {
+                        HStack {
+                            if store.agentFolderPath != nil {
+                                Button("Clear") { store.clearAgentFolder() }
+                            }
+                            Button("Choose…") { chooseAgentFolder() }
+                        }
+                    } label: {
+                        Text("Agent folder")
+                        Text(store.agentFolderPath ?? String(localized: "No folder selected"))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            } footer: {
+                if store.experimentalAgent {
+                    note(String(localized: "Agent can list, search, and read files in this folder, and stays inside it."))
+                }
             }
         }
         .onAppear {
-            if endpointSelection == nil {
-                endpointSelection = store.defaultEndpointID
-            }
             if editingEndpoint == nil {
                 if let preset = SettingsPage.editPreset(),
                    let match = store.endpoints.first(where: { $0.presetID == preset })
                 {
-                    endpointSelection = match.id
                     editingEndpoint = match
                 } else if CommandLine.arguments.contains("--edit-endpoint") {
-                    if let existing = selectedRow ?? store.selectedEndpoint ?? store.endpoints.first,
+                    if let existing = store.selectedEndpoint ?? store.endpoints.first,
                        EndpointTablePolicy.allowsEdit(existing.id)
                     {
                         editingEndpoint = existing
@@ -506,73 +401,123 @@ struct SettingsView: View {
         }
     }
 
-    private var historyPane: some View {
-        settingsPane {
-            SettingsCard {
-                Toggle("Save chat history", isOn: $store.savesHistory)
-                Text("A finished conversation is saved on this Mac. Nothing is uploaded.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Toggle("Also save screenshots", isOn: $store.savesHistoryScreenshots)
-                    .disabled(!store.savesHistory)
-                Text("Saves the Screen or Window capture with that chat.")
+    private var addProviderList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                addProviderButton(String(localized: "Custom…"), .custom)
+                Divider().padding(.vertical, 4).padding(.horizontal, 8)
+                ForEach(ChatEndpointCatalog.cloudPresets, id: \.id) { preset in
+                    addProviderButton(preset.name, .preset(preset.id))
+                }
+            }
+            .padding(6)
+        }
+        .frame(width: 260, height: 380)
+        // The editor sheet opens once the popover is gone; presenting both at once drops the sheet.
+        .onDisappear {
+            if let choice = pendingAdd {
+                pendingAdd = nil
+                beginDraft(choice)
+            }
+        }
+    }
+
+    private func addProviderButton(_ title: String, _ choice: EndpointAddChoice) -> some View {
+        AddProviderRow(title: title) {
+            pendingAdd = choice
+            choosingProvider = false
+        }
+    }
+
+    private func providerRow(_ endpoint: ChatEndpoint) -> some View {
+        let onDevice = ChatEndpointCatalog.isOnDevice(endpoint)
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(endpoint.name)
+                    if endpoint.id == store.defaultEndpointID {
+                        roleBadge(String(localized: "Chat"))
+                    }
+                    if endpoint.id == store.visionEndpointID {
+                        roleBadge(String(localized: "Vision"))
+                    }
+                }
+                Text(endpoint.hostLabel.isEmpty ? "—" : endpoint.hostLabel)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            SettingsCard {
-                Table(store.historyStore.entries, selection: $historySelection) {
-                    TableColumn("Time") { entry in
-                        Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened))
-                            .foregroundStyle(.secondary)
-                    }
-                    .width(min: 120, ideal: 140)
-                    TableColumn("Title") { entry in
-                        Text(entry.title.isEmpty ? "—" : entry.title)
-                            .lineLimit(1)
-                            .onTapGesture(count: 2) {
-                                historyDetail = entry
-                            }
-                    }
+            Spacer()
+            if store.experimentalAgent, !onDevice {
+                Toggle("Agent", isOn: agentBinding(endpoint))
+                    .toggleStyle(.checkbox)
+            }
+            if EndpointTablePolicy.allowsEdit(endpoint.id) {
+                Button("Edit…") { presentEditor(endpoint) }
+            }
+        }
+        .contextMenu {
+            if EndpointTablePolicy.allowsEdit(endpoint.id) {
+                Button("Edit…") { presentEditor(endpoint) }
+            }
+            if !onDevice {
+                Button("Delete", role: .destructive) { store.deleteEndpoint(endpoint.id) }
+            }
+        }
+    }
+
+    private func roleBadge(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(.quaternary, in: Capsule())
+    }
+
+    private var historyPane: some View {
+        Form {
+            Section {
+                Toggle(isOn: $store.savesHistory) {
+                    Text("Save chat history")
+                    Text("Finished chats are saved on this Mac. Nothing is uploaded.")
                 }
-                .frame(minHeight: 240)
-                .contextMenu(forSelectionType: HistoryEntry.ID.self) { ids in
-                    if let id = ids.first {
-                        Button("Open") {
-                            historyDetail = store.historyStore.entries.first { $0.id == id }
+                Toggle(isOn: $store.savesHistoryScreenshots) {
+                    Text("Also save screenshots")
+                    Text("Keeps the Screen or Window capture with its chat. Turning this off deletes saved screenshots.")
+                }
+                .disabled(!store.savesHistory)
+            }
+            Section {
+                if store.historyStore.entries.isEmpty {
+                    note(String(localized: "No saved chats."))
+                }
+                ForEach(store.historyStore.entries) { entry in
+                    Button {
+                        historyDetail = entry
+                    } label: {
+                        LabeledContent {
+                            Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened))
+                        } label: {
+                            Text(entry.title.isEmpty ? "—" : entry.title)
+                                .lineLimit(1)
                         }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button("Open") { historyDetail = entry }
                         Button("Delete", role: .destructive) {
-                            store.historyStore.delete(id: id)
-                            if historySelection == id {
-                                historySelection = nil
-                            }
-                            if historyDetail?.id == id {
+                            store.historyStore.delete(id: entry.id)
+                            if historyDetail?.id == entry.id {
                                 historyDetail = nil
                             }
                         }
                     }
                 }
-                HStack {
-                    Button("Open") {
-                        if let id = historySelection {
-                            historyDetail = store.historyStore.entries.first { $0.id == id }
-                        }
-                    }
-                    .disabled(historySelection == nil)
-                    Button("Delete", role: .destructive) {
-                        if let id = historySelection {
-                            store.historyStore.delete(id: id)
-                            historySelection = nil
-                            if historyDetail?.id == id {
-                                historyDetail = nil
-                            }
-                        }
-                    }
-                    .disabled(historySelection == nil)
-                    Spacer()
-                }
-                Text("Double-click a row to open the thread. Delete removes that chat and its saved screenshot.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Chats")
+            } footer: {
+                note(String(localized: "Click a chat to open it. Control-click to delete it and its screenshot."))
             }
         }
         .onAppear {
@@ -583,18 +528,8 @@ struct SettingsView: View {
         }
     }
 
-    private var selectedRow: ChatEndpoint? {
-        if let endpointSelection {
-            return store.endpoints.first(where: { $0.id == endpointSelection })
-                ?? (editingEndpoint?.id == endpointSelection ? editingEndpoint : nil)
-        }
-        return store.selectedEndpoint
-    }
-
     private func beginDraft(_ choice: EndpointAddChoice) {
-        let created = store.draftEndpoint(for: choice)
-        endpointSelection = created.id
-        editingEndpoint = created
+        editingEndpoint = store.draftEndpoint(for: choice)
     }
 
     private func presentEditor(_ endpoint: ChatEndpoint) {
@@ -612,36 +547,62 @@ struct SettingsView: View {
     }
 
     private var aboutPane: some View {
-        settingsPane {
-            VStack(spacing: HUDMetrics.controlSpacing) {
-                AxiomLogo()
-                    .frame(width: 88, height: 64)
-                Text("Axiom")
-                    .font(.title2.weight(.semibold))
-                Text("Version \(appVersion)")
-                    .foregroundStyle(.secondary)
-                Text("Steven Johns")
-                Link("github.com/duoi/axiom", destination: URL(string: "https://github.com/duoi/axiom")!)
-                Text("MIT License")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 16)
+        VStack(spacing: 8) {
+            AxiomLogo()
+                .frame(width: 88, height: 64)
+            Text("Axiom")
+                .font(.title2.weight(.semibold))
+            Text("Version \(appVersion)")
+                .foregroundStyle(.secondary)
+            Spacer().frame(height: 8)
+            Text("Steven Johns")
+            Link("github.com/duoi/axiom", destination: URL(string: "https://github.com/duoi/axiom")!)
+            Text("MIT License")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
-    }
-
-    private func settingsPane<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
-                content()
-            }
-            .padding(HUDMetrics.inset)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    }
+}
+
+/// A white symbol on a colored tile, like the System Settings sidebar.
+private struct SettingsIcon: View {
+    var symbol: String
+    var tint: Color
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 20, height: 20)
+            .background(tint.gradient, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+    }
+}
+
+/// One choice in the Add Provider popover, highlighted on hover like a menu item.
+private struct AddProviderRow: View {
+    var title: String
+    var action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .foregroundStyle(hovering ? Color.white : Color.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(hovering ? Color.accentColor : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }

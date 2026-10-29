@@ -121,3 +121,19 @@ import Testing
     #expect(ReasoningEffort.medium.anthropicBudgetTokens == 8_192)
     #expect(ReasoningEffort.minimal.anthropicBudgetTokens == 1_024)
 }
+
+@Test func anthropicLeavesThinkingOffWhenToolsAreSent() throws {
+    // The reply that calls a tool must be echoed back with its signed thinking block, which the
+    // assembler does not keep. Without thinking, the step after a tool call is accepted.
+    let request = ChatRequest(
+        url: URL(string: "https://api.anthropic.com/v1")!,
+        model: "m",
+        apiKey: "",
+        messages: [OutboundMessage(role: "user", text: "find the invoice", imageJPEGs: [])],
+        reasoningEffort: .medium,
+        tools: AgentTools.definitions
+    )
+    let body = try JSONSerialization.jsonObject(with: JSONEncoder().encode(AnthropicBody(request: request))) as? [String: Any]
+    #expect(body?["thinking"] == nil)
+    #expect(body?["tools"] != nil)
+}

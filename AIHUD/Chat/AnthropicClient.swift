@@ -2,25 +2,10 @@ import Foundation
 
 enum AnthropicParser {
     static func parse(line: String) -> SSEParser.Event {
-        var text = line
-        if text.hasSuffix("\r") {
-            text.removeLast()
-        }
-        if text.isEmpty || text.hasPrefix(":") {
-            return .skip
-        }
-        guard text.hasPrefix("data:") else { return .skip }
-        let payload = text.dropFirst(5).trimmingCharacters(in: .whitespaces)
-        if payload == "[DONE]" {
-            return .done
-        }
-        guard let data = payload.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
-            return .skip
-        }
-        if let message = SSEParser.errorMessage(in: object) {
-            return .failure(message)
+        let object: [String: Any]
+        switch SSEParser.line(line) {
+        case .event(let event): return event
+        case .object(let parsed): object = parsed
         }
         let type = object["type"] as? String
         if type == "message_stop" {
@@ -44,97 +29,15 @@ struct AnthropicClient: Sendable {
     let session: URLSession
 
     func stream(_ request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    var urlRequest = URLRequest(url: request.url)
-                    urlRequest.httpMethod = "POST"
-                    urlRequest.setValue(request.apiKey, forHTTPHeaderField: "x-api-key")
-                    urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-                    urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                    urlRequest.httpBody = try JSONEncoder().encode(AnthropicBody(request: request))
-                    DebugHTTPTranscript.recordRequest(urlRequest)
-
-                    let (bytes, response) = try await session.bytes(for: urlRequest)
-                    DebugHTTPTranscript.recordStatus(response)
-                    guard let http = response as? HTTPURLResponse else {
-                        continuation.yield(.failure(String(localized: "The request failed.")))
-                        DebugHTTPTranscript.recordFailure(String(localized: "The request failed."))
-                        continuation.finish()
-                        return
-                    }
-                    if http.statusCode != 200 {
-                        var data = Data()
-                        for try await byte in bytes {
-                            data.append(byte)
-                            if data.count > 64 * 1024 { break }
-                        }
-                        DebugHTTPTranscript.recordErrorBody(data)
-                        let message = SSEParser.errorMessage(from: data) ?? String(localized: "The request failed (\(http.statusCode)).")
-                        continuation.yield(.failure(message))
-                        DebugHTTPTranscript.recordFailure(message)
-                        continuation.finish()
-                        return
-                    }
-
-                    var sawDone = false
-                    var sawToken = false
-                    var lines: [String] = []
-                    for try await line in bytes.lines {
-                        try Task.checkCancellation()
-                        DebugHTTPTranscript.recordLine(line)
-                        lines.append(line)
-                        switch AnthropicParser.parse(line: line) {
-                        case .skip:
-                            continue
-                        case .token(let token):
-                            sawToken = true
-                            continuation.yield(.token(token))
-                        case .done:
-                            sawDone = true
-                            for event in ToolCallAssembler.trailingEvents(wire: .anthropic, lines: lines) {
-                                continuation.yield(event)
-                            }
-                            DebugHTTPTranscript.recordFinished()
-                            continuation.finish()
-                            return
-                        case .failure(let message):
-                            continuation.yield(.failure(message))
-                            DebugHTTPTranscript.recordFailure(message)
-                            continuation.finish()
-                            return
-                        }
-                    }
-                    if !sawDone {
-                        let assembled = ToolCallAssembler.anthropic(lines: lines)
-                        if sawToken || !assembled.calls.isEmpty {
-                            for event in ToolCallAssembler.trailingEvents(wire: .anthropic, lines: lines) {
-                                continuation.yield(event)
-                            }
-                        } else {
-                            continuation.yield(.failure(String(localized: "The response ended early.")))
-                            DebugHTTPTranscript.recordFailure(String(localized: "The response ended early."))
-                            continuation.finish()
-                            return
-                        }
-                    }
-                    DebugHTTPTranscript.recordFinished()
-                    continuation.finish()
-                } catch is CancellationError {
-                    DebugHTTPTranscript.recordFinished()
-                    continuation.finish()
-                } catch let error as URLError where error.code == .cancelled {
-                    DebugHTTPTranscript.recordFinished()
-                    continuation.finish()
-                } catch {
-                    DebugHTTPTranscript.recordFailure(error.localizedDescription)
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in
-                task.cancel()
-            }
+        SSEStream.run(session: session, wire: .anthropic, parse: AnthropicParser.parse(line:)) {
+            var urlRequest = URLRequest(url: request.url)
+            urlRequest.httpMethod = "POST"
+            urlRequest.setValue(request.apiKey, forHTTPHeaderField: "x-api-key")
+            urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            urlRequest.httpBody = try JSONEncoder().encode(AnthropicBody(request: request))
+            return urlRequest
         }
     }
 }
@@ -225,7 +128,9 @@ struct AnthropicBody: Encodable {
     init(request: ChatRequest) {
         model = request.model
         stream = true
-        if let budget = request.reasoningEffort.anthropicBudgetTokens {
+        // shortcut: no thinking with tools, because a tool step must echo the signed thinking block back
+        // and ToolCallAssembler drops it. Keep thinking blocks there to allow both.
+        if request.tools.isEmpty, let budget = request.reasoningEffort.anthropicBudgetTokens {
             thinking = Thinking(type: "enabled", budgetTokens: budget)
             maxTokens = max(4_096, budget + 4_096)
         } else {

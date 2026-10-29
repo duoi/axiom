@@ -36,11 +36,6 @@ import Testing
     #expect(ScreenGrab.settingsDecision(preflightGranted: true) == .none)
 }
 
-@Test func screenCaptureDoesNotRequestFromCapturePath() {
-    #expect(!ScreenGrab.shouldRequestAccess(preflightGranted: false))
-    #expect(!ScreenGrab.shouldRequestAccess(preflightGranted: true))
-}
-
 @Test func accessibilitySettingsDecision() {
     #expect(AccessibilityPermission.settingsDecision(trusted: false) == .request)
     #expect(AccessibilityPermission.settingsDecision(trusted: true) == .none)

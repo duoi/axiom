@@ -1,9 +1,8 @@
 import AppKit
 import SwiftUI
 
+/// Provider and model rows for one role. The caller supplies the section and its header.
 struct ModelRoleSection: View {
-    let title: String
-    let detail: String
     @Bindable var store: EndpointStore
     @Binding var providerID: UUID?
     @Binding var modelID: String
@@ -24,54 +23,45 @@ struct ModelRoleSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: HUDMetrics.controlSpacing) {
-            Text(title)
-                .font(.headline)
-            Text(detail)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Picker("Provider", selection: $providerID) {
-                if allowsUnset {
-                    Text("Same as chat").tag(Optional<UUID>.none)
-                }
-                ForEach(store.endpoints) { endpoint in
-                    Text(endpoint.name).tag(Optional(endpoint.id))
+        Picker("Provider", selection: $providerID) {
+            if allowsUnset {
+                Text("Same as chat").tag(Optional<UUID>.none)
+            }
+            ForEach(store.endpoints) { endpoint in
+                Text(endpoint.name).tag(Optional(endpoint.id))
+            }
+        }
+        if providerID != nil || !allowsUnset {
+            if isOnDevice {
+                LabeledContent("Model", value: "Apple Intelligence")
+            } else if availableModels.isEmpty {
+                TextField("Model", text: $modelID, prompt: Text("Model id"))
+            } else {
+                Picker("Model", selection: $modelID) {
+                    ForEach(availableModels, id: \.self) { id in
+                        Text(id).tag(id)
+                    }
+                    if !availableModels.contains(modelID) && !modelID.isEmpty {
+                        Text(modelID).tag(modelID)
+                    }
+                    if modelID.isEmpty {
+                        Text("Choose a model").tag("")
+                    }
                 }
             }
-            if providerID != nil || !allowsUnset {
-                if isOnDevice {
-                    Text("Apple Intelligence")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
-                } else if availableModels.isEmpty {
-                    TextField("Model id", text: $modelID)
-                        .textFieldStyle(.roundedBorder)
+        }
+        if let provider, !isOnDevice {
+            LabeledContent {
+                Button("Refresh") {
+                    Task { await refresh() }
+                }
+                .disabled(isListing)
+            } label: {
+                if let error = store.modelListErrors[provider.id], !error.isEmpty {
+                    Text(error)
+                        .foregroundStyle(.red)
                 } else {
-                    Picker("Model", selection: $modelID) {
-                        ForEach(availableModels, id: \.self) { id in
-                            Text(id).tag(id)
-                        }
-                        if !availableModels.contains(modelID) && !modelID.isEmpty {
-                            Text(modelID).tag(modelID)
-                        }
-                        if modelID.isEmpty {
-                            Text("Choose a model").tag("")
-                        }
-                    }
-                }
-            }
-            if let provider, !isOnDevice {
-                HStack {
-                    Button("Refresh") {
-                        Task { await refresh() }
-                    }
-                    .disabled(isListing)
-                    if let error = store.modelListErrors[provider.id], !error.isEmpty {
-                        Text(error)
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                    }
+                    Text("Model list")
                 }
             }
         }

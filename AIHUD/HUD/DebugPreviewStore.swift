@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Session-only debug knobs for shimmer, the send orb, and intelligence glow.
-/// The card reads `cardShimmer` and `cardOrb`, which stay on the production defaults until debug is on.
+/// The card reads `cardOrb`, which stays on the production default until debug is on.
 @MainActor
 @Observable
 final class DebugPreviewStore {
@@ -16,7 +16,6 @@ final class DebugPreviewStore {
     }
 
     private(set) var debugEnabled = false
-    private(set) var cardShimmer: InFlightShimmerStyle = .default
     private(set) var cardOrb: ThinkingOrbChoice = .production
 
     /// Which preset the sliders edit and Listening vs Flash should load.
@@ -86,7 +85,6 @@ final class DebugPreviewStore {
     }
 
     private func refreshResolvedCard() {
-        cardShimmer = debugEnabled ? shimmerStyle : .default
         cardOrb = debugEnabled ? orbChoice : .production
     }
 }

@@ -1,4 +1,6 @@
 import AppKit
+import AVFoundation
+import Speech
 import Foundation
 import Testing
 @testable import Axiom
@@ -236,6 +238,16 @@ import Testing
     #expect(VoiceStatusCopy.systemSettingsURL(for: VoiceStatusCopy.adHocPermission) == nil)
 }
 
+@Test func pauseToSendIsOnUntilTurnedOff() {
+    let suite = "aihud.tests.pause-default"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(VoiceSettings.loadPauseToSend(from: defaults))
+    VoiceSettings.savePauseToSend(false, to: defaults)
+    #expect(!VoiceSettings.loadPauseToSend(from: defaults))
+}
+
 @Test func togglingVoiceOptionsDoesNotClearEndpointFields() {
     let suite = "aihud.tests.voice-persist"
     let defaults = UserDefaults(suiteName: suite)!
@@ -299,4 +311,20 @@ private final class SpeechBox: @unchecked Sendable {
     func fail(_ message: String) {
         failure = message
     }
+}
+
+@Test func microphoneTapRunsOffTheMainActor() async throws {
+    // AVAudioEngine calls the tap on its own audio thread. A main-actor tap traps there on macOS 26.
+    let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+    let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 160))
+    buffer.frameLength = 160
+    let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
+    let tap = VoiceCapture.makeTap(continuation)
+    nonisolated(unsafe) let input = buffer
+    await Task.detached { tap(input, AVAudioTime(hostTime: 0)) }.value
+    continuation.finish()
+    var received: [AnalyzerInput] = []
+    for await item in stream { received.append(item) }
+    #expect(received.count == 1)
+    #expect(received.first?.buffer.format.commonFormat == .pcmFormatInt16)
 }

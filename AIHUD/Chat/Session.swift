@@ -305,7 +305,12 @@ struct Session: Equatable, Sendable {
     mutating func stop() {
         guard phase == .waiting || phase == .streaming else { return }
         if displayAnswer.isEmpty {
+            // Like fail(): the unanswered prompt goes back to the composer, or Enter would send it twice.
+            if turns.last?.role == .user {
+                turns.removeLast()
+            }
             draft = PromptInFlightPolicy.promptDraft(whileSending: sentDraft)
+            chips = sentChips
             phase = .composing
         } else {
             turns.append(Turn(role: .assistant, text: displayAnswer, chips: []))

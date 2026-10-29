@@ -68,29 +68,32 @@ extension HUDController {
         let visible = (panel.screen ?? NSScreen.main)?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         var origin = NSPoint(
-            x: panel.frame.maxX + 24,
-            y: panel.frame.maxY - window.frame.height
+            x: panel.cardFrame.maxX + 24,
+            y: panel.cardFrame.maxY - window.frame.height
         )
         if origin.x + window.frame.width > visible.maxX - 16 {
-            origin.x = panel.frame.minX - window.frame.width - 24
+            origin.x = panel.cardFrame.minX - window.frame.width - 24
         }
         origin.x = min(max(origin.x, visible.minX + 16), visible.maxX - window.frame.width - 16)
         origin.y = min(max(origin.y, visible.minY + 16), visible.maxY - window.frame.height - 16)
         window.setFrameOrigin(origin)
     }
 
-    func makeSettingsWindow() -> NSWindow {
-        let host = NSHostingView(rootView: SettingsView(store: store, model: model))
+    func makeSettingsWindow(page: SettingsPage = .launchPage()) -> NSWindow {
+        let host = NSHostingView(rootView: SettingsView(store: store, model: model, page: page))
         host.safeAreaRegions = []
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: HUDMetrics.settingsSize.width, height: HUDMetrics.settingsSize.height),
-            styleMask: [.titled, .closable],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = String(localized: "Settings")
+        // The sidebar runs up under the traffic lights, like System Settings.
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unified
         window.contentView = host
-        window.contentMinSize = NSSize(width: 680, height: 500)
+        window.contentMinSize = HUDMetrics.settingsSize
         window.isReleasedWhenClosed = false
         window.delegate = self
         return window

@@ -133,11 +133,6 @@ enum HUDPanelFade {
     static func animationDuration(reduceMotion: Bool) -> TimeInterval {
         reduceMotion ? 0 : duration
     }
-
-    /// Fade-out must not orderOut until the animation interval has elapsed.
-    static func shouldOrderOut(elapsed: TimeInterval, duration: TimeInterval) -> Bool {
-        elapsed >= duration
-    }
 }
 
 /// Window-frame resize. Same 160ms ease as the panel fade. Reduce Motion is instant.
@@ -150,6 +145,14 @@ enum HUDFrameMotion {
     static func easeInOut(_ linear: Double) -> Double {
         let t = min(1, max(0, linear))
         return t * t * (3 - 2 * t)
+    }
+
+    /// Same ease as the window, for a single length such as the capsule height.
+    static func scalar(from start: CGFloat, to end: CGFloat, linearProgress: Double) -> CGFloat {
+        let t = CGFloat(easeInOut(linearProgress))
+        if t <= 0 { return start }
+        if t >= 1 { return end }
+        return start + (end - start) * t
     }
 
     /// Tops within 1pt share one top. A raised reply (past 15 lines) is the case that moves it.
@@ -189,6 +192,102 @@ enum HUDFrameMotion {
         return NSRect(x: 0, y: plateHeight - height, width: plateWidth, height: height)
     }
 
+    static let pourResponse: TimeInterval = 0.50
+    static let pourDamping: Double = 0.70
+    static let pourOverlap: CGFloat = 22
+    static let pourGather: CGFloat = 0.42
+    static let pourBridge: CGFloat = 32
+    static let pourStagger: TimeInterval = 0.032
+    static let pourOpenTick: TimeInterval = 0.64
+    static let pourDismissFadeDelay: TimeInterval = 0.20
+    static let pourScaleStart: CGFloat = 0.96
+    static let pourDismissDuration: TimeInterval = 0.24
+
+    /// Underdamped step from 0 toward 1. It crosses 1, then settles.
+    static func pourSpring(elapsed: TimeInterval) -> CGFloat {
+        let t = max(0, elapsed)
+        let omega = 2 * Double.pi / pourResponse
+        let decay = exp(-pourDamping * omega * t)
+        let damped = omega * sqrt(max(0, 1 - pourDamping * pourDamping))
+        let coast = cos(damped * t) + (pourDamping * omega / damped) * sin(damped * t)
+        return CGFloat(1 - decay * coast)
+    }
+
+    static func pourDelay(rank: Int) -> TimeInterval {
+        TimeInterval(min(max(rank, 0), 2)) * pourStagger
+    }
+
+    /// How open the row is: 0 tucked, 1 seated. Opening springs after the delay.
+    /// Dismiss eases in with no spring, so nothing bounces while the card fades.
+    static func pourPresentation(elapsed: TimeInterval, delay: TimeInterval, opening: Bool) -> CGFloat {
+        if elapsed < delay { return opening ? 0 : 1 }
+        if opening {
+            return pourSpring(elapsed: elapsed - delay)
+        }
+        return 1 - pourDismissProgress(elapsed: elapsed - delay)
+    }
+
+    static func pourDismissProgress(elapsed: TimeInterval) -> CGFloat {
+        let unit = min(1, max(0, elapsed / pourDismissDuration))
+        return CGFloat(unit * unit)
+    }
+
+    static func pourRanks(midXs: [CGFloat], cardWidth: CGFloat) -> [Int] {
+        let center = cardWidth / 2
+        let ordered = midXs.enumerated().sorted { lhs, rhs in
+            let left = abs(lhs.element - center)
+            let right = abs(rhs.element - center)
+            if abs(left - right) > 0.5 { return left < right }
+            return lhs.element < rhs.element
+        }
+        var ranks = Array(repeating: 0, count: midXs.count)
+        for (rank, item) in ordered.enumerated() {
+            ranks[item.offset] = rank
+        }
+        return ranks
+    }
+
+    /// Pill starts inside the capsule, pulled toward the middle of the card.
+    static func tuckedPillFrame(rest: CGRect, plate: CGRect, cardWidth: CGFloat) -> CGRect {
+        let center = cardWidth / 2
+        let gathered = rest.midX + (center - rest.midX) * pourGather
+        let x = gathered - rest.width / 2
+        let y = plate.minY + pourOverlap - rest.height
+        return CGRect(x: x, y: y, width: rest.width, height: rest.height)
+    }
+
+    static func pouredPillFrame(from start: CGRect, to end: CGRect, presentation: CGFloat) -> CGRect {
+        CGRect(
+            x: start.origin.x + (end.origin.x - start.origin.x) * presentation,
+            y: start.origin.y + (end.origin.y - start.origin.y) * presentation,
+            width: end.width,
+            height: end.height
+        )
+    }
+
+    /// High while the row still overlaps the capsule. Zero once the slowest pill has opened the rest gap.
+    static func pourSpacing(slowestVerticalGap: CGFloat) -> CGFloat {
+        let opening = -pourOverlap
+        let span = HUDSplitChromeLayout.pillGap - opening
+        let traveled = min(span, max(0, slowestVerticalGap - opening))
+        return pourBridge * (1 - traveled / span)
+    }
+
+    static func pourCapsuleScale(presentation: CGFloat) -> CGFloat {
+        pourScaleStart + (1 - pourScaleStart) * presentation
+    }
+
+    static func scaledPlateFrame(plate: CGRect, scale: CGFloat) -> CGRect {
+        let width = plate.width * scale
+        let height = plate.height * scale
+        return CGRect(
+            x: plate.midX - width / 2,
+            y: plate.midY - height / 2,
+            width: width,
+            height: height
+        )
+    }
+
     static func matches(_ lhs: NSRect, _ rhs: NSRect) -> Bool {
         abs(lhs.origin.x - rhs.origin.x) < 0.5
             && abs(lhs.origin.y - rhs.origin.y) < 0.5
@@ -203,6 +302,15 @@ final class HUDPanel: NSPanel {
     private var didPlace = false
     private var replyPinTopMaxY: CGFloat?
     private let cardWidth: CGFloat = HUDMetrics.cardWidth
+    /// Transparent room around the card so the New UI open spring is not clipped.
+    /// Card math stays in card space. Only the window frame carries the margin.
+    var chromeMargin = NSEdgeInsetsZero {
+        didSet {
+            guard !NSEdgeInsetsEqual(oldValue, chromeMargin) else { return }
+            let card = Self.card(in: frame, margin: oldValue)
+            setFrame(Self.window(around: card, margin: chromeMargin), display: false)
+        }
+    }
     private var fadeToken = 0
     private(set) var isFadingOut = false
     var onFrameStep: (() -> Void)?
@@ -212,9 +320,13 @@ final class HUDPanel: NSPanel {
     private struct FrameAnim {
         var from: NSRect
         var to: NSRect
+        var fromCapsule: CGFloat
+        var toCapsule: CGFloat
         var start: TimeInterval
         var duration: TimeInterval
     }
+
+    private var chromeTick: (start: TimeInterval, duration: TimeInterval)?
 
     var isAnimatingFrame: Bool { frameAnim != nil }
 
@@ -312,32 +424,26 @@ final class HUDPanel: NSPanel {
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         let size = NSSize(width: cardWidth, height: max(HUDMetrics.minCardHeight, height))
-        let origin = NSPoint(
-            x: visible.midX - size.width / 2,
-            y: visible.midY - size.height / 2
-        )
+        let origin = HUDLayout.launchOrigin(size: size, visibleFrame: visible)
         cancelFrameAnimation()
         didPlace = false
         replyPinTopMaxY = nil
-        setFrame(NSRect(origin: origin, size: size), display: true)
+        setCardFrame(NSRect(origin: origin, size: size), display: true)
         didPlace = true
         invalidateShadow()
-    }
-
-    func resizePinnedTop(to height: CGFloat, animated: Bool) {
-        resizeForReply(to: height, replyLines: 0, animated: animated)
     }
 
     func resizeForReply(
         to height: CGFloat,
         replyLines: Int,
         chromeHeight: CGFloat = HUDMetrics.minCardHeight,
+        targetCapsule: CGFloat? = nil,
+        shownCapsule: CGFloat? = nil,
         animated: Bool
     ) {
         let current = presentedFrame()
         if replyPinTopMaxY == nil {
-            let extraUp = HUDLayout.replyExtraUpHeight(lines: replyLines)
-            replyPinTopMaxY = current.maxY - extraUp
+            replyPinTopMaxY = current.maxY
         }
         let visible = screen?.visibleFrame
         var next = HUDLayout.frameForReplyGrowth(
@@ -348,15 +454,18 @@ final class HUDPanel: NSPanel {
             chromeHeight: chromeHeight,
             visibleFrame: visible
         )
-        if let anim = frameAnim, HUDFrameMotion.matches(anim.to, next) {
+        let targetCap = targetCapsule ?? 0
+        if let anim = frameAnim,
+           HUDFrameMotion.matches(anim.to, next),
+           abs(anim.toCapsule - targetCap) < 0.5 {
             return
         }
         if !didPlace {
-            next.origin = frame.origin
+            next.origin = cardFrame.origin
             finishFrameAnimation(at: next)
             return
         }
-        if HUDFrameMotion.matches(current, next) {
+        if HUDFrameMotion.matches(current, next), targetCapsule == nil || abs((shownCapsule ?? targetCap) - targetCap) < 0.5 {
             finishFrameAnimation(at: next)
             return
         }
@@ -369,46 +478,89 @@ final class HUDPanel: NSPanel {
             finishFrameAnimation(at: next)
             return
         }
+        let now = Date().timeIntervalSinceReferenceDate
+        let fromCap: CGFloat
+        if let anim = frameAnim {
+            let linear = min(1, (now - anim.start) / anim.duration)
+            fromCap = HUDFrameMotion.scalar(from: anim.fromCapsule, to: anim.toCapsule, linearProgress: linear)
+        } else {
+            fromCap = shownCapsule ?? targetCap
+        }
         frameAnim = FrameAnim(
             from: current,
             to: next,
-            start: Date().timeIntervalSinceReferenceDate,
+            fromCapsule: fromCap,
+            toCapsule: targetCap,
+            start: now,
             duration: duration
         )
-        if !HUDFrameMotion.matches(frame, current) {
-            setFrame(current, display: false)
+        if !HUDFrameMotion.matches(cardFrame, current) {
+            setCardFrame(current, display: false)
         }
         startFrameTimer()
     }
 
-    /// Instant absence for a screen shot. No fade, and no AppKit window-close shrink.
-    func concealForCapture() {
-        cancelFrameAnimation()
-        fadeToken += 1
-        isFadingOut = false
-        animationBehavior = .none
-        alphaValue = 0
-        NSAnimationContext.beginGrouping()
-        NSAnimationContext.current.duration = 0
-        orderOut(nil)
-        NSAnimationContext.endGrouping()
+    /// Capsule height on this frame. Falls back to the settled height once the ease ends.
+    func displayedCapsuleHeight(fallback: CGFloat) -> CGFloat {
+        guard let anim = frameAnim else { return fallback }
+        let linear = (Date().timeIntervalSinceReferenceDate - anim.start) / anim.duration
+        if linear >= 1 { return anim.toCapsule }
+        return HUDFrameMotion.scalar(from: anim.fromCapsule, to: anim.toCapsule, linearProgress: linear)
+    }
+
+    /// Same timer as the window ease, for pill slides that do not change the window size.
+    func beginChromeTick(duration: TimeInterval? = nil) {
+        let resolved = duration ?? HUDFrameMotion.duration(
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
+        guard resolved > 0 else { return }
+        chromeTick = (Date().timeIntervalSinceReferenceDate, resolved)
+        startFrameTimer()
+    }
+
+    var cardFrame: NSRect { Self.card(in: frame, margin: chromeMargin) }
+
+    private static func card(in window: NSRect, margin: NSEdgeInsets) -> NSRect {
+        NSRect(
+            x: window.minX + margin.left,
+            y: window.minY + margin.bottom,
+            width: window.width - margin.left - margin.right,
+            height: window.height - margin.top - margin.bottom
+        )
+    }
+
+    private static func window(around card: NSRect, margin: NSEdgeInsets) -> NSRect {
+        NSRect(
+            x: card.minX - margin.left,
+            y: card.minY - margin.bottom,
+            width: card.width + margin.left + margin.right,
+            height: card.height + margin.top + margin.bottom
+        )
+    }
+
+    private func setCardFrame(_ card: NSRect, display: Bool) {
+        setFrame(Self.window(around: card, margin: chromeMargin), display: display)
     }
 
     private func presentedFrame() -> NSRect {
-        guard let anim = frameAnim else { return frame }
+        guard let anim = frameAnim else { return cardFrame }
         let linear = (Date().timeIntervalSinceReferenceDate - anim.start) / anim.duration
         if linear >= 1 { return anim.to }
         return HUDFrameMotion.frame(from: anim.from, to: anim.to, linearProgress: linear)
     }
 
     private func finishFrameAnimation(at rect: NSRect) {
-        cancelFrameAnimation()
-        setFrame(rect, display: true)
+        frameAnim = nil
+        setCardFrame(rect, display: true)
         invalidateShadow()
+        if chromeTick == nil {
+            stopFrameTimer()
+        }
     }
 
     private func cancelFrameAnimation() {
         frameAnim = nil
+        chromeTick = nil
         stopFrameTimer()
     }
 
@@ -429,24 +581,29 @@ final class HUDPanel: NSPanel {
     }
 
     private func stepFrameAnimation() {
-        guard let anim = frameAnim else {
-            stopFrameTimer()
-            return
+        let now = Date().timeIntervalSinceReferenceDate
+        if let anim = frameAnim {
+            let linear = (now - anim.start) / anim.duration
+            if linear >= 1 {
+                frameAnim = nil
+                setCardFrame(anim.to, display: false)
+                invalidateShadow()
+            } else {
+                let rect = HUDFrameMotion.frame(from: anim.from, to: anim.to, linearProgress: linear)
+                setCardFrame(rect, display: false)
+            }
         }
-        let linear = (Date().timeIntervalSinceReferenceDate - anim.start) / anim.duration
-        if linear >= 1 {
-            frameAnim = nil
-            setFrame(anim.to, display: false)
-            invalidateShadow()
-            stopFrameTimer()
-            onFrameStep?()
-            displayIfNeeded()
-            return
+        if let tick = chromeTick {
+            let linear = (now - tick.start) / tick.duration
+            if linear >= 1 {
+                chromeTick = nil
+            }
         }
-        let rect = HUDFrameMotion.frame(from: anim.from, to: anim.to, linearProgress: linear)
-        setFrame(rect, display: false)
         onFrameStep?()
         displayIfNeeded()
+        if frameAnim == nil, chromeTick == nil {
+            stopFrameTimer()
+        }
     }
 
     func reveal() {
@@ -474,7 +631,7 @@ final class HUDPanel: NSPanel {
         }
     }
 
-    func fadeOut(completion: @escaping @Sendable () -> Void) {
+    func fadeOut(delay: TimeInterval = 0, completion: @escaping @Sendable () -> Void) {
         guard isVisible else {
             completion()
             return
@@ -482,25 +639,35 @@ final class HUDPanel: NSPanel {
         fadeToken += 1
         let token = fadeToken
         isFadingOut = true
-        let duration = HUDPanelFade.animationDuration(
-            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        )
+        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let duration = HUDPanelFade.animationDuration(reduceMotion: reduce)
         // Drop key so ESC / typing do not stick on a vanishing card.
         resignKey()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            animator().alphaValue = 0
-        } completionHandler: { [weak self] in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self, self.fadeToken == token else { return }
-                    // Animation completion is the orderOut gate; policy is covered in tests.
-                    self.orderOut(nil)
-                    self.alphaValue = 1
-                    self.isFadingOut = false
-                    completion()
+        let fade = { [weak self] in
+            guard let self, self.fadeToken == token else { return }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = duration
+                self.animator().alphaValue = 0
+            } completionHandler: { [weak self] in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let self, self.fadeToken == token else { return }
+                        self.orderOut(nil)
+                        self.alphaValue = 1
+                        self.isFadingOut = false
+                        completion()
+                    }
                 }
             }
+        }
+        if delay > 0, !reduce {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                MainActor.assumeIsolated {
+                    fade()
+                }
+            }
+        } else {
+            fade()
         }
     }
 }

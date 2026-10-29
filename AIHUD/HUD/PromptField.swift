@@ -21,16 +21,14 @@ enum PromptLayout {
         .systemFont(ofSize: fontSize)
     }
 
+    /// Computed once: building a layout manager each animation frame adds up.
+    static let promptLineHeight = lineHeight(for: font())
+
     static func lineHeight(for font: NSFont) -> CGFloat {
         max(
             ceil(NSLayoutManager().defaultLineHeight(for: font)),
             ceil(font.boundingRectForFont.height)
         )
-    }
-
-    static func fieldHeight(visibleLines: Int, font: NSFont) -> CGFloat {
-        let lines = min(max(visibleLines, 1), maxVisibleLines)
-        return lineHeight(for: font) * CGFloat(lines)
     }
 
     static func rowHeight(visibleLines: Int, font: NSFont) -> CGFloat {

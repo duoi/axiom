@@ -361,7 +361,7 @@ import Testing
 }
 
 @Test @MainActor func simulateIncomingStreamCommitsAssistantTurn() {
-    let model = HUDModel(store: EndpointStore())
+    let model = HUDModel(store: .isolated())
     model.simulateIncomingStream("Hi there")
     #expect(model.session.phase == .finished)
     #expect(model.session.turns.count == 2)
@@ -411,4 +411,79 @@ private func screenshotFiles(in root: URL) -> [URL] {
         return []
     }
     return items.filter { $0.pathExtension.lowercased() == "jpg" || $0.pathExtension.lowercased() == "jpeg" }
+}
+
+@Test func unreadableHistoryIsSetAsideNotOverwritten() throws {
+    let root = try makeHistoryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let index = root.appendingPathComponent("history.json")
+    try Data("[{\"from a newer version\": true}]".utf8).write(to: index)
+
+    let store = HistoryStore(root: root)
+    #expect(store.entries.isEmpty)
+    store.record(
+        session: finishedSession(prompt: "Hi", reply: "Hello"),
+        excludeFromHistory: false,
+        historyEnabled: true,
+        saveScreenshots: false
+    )
+    let names = try FileManager.default.contentsOfDirectory(atPath: root.path)
+    let kept = try #require(names.first { $0.hasPrefix("history.corrupt-") })
+    #expect(try Data(contentsOf: root.appendingPathComponent(kept)) == Data("[{\"from a newer version\": true}]".utf8))
+}
+
+@Test func recordingAnUnchangedChatAgainWritesNothing() throws {
+    let root = try makeHistoryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = HistoryStore(root: root)
+    let session = finishedSession(
+        prompt: "Hi",
+        reply: "Hello",
+        chips: [Chip(id: UUID(), name: "Screen", payload: .jpeg(Data([0xFF, 0xD8])), isScreen: true)]
+    )
+    let first = try #require(store.record(session: session, excludeFromHistory: false, historyEnabled: true, saveScreenshots: true))
+    let shot = try #require(screenshotFiles(in: root).first)
+    try FileManager.default.removeItem(at: shot)
+
+    let second = try #require(store.record(session: session, excludeFromHistory: false, historyEnabled: true, saveScreenshots: true))
+    #expect(second.savedAt == first.savedAt)
+    #expect(screenshotFiles(in: root).isEmpty)
+}
+
+@Test func historyKeepsTheNewestChatsAndTheirScreenshotsOnly() throws {
+    let root = try makeHistoryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = HistoryStore(root: root, maxEntries: 2)
+    var ids: [UUID] = []
+    for prompt in ["one", "two", "three"] {
+        let session = finishedSession(
+            prompt: prompt,
+            reply: "ok",
+            chips: [Chip(id: UUID(), name: "Screen", payload: .jpeg(Data([0xFF, 0xD8])), isScreen: true)]
+        )
+        let entry = try #require(store.record(session: session, excludeFromHistory: false, historyEnabled: true, saveScreenshots: true))
+        ids.append(entry.id)
+    }
+    #expect(store.entries.map(\.id) == [ids[2], ids[1]])
+    #expect(!screenshotFiles(in: root).contains { $0.lastPathComponent.hasPrefix(ids[0].uuidString) })
+    #expect(screenshotFiles(in: root).count == 2)
+}
+
+@Test func turningScreenshotsOffDeletesTheSavedOnes() throws {
+    let root = try makeHistoryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = HistoryStore(root: root)
+    let session = finishedSession(
+        prompt: "Hi",
+        reply: "Hello",
+        chips: [Chip(id: UUID(), name: "Screen", payload: .jpeg(Data([0xFF, 0xD8])), isScreen: true)]
+    )
+    store.record(session: session, excludeFromHistory: false, historyEnabled: true, saveScreenshots: true)
+    #expect(screenshotFiles(in: root).count == 1)
+
+    store.removeAllScreenshots()
+    #expect(screenshotFiles(in: root).isEmpty)
+    #expect(store.entries.first?.hasScreenshot == false)
+    #expect(store.entries.first?.turns.allSatisfy { $0.screenshotNames.isEmpty } == true)
+    #expect(store.entries.first?.turns.first?.text == "Hi")
 }

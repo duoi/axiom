@@ -19,18 +19,6 @@ enum ToolCallAssembler {
         case responses
     }
 
-    static func completions(lines: [String]) -> AssembledTools {
-        assemble(wire: .completions, lines: lines)
-    }
-
-    static func anthropic(lines: [String]) -> AssembledTools {
-        assemble(wire: .anthropic, lines: lines)
-    }
-
-    static func responses(lines: [String]) -> AssembledTools {
-        assemble(wire: .responses, lines: lines)
-    }
-
     static func trailingEvents(wire: Wire, lines: [String]) -> [ChatStreamEvent] {
         let assembled = assemble(wire: wire, lines: lines)
         if assembled.calls.isEmpty {
@@ -45,7 +33,7 @@ enum ToolCallAssembler {
         var arguments = ""
     }
 
-    private static func assemble(wire: Wire, lines: [String]) -> AssembledTools {
+    static func assemble(wire: Wire, lines: [String]) -> AssembledTools {
         var text = ""
         var drafts: [Int: Draft] = [:]
         var truncated = false

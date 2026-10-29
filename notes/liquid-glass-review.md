@@ -10,7 +10,7 @@ Compared against the live views, `HUDMetrics`, and `notes/references/launcher-hu
 
 ## Accepted for this plate
 
-One `NSGlassEffectView` sits inside `NSGlassEffectContainerView` at spacing 0. There is no SwiftUI `GlassEffectContainer`. Agent, Screen, chips, and the shortcut badge are fills inside `contentView`, not sibling glass and not `.buttonStyle(.glass)`. `effectIsInteractive` stays off because a click flexes the 560-point plate. Do not add `glassEffect` or turn the flag on to match the skill.
+One `NSGlassEffectView` sits inside `NSGlassEffectContainerView` at spacing 0. There is no SwiftUI `GlassEffectContainer`. Agent, Screen, chips, and the shortcut badge are fills inside `contentView`, not sibling glass and not `.buttonStyle(.glass)`. `effectIsInteractive` stays off on the flag-off plate because a click flexes the 560-point plate. In New UI only the pills are interactive; the capsule is a text surface and does not flex. The flag-off plate is not interactive either. Do not add `glassEffect` or turn the flag on to match the skill.
 
 ## Gaps
 

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Quiet fill for an overlay that sits on the card plate. Not glass.

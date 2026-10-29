@@ -15,12 +15,8 @@ struct ScreenCaptureResult {
 }
 
 enum ScreenGrab {
-    /// Capture only reads preflight. Never call `CGRequestScreenCaptureAccess` on send —
-    /// that re-prompts when TCC does not recognize an ad-hoc rebuild.
-    static func shouldRequestAccess(preflightGranted: Bool) -> Bool {
-        _ = preflightGranted
-        return false
-    }
+    // Capture only reads preflight. Never call `CGRequestScreenCaptureAccess` on send:
+    // that re-prompts when TCC does not recognize an ad-hoc rebuild.
 
     /// Settings control: request once and open the Screen Recording pane when not granted.
     static func settingsDecision(preflightGranted: Bool) -> PrivacyPromptDecision {
@@ -30,6 +26,12 @@ enum ScreenGrab {
     /// Window capture needs Accessibility to identify the target reliably.
     static func requiresAccessibility(for target: CaptureTarget, trusted: Bool) -> Bool {
         target == .window && !trusted
+    }
+
+    /// Every window this process owns: the card, pills, lip, and glow overlays.
+    /// Leaving them out of the shot means the card never has to hide.
+    static func excludedWindowIDs(_ windows: [(id: CGWindowID, pid: pid_t?)], ownPID: pid_t) -> [CGWindowID] {
+        windows.filter { $0.pid == ownPID }.map(\.id)
     }
 
     @discardableResult
@@ -61,7 +63,11 @@ enum ScreenGrab {
             guard let display = display(in: content, matching: displayID) else {
                 throw ScreenGrabError.failed
             }
-            let excluded = content.windows.filter { $0.windowID == windowID }
+            let own = Set(excludedWindowIDs(
+                content.windows.map { ($0.windowID, $0.owningApplication?.processID) },
+                ownPID: getpid()
+            ))
+            let excluded = content.windows.filter { $0.windowID == windowID || own.contains($0.windowID) }
             filter = SCContentFilter(display: display, excludingWindows: excluded)
             configuration.width = display.width
             configuration.height = display.height

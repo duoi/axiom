@@ -3,7 +3,7 @@ import AppKit
 extension HUDController {
     func plateScreenFrame() -> CGRect? {
         guard let plate = chrome?.plate, let window = plate.window else {
-            return panel.isVisible ? panel.frame : nil
+            return panel.isVisible ? panel.cardFrame : nil
         }
         let rect = plate.convert(plate.bounds, to: nil)
         return window.convertToScreen(rect)
