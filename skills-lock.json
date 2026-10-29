@@ -24,6 +24,12 @@
       "sourceType": "github",
       "skillPath": "skills/ponytail-review/SKILL.md",
       "computedHash": "4646594fcd75455533f7ff1425f4f1c5ba0fa65f88241bf262b1c4fc275f049a"
+    },
+    "repo-docs": {
+      "source": "tamarillo-ai/agent-skills",
+      "sourceType": "github",
+      "skillPath": "repo-docs/SKILL.md",
+      "computedHash": "8bdfbf9b897ac412c367afdefd3d080acfdb9ad9449d050f51eb463bb3168250"
     }
   }
 }
