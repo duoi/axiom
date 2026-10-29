@@ -14,7 +14,7 @@ final class HUDController: NSObject, NSWindowDelegate {
     private var glass: NSGlassEffectView?
     private var glassContainer: NSGlassEffectContainerView?
     private var solid: SolidCardView?
-    private var pillViews: [HUDPillID: NSView] = [:]
+    private(set) var pillViews: [HUDPillID: NSView] = [:]
     private var mountedNewUI = false
     var chrome: HUDChromeWrapper?
     private var lip: ErrorLipBand?

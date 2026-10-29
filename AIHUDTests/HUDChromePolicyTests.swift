@@ -674,11 +674,6 @@ private func promptReachable(_ hud: HUDController) async -> (focused: Bool, clic
 }
 
 @MainActor
-private func allViews(_ root: NSView) -> [NSView] {
-    [root] + root.subviews.flatMap(allViews)
-}
-
-@MainActor
 private func clickToggles(_ hud: HUDController, at view: NSView, x: CGFloat) async throws -> Bool {
     let before = hud.model.captureArmed
     try await click(hud, at: view, x: x)
@@ -709,14 +704,11 @@ private func click(_ hud: HUDController, at view: NSView, x: CGFloat) async thro
     defer { hud.panel.orderOut(nil) }
     hud.show()
     try? await Task.sleep(for: .milliseconds(900))
-    let root = try #require(hud.panel.contentView?.superview ?? hud.panel.contentView)
-    let pills = allViews(root).compactMap { $0 as? PillGlassView }.sorted { $0.frame.minX < $1.frame.minX }
-    // Your saved Agent setting decides whether the Agent pill leads the row.
-    let hasAgent = pills.count == 6
-    let capture = pills[hasAgent ? 1 : 0]
-    if hasAgent {
+    // Look pills up by id: with Reduce Transparency (as on CI runners) they are solid views, not glass.
+    let capture = try #require(hud.pillViews[.capture])
+    if let agent = hud.pillViews[.preset] {
         let preset = hud.model.session.preset
-        try await click(hud, at: pills[0], x: 30)
+        try await click(hud, at: agent, x: 30)
         #expect(hud.model.session.preset != preset, "Agent pill click")
     }
     #expect(try await clickToggles(hud, at: capture, x: 30))
