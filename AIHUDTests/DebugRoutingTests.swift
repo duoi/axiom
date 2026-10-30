@@ -211,6 +211,15 @@ import Testing
     #expect(store.debugToolsEnabled == false)
 }
 
+@Test @MainActor func closingDebugReleasesItsAnimatedPreviews() {
+    let hud = HUDController(store: EndpointStore.isolated())
+    defer { hud.panel.orderOut(nil) }
+    hud.debugWindow = hud.makeDebugWindow()
+    hud.debugWindow?.close()
+    // Its previews tick even off screen, so a kept window burns CPU.
+    #expect(hud.debugWindow == nil)
+}
+
 @Test func debugLaunchFlagIsOffUnlessRequested() {
     #expect(!DebugRouting.enabled(by: ["Axiom"]))
     #expect(!DebugRouting.enabled(by: ["Axiom", "--show"]))

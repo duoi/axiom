@@ -148,6 +148,8 @@ extension HUDController {
         let debugOpen = !closingDebug && debugWindow?.isVisible == true
         let transcriptOpen = !closingTranscript && transcriptWindow?.isVisible == true
         if closingDebug {
+            // Its preview TimelineViews never pause, so a closed window kept around redraws at 30 fps.
+            debugWindow = nil
             model.debugDriven = false
             startVoiceIfNeeded()
         }
