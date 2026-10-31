@@ -72,7 +72,8 @@ in `docs/images/` and are committed. To make one:
   `refactor:`, `test:`, `ci:`, `chore:`.
 - A push to `main` runs the tests only when app code, tests, the project, signing config or the workflow changed. Docs
   and media pushes run nothing.
-- Releases are deliberate: push a `v*` tag to publish that version, or run the **Build** workflow by hand from the
+- Releases are deliberate: set `MARKETING_VERSION` (and bump `CURRENT_PROJECT_VERSION`) in `project.yml` and the
+  project, commit, then push a matching `v*` tag to publish that version, or run the **Build** workflow by hand from the
   Actions tab to publish `build-<commit>`. The test and build steps can only read the repository; a separate job
   publishes.
 
