@@ -3029,30 +3029,16 @@ import Testing
 }
 
 @Test func streamedReplyFollowsTheTailUntilTheUserScrollsUp() {
-    let grown = HUDLayout.tailFollow(following: true, fits: false, atBottom: false)
-    #expect(grown.following)
-    #expect(grown.scroll)
-
-    let parked = HUDLayout.tailFollow(following: true, fits: false, atBottom: true)
-    #expect(parked.following)
-    #expect(!parked.scroll)
-
-    let userUp = HUDLayout.tailFollow(
+    #expect(HUDLayout.tailFollow(following: true, fits: false, atBottom: false))
+    #expect(HUDLayout.tailFollow(following: true, fits: false, atBottom: true))
+    #expect(!HUDLayout.tailFollow(
         following: true,
         fits: false,
         atBottom: false,
         userScrolling: true
-    )
-    #expect(!userUp.following)
-    #expect(!userUp.scroll)
-
-    let stayUp = HUDLayout.tailFollow(following: false, fits: false, atBottom: false)
-    #expect(!stayUp.following)
-    #expect(!stayUp.scroll)
-
-    let back = HUDLayout.tailFollow(following: false, fits: false, atBottom: true)
-    #expect(back.following)
-    #expect(!back.scroll)
+    ))
+    #expect(!HUDLayout.tailFollow(following: false, fits: false, atBottom: false))
+    #expect(HUDLayout.tailFollow(following: false, fits: false, atBottom: true))
 }
 
 @Test func liveStreamChunksAppendThroughReceiveToken() {

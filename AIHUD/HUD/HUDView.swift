@@ -297,11 +297,7 @@ struct HUDView: View {
         ZStack(alignment: .topTrailing) {
             Group {
                 if model.historyExpanded {
-                    middleScroll(
-                        height: HUDLayout.replyBodyHeight(lines: HUDLayout.replyMaxLines),
-                        tailID: "answer-end",
-                        tracked: model.session.displayAnswer
-                    ) {
+                    middleScroll(height: HUDLayout.replyBodyHeight(lines: HUDLayout.replyMaxLines)) {
                         expandedTranscriptContent
                     }
                 } else {
@@ -350,7 +346,7 @@ struct HUDView: View {
                 EmptyView()
             } else if lines > HUDLayout.replyMaxLines {
                 VStack(alignment: .leading, spacing: 6) {
-                    middleScroll(height: bodyHeight, tailID: "reply-tail", tracked: text) {
+                    middleScroll(height: bodyHeight) {
                         compactReplyText(text)
                     }
                     if showsToolStatus {
@@ -410,14 +406,10 @@ struct HUDView: View {
 
     private func middleScroll<Content: View>(
         height: CGFloat,
-        tailID: String,
-        tracked: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
         ReplyScroll(
             height: height,
-            tailID: tailID,
-            tracked: tracked,
             stickToBottom: $model.stickToBottom,
             scrollerVisible: $scrollerVisible,
             content: content
@@ -783,8 +775,6 @@ struct HUDView: View {
 
 private struct ReplyScroll<Content: View>: View {
     var height: CGFloat
-    var tailID: String
-    var tracked: String
     @Binding var stickToBottom: Bool
     @Binding var scrollerVisible: Bool
     @ViewBuilder var content: Content
@@ -793,96 +783,74 @@ private struct ReplyScroll<Content: View>: View {
     @State private var userScrolling = false
 
     var body: some View {
-        ScrollViewReader { proxy in
-            Color.clear
-                .frame(height: height)
-                .overlay {
-                    ScrollView {
-                        content
-                            .background {
-                                OverlayScrollerInstaller(
-                                    active: scrollerVisible,
-                                    pinToBottom: stickToBottom
-                                )
-                            }
-                        Color.clear
-                            .frame(height: 1)
-                            .id(tailID)
-                    }
-                    .scrollIndicators(.automatic)
-                    .onScrollPhaseChange { _, phase in
-                        let live: Bool
-                        switch phase {
-                        case .interacting, .tracking, .decelerating:
-                            live = true
-                        default:
-                            live = false
+        Color.clear
+            .frame(height: height)
+            .overlay {
+                ScrollView {
+                    content
+                        .background {
+                            OverlayScrollerInstaller(
+                                active: scrollerVisible,
+                                pinToBottom: stickToBottom
+                            )
                         }
-                        userScrolling = live
-                        if live {
-                            hideTask?.cancel()
-                            scrollerVisible = true
-                        } else if scrollerVisible {
-                            hideTask?.cancel()
-                            hideTask = Task { @MainActor in
-                                let delay = UInt64(HUDLayout.scrollerHideDelay * 1_000_000_000)
-                                try? await Task.sleep(nanoseconds: delay)
-                                guard !Task.isCancelled else { return }
-                                scrollerVisible = false
-                            }
-                        }
+                }
+                .scrollIndicators(.automatic)
+                .onScrollPhaseChange { _, phase in
+                    let live: Bool
+                    switch phase {
+                    case .interacting, .tracking, .decelerating:
+                        live = true
+                    default:
+                        live = false
                     }
-                    .onDisappear {
+                    userScrolling = live
+                    if live {
                         hideTask?.cancel()
-                        scrollerVisible = false
-                    }
-                    .mask {
-                        fadeMask
-                    }
-                    .onScrollGeometryChange(for: HUDLayout.ScrollFadeEdges.self) { geometry in
-                        HUDLayout.scrollFadeEdges(
-                            offset: geometry.contentOffset.y,
-                            contentHeight: geometry.contentSize.height,
-                            viewport: geometry.containerSize.height
-                        )
-                    } action: { _, next in
-                        fade = next
-                    }
-                    .onScrollGeometryChange(for: HUDLayout.ScrollPin.self) { geometry in
-                        HUDLayout.scrollPin(
-                            offset: geometry.contentOffset.y,
-                            contentHeight: geometry.contentSize.height,
-                            viewport: geometry.containerSize.height
-                        )
-                    } action: { _, next in
-                        let decision = HUDLayout.tailFollow(
-                            following: stickToBottom,
-                            fits: next.fits,
-                            atBottom: next.atBottom,
-                            userScrolling: userScrolling
-                        )
-                        stickToBottom = decision.following
-                        if decision.scroll {
-                            followTail(proxy)
+                        scrollerVisible = true
+                    } else if scrollerVisible {
+                        hideTask?.cancel()
+                        hideTask = Task { @MainActor in
+                            let delay = UInt64(HUDLayout.scrollerHideDelay * 1_000_000_000)
+                            try? await Task.sleep(nanoseconds: delay)
+                            guard !Task.isCancelled else { return }
+                            scrollerVisible = false
                         }
-                    }
-                    .onChange(of: tracked) {
-                        guard stickToBottom else { return }
-                        followTail(proxy)
-                    }
-                    .onAppear {
-                        followTail(proxy)
                     }
                 }
-                .clipShape(Rectangle())
-        }
-    }
-
-    private func followTail(_ proxy: ScrollViewProxy) {
-        DispatchQueue.main.async {
-            guard stickToBottom else { return }
-            proxy.scrollTo(tailID, anchor: .bottom)
-        }
+                .onDisappear {
+                    hideTask?.cancel()
+                    scrollerVisible = false
+                }
+                .mask {
+                    fadeMask
+                }
+                .onScrollGeometryChange(for: HUDLayout.ScrollFadeEdges.self) { geometry in
+                    HUDLayout.scrollFadeEdges(
+                        offset: geometry.contentOffset.y,
+                        contentHeight: geometry.contentSize.height,
+                        viewport: geometry.containerSize.height
+                    )
+                } action: { _, next in
+                    fade = next
+                }
+                .onScrollGeometryChange(for: HUDLayout.ScrollPin.self) { geometry in
+                    HUDLayout.scrollPin(
+                        offset: geometry.contentOffset.y,
+                        contentHeight: geometry.contentSize.height,
+                        viewport: geometry.containerSize.height
+                    )
+                } action: { _, next in
+                    // The probe below pins the tail during layout; SwiftUI's scrollTo snapped to the top mid-stream.
+                    stickToBottom = HUDLayout.tailFollow(
+                        following: stickToBottom,
+                        fits: next.fits,
+                        atBottom: next.atBottom,
+                        userScrolling: userScrolling
+                    )
+                }
+            }
+            .clipShape(Rectangle())
     }
 
     private var fadeMask: some View {
@@ -1045,10 +1013,30 @@ private struct OverlayScrollerInstaller: NSViewRepresentable {
             let overflow = document.bounds.height - clip.bounds.height
             guard overflow > 1 else { return }
             let y = clip.isFlipped ? overflow : 0
-            guard abs(clip.bounds.origin.y - y) > 1 else { return }
-            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
-            scroll.reflectScrolledClipView(clip)
+            guard abs(clip.bounds.origin.y - y) > 1, glideTarget != y else { return }
+            let target = NSPoint(x: clip.bounds.origin.x, y: y)
+            let duration = HUDFrameMotion.duration(
+                reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            )
+            // Glide a streamed line or two; jump when the reply first turns into a scroll view.
+            guard duration > 0, abs(clip.bounds.origin.y - y) < clip.bounds.height / 2 else {
+                glideTarget = nil
+                clip.scroll(to: target)
+                scroll.reflectScrolledClipView(clip)
+                return
+            }
+            glideTarget = y
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = duration
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                clip.animator().setBoundsOrigin(target)
+            }, completionHandler: { [weak self] in
+                if self?.glideTarget == y { self?.glideTarget = nil }
+                scroll.reflectScrolledClipView(clip)
+            })
         }
+
+        private var glideTarget: CGFloat?
 
         private func clipIsAtBottom(_ scroll: NSScrollView) -> Bool {
             guard let document = scroll.documentView else { return true }

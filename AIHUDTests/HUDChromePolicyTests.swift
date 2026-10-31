@@ -815,3 +815,34 @@ private func click(_ hud: HUDController, at view: NSView, x: CGFloat) async thro
     field.applyPrompt("What is the mass of the sun?")
     #expect(field.currentEditor()?.selectedRange == NSRange(location: 8, length: 0))
 }
+
+@Test @MainActor func longStreamingReplyEndsOnItsLastLine() async {
+    let hud = HUDController(store: EndpointStore.isolated())
+    defer { hud.panel.orderOut(nil) }
+    hud.show()
+    var session = DebugRouting.apply("waiting", to: Session())
+    for line in 1...45 {
+        session.receiveToken("Line \(line).\n")
+        hud.model.session = session
+        hud.model.onLayout()
+        try? await Task.sleep(for: .milliseconds(30))
+    }
+    try? await Task.sleep(for: .milliseconds(500))
+    hud.panel.contentView?.layoutSubtreeIfNeeded()
+    var stack = [hud.panel.contentView].compactMap { $0 }
+    var reply: NSScrollView?
+    while let view = stack.popLast() {
+        if let scroll = view as? NSScrollView, let document = scroll.documentView,
+           document.bounds.height > scroll.contentView.bounds.height + 1 {
+            reply = scroll
+        }
+        stack.append(contentsOf: view.subviews)
+    }
+    guard let reply, let document = reply.documentView else {
+        Issue.record("no overflowing reply scroll view")
+        return
+    }
+    let bottom = document.bounds.height - reply.contentView.bounds.height
+    // Each chunk used to snap the reply back to its first line.
+    #expect(abs(reply.contentView.bounds.origin.y - bottom) < 2)
+}

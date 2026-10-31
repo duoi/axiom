@@ -313,10 +313,6 @@ enum HUDLayout {
         var atBottom: Bool
     }
 
-    struct TailFollow: Equatable, Sendable {
-        var following: Bool
-        var scroll: Bool
-    }
 
     /// Overlay scroller fade. Fast enough to read as a fade, not a pop.
     static let scrollerFadeDuration: TimeInterval = 0.16
@@ -366,14 +362,9 @@ enum HUDLayout {
         fits: Bool,
         atBottom: Bool,
         userScrolling: Bool = false
-    ) -> TailFollow {
-        if fits || atBottom {
-            return TailFollow(following: true, scroll: false)
-        }
-        if userScrolling || !following {
-            return TailFollow(following: false, scroll: false)
-        }
-        return TailFollow(following: true, scroll: true)
+    ) -> Bool {
+        if fits || atBottom { return true }
+        return following && !userScrolling
     }
 
     static func wrappedReplyLines(_ text: String) -> Int {
