@@ -1,5 +1,6 @@
 import AppKit
 import KeyboardShortcuts
+import ServiceManagement
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
@@ -69,6 +70,8 @@ struct SettingsView: View {
     @State private var pendingAdd: EndpointAddChoice?
     @State private var historyDetail: HistoryEntry?
     @State private var permissionRefresh = 0
+    @State private var loginStatus = SMAppService.mainApp.status
+    @State private var loginError: String?
 
     init(store: EndpointStore, model: HUDModel, page: SettingsPage = .launchPage()) {
         self.store = store
@@ -117,9 +120,36 @@ struct SettingsView: View {
             .foregroundStyle(.secondary)
     }
 
+    private func setOpensAtLogin(_ on: Bool) {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            loginError = nil
+        } catch {
+            loginError = error.localizedDescription
+        }
+        loginStatus = SMAppService.mainApp.status
+    }
+
     private var generalPane: some View {
         Form {
             Section {
+                Toggle(isOn: Binding(
+                    get: { loginStatus == .enabled || loginStatus == .requiresApproval },
+                    set: setOpensAtLogin
+                )) {
+                    Text("Open at login")
+                    Text("Starts Axiom in the menu bar when you log in.")
+                }
+                // It can change in System Settings → Login Items; coming back from there reactivates Axiom.
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    loginStatus = SMAppService.mainApp.status
+                }
+                if loginStatus == .requiresApproval {
+                    Button("Allow in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
+                }
+                if let loginError {
+                    note(loginError)
+                }
                 Toggle(isOn: $store.keepHovering) {
                     Text("Keep the card up")
                     Text("A click outside leaves it up. Escape or the hotkey still hides it.")

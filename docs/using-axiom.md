@@ -25,6 +25,9 @@ flowchart LR
 Control-Option-K shows and hides the card. The menu-bar icon also has Show, Settings and Quit, and Debug once
 **Debug tools** is on in Settings → About.
 
+To have Axiom ready after a restart, turn on **Open at login** in Settings → General (off by default). It starts in the
+menu bar without showing the card. If macOS asks, allow it in System Settings → General → Login Items.
+
 - The card opens on the screen under the pointer, centred left to right and a third of the way down.
 - A reply grows the card downward from where it opened. Only when it reaches the bottom of the screen does the top move
   up, and only by the part that does not fit. After 30 lines the reply scrolls.
