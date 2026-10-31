@@ -30,6 +30,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          # Full history, so the build number can be the commit count.
+          fetch-depth: 0
 
       - name: Select Xcode
         run: |
@@ -50,6 +52,11 @@ jobs:
       - name: Build Release
         if: env.RELEASE == 'true'
         run: |
+          # The tag is the version (v1.2.3 -> 1.2.3); a manual run keeps the project's 0.0.0.
+          version_args=()
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version_args+=(MARKETING_VERSION="${GITHUB_REF_NAME#v}")
+          fi
           xcodebuild build \
             -scheme Axiom \
             -configuration Release \
@@ -57,7 +64,9 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM=""
+            DEVELOPMENT_TEAM="" \
+            CURRENT_PROJECT_VERSION="$(git rev-list --count HEAD)" \
+            "${version_args[@]}"
           ditto -c -k --keepParent \
             "$RUNNER_TEMP/DerivedData/Build/Products/Release/Axiom.app" \
             Axiom-macOS.zip

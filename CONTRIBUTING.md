@@ -72,9 +72,12 @@ in `docs/images/` and are committed. To make one:
   `refactor:`, `test:`, `ci:`, `chore:`.
 - A push to `main` runs the tests only when app code, tests, the project, signing config or the workflow changed. Docs
   and media pushes run nothing.
-- Releases are deliberate: set `MARKETING_VERSION` (and bump `CURRENT_PROJECT_VERSION`) in `project.yml` and the
-  project, commit, then push a matching `v*` tag to publish that version, or run the **Build** workflow by hand from the
+- Releases are deliberate: push a `v*` tag to publish that version, or run the **Build** workflow by hand from the
   Actions tab to publish `build-<commit>`. The test and build steps can only read the repository; a separate job
   publishes.
+- The tag is the version. `v1.2.3` builds an app whose version is `1.2.3`, and the build number is the commit count, so
+  About reads `Version 1.2.3 (57)`. Never edit the version in the project: it stays `0.0.0`, which marks local and
+  manual builds. Bump the patch for fixes, the minor for new features, and the major for changes that break settings
+  or saved data.
 
 [← Privacy and data](docs/privacy-and-data.md) · [Docs home](README.md)
